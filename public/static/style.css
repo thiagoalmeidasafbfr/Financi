@@ -247,3 +247,5 @@ table.planner .cb.last { box-shadow: inset -1px 0 0 var(--border-default); }
 table.planner tr.highlight .cb { background: var(--surface-accent-soft); }
 table.planner td.best-cb { color: var(--text-primary); font-weight: var(--font-weight-semibold); }
 table.planner td.best-cb::after { content: " ●"; color: var(--series-1); font-size: 9px; }
+table.flow tr.info td { color: var(--text-secondary); font-size: 12px; }
+table.flow tr.info td:first-child { padding-left: 22px; }

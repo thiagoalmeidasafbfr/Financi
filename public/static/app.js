@@ -290,9 +290,33 @@ const SUMMARY_ROWS = [
   ["receitas", "Receitas totais"], ["total_despesas", "Total de despesas"], ["saldo_operacional", "Saldo operacional"],
   ["saldo_disponivel", "Saldo disponível em conta (antes de investir)"], ["investimentos", "(−) Investimentos e reserva"],
   ["inv_resgate_automatico", "(+) Resgate automático"], ["saldo_livre", "Saldo livre do mês"],
-  ["saldo_conta", "Saldo acumulado em conta", "highlight"], ["inv_saldo_fim", "Saldo investido"],
+  ["saldo_conta", "Saldo acumulado em conta", "highlight"], ["inv_rendimento", "(+) Rendimento dos investimentos"],
+  ["inv_saldo_fim", "Saldo investido"],
   ["saldo_total", "Saldo total (conta + investimentos)", "highlight"], ["fgts_saldo", "Saldo FGTS (referência)"],
 ];
+
+function seriesRow(label, vals, { cls = "", tip = "", last = false, fmtv = num } = {}) {
+  const sum = vals.reduce((a, b) => a + b, 0);
+  return `<tr class="${cls}" title="${tip}"><td>${label}</td>${vals.map((v) => `<td class="auto">${fmtv(v)}</td>`).join("")}
+    <td>${last ? fmtv(vals[vals.length - 1]) : fmtv(sum)}</td><td>${last ? "" : fmtv(sum / vals.length)}</td></tr>`;
+}
+
+function investAutoRow(p) {
+  const s = p.series;
+  if (!s.inv_automatico.some((v) => v)) return "";
+  return seriesRow('Investimento automático <span class="badge">auto</span>', s.inv_automatico,
+    { tip: "Calculado pelo % a investir e pelo saldo mínimo (Premissas → parâmetros mês a mês)" });
+}
+
+function investYieldRows(p) {
+  const s = p.series;
+  if (!s.inv_saldo_fim.some((v) => v) && !s.inv_rendimento.some((v) => v)) return "";
+  const pctv = (v) => (v ? pct(v, 2) : "");
+  return seriesRow("Rendimento do mês", s.inv_rendimento, { cls: "info", tip: "Saldo investido no início do mês × rentabilidade" }) +
+    seriesRow("Rendimento acumulado", s.inv_rendimento_acumulado, { cls: "info", last: true }) +
+    seriesRow("Rentabilidade (% a.m.)", s.inv_rentabilidade, { cls: "info", last: true, fmtv: pctv }) +
+    seriesRow("Saldo investido no fim do mês", s.inv_saldo_fim, { cls: "info", last: true });
+}
 
 function renderFluxo() {
   const p = state.projection;
@@ -304,6 +328,7 @@ function renderFluxo() {
     const rows = p.rows.filter((r) => r.group === g &&
       (showEmpty || r.kind !== "manual" || state.newLines.has(r.category_id) || r.values.some((v) => v)));
     h += `<tr class="group"><td>${label} <button class="ghost sm newline" data-newline="${g}">+ Nova linha</button></td>${months.map(() => "<td></td>").join("")}<td></td><td></td></tr>`;
+    if (g === "investimento") h += investAutoRow(p);
     for (const r of rows) {
       const auto = r.kind !== "manual";
       h += `<tr data-cat="${r.category_id}"><td>${esc(r.name)}${auto ? ' <span class="badge">auto</span>' : ""}
@@ -314,9 +339,12 @@ function renderFluxo() {
       });
       h += `<td>${num(r.total)}</td><td>${num(r.average)}</td></tr>`;
     }
-    const tot = months.map((_, i) => rows.reduce((a, r) => a + r.values[i], 0));
+    // investimentos: o total inclui o investimento automático (que não é uma linha digitada)
+    const tot = g === "investimento" ? p.series.investimentos
+      : months.map((_, i) => rows.reduce((a, r) => a + r.values[i], 0));
     const sum = tot.reduce((a, b) => a + b, 0);
     h += `<tr class="total"><td>Total ${label.toLowerCase()}</td>${tot.map((v) => `<td>${num(v)}</td>`).join("")}<td>${num(sum)}</td><td>${num(sum / months.length)}</td></tr>`;
+    if (g === "investimento") h += investYieldRows(p);
   }
   h += `<tr class="group"><td>Visão consolidada</td>${months.map(() => "<td></td>").join("")}<td></td><td></td></tr>`;
   for (const [key, label, cls] of SUMMARY_ROWS) {
