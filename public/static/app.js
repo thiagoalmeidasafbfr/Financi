@@ -118,9 +118,17 @@ function renderSankey(id, data, compact = false) {
       trigger: "item", backgroundColor: css("--surface-card"), borderWidth: 0,
       extraCssText: `box-shadow:${css("--shadow-pop")};border-radius:10px`,
       textStyle: { color: css("--text-primary") },
-      formatter: (p) => p.dataType === "edge"
-        ? `${esc(p.data.source)} → ${esc(p.data.target)}<br><b>${fmt(p.data.value)}</b>`
-        : `${esc(p.name)}<br><b>${fmt(p.value)}</b>`,
+      formatter: (p) => {
+        if (p.dataType === "edge") return `${esc(p.data.source)} → ${esc(p.data.target)}<br><b>${fmt(p.data.value)}</b>`;
+        let html = `${esc(p.name)}<br><b>${fmt(p.value)}</b>`;
+        const src = data.sources;
+        if (p.name === data.hub && src && (src.resgates > 0.005 || src.saldo_anterior > 0.005)) {
+          html += `<br><span style="color:${css("--text-secondary")}">receitas ${fmt(src.receitas)}` +
+            (src.resgates > 0.005 ? ` · resgates ${fmt(src.resgates)}` : "") +
+            (src.saldo_anterior > 0.005 ? ` · saldo anterior ${fmt(src.saldo_anterior)}` : "") + "</span>";
+        }
+        return html;
+      },
     },
     series: [{
       type: "sankey", left: 8, right: compact ? 110 : 190, top: 8, bottom: 8,

@@ -112,8 +112,8 @@ def test_sankey_flows_balance_at_hub():
     sc = scenario(entries={(5, eng.add_months(START, i)): 2500.0 for i in range(14)}, invest_pct=0.3)
     p = eng.project(sc)
     sk = eng.sankey(p)
-    inflow = sum(l["value"] for l in sk["links"] if l["target"] == "Receitas")
-    outflow = sum(l["value"] for l in sk["links"] if l["source"] == "Receitas")
+    inflow = sum(l["value"] for l in sk["links"] if l["target"] == sk["hub"])
+    outflow = sum(l["value"] for l in sk["links"] if l["source"] == sk["hub"])
     assert inflow == pytest.approx(outflow, abs=0.05)
     names = [n["name"] for n in sk["nodes"]]
     assert len(names) == len(set(names))
@@ -128,7 +128,11 @@ def test_sankey_single_month_with_deficit():
     sc = scenario(entries={(6, date(2027, 1, 1)): 30000.0})
     p = eng.project(sc)
     sk = eng.sankey(p, p["months"].index("2027-01-01"))
-    assert any(l["source"] == "Saldo anterior em conta / déficit" for l in sk["links"])
+    assert any(l["source"] == "Saldo de meses anteriores" for l in sk["links"])
+    assert sk["hub"].startswith("Entradas: receitas")
+    # receitas de verdade ficam separadas das demais fontes
+    salary = sum(l["value"] for l in sk["links"] if l["source"] == "Salário")
+    assert sk["sources"]["receitas"] == pytest.approx(salary)
 
 
 def test_inflation_applied_only_when_enabled():
@@ -236,3 +240,18 @@ def test_waterfall_bridges_total_balance_and_period_slice():
     assert aluguel["total"] == 3000 * 6
     with pytest.raises(ValueError):
         eng.slice_projection(full, sc, date(2030, 1, 1), None)
+
+
+def test_sankey_resgate_is_not_income():
+    big = {(6, date(2027, 1, 1)): 15000.0}
+    sc = scenario(entries=big, invest_pct=1.0, min_balance=500, salary_changes=[eng.SalaryChangeIn(START, 10000)],
+                  bonus_salaries=0, thirteenth_first_year=None, vacation_month=None)
+    p = eng.project(sc)
+    i = p["months"].index("2027-01-01")
+    sk = eng.sankey(p, i)
+    assert sk["hub"] == "Entradas: receitas + resgates"
+    assert sk["sources"]["receitas"] == 10000
+    resg = next(l for l in sk["links"] if l["source"].startswith("Resgate de investimentos"))
+    assert resg["value"] == pytest.approx(p["series"]["inv_resgate_automatico"][i], abs=0.01)
+    # mês sem resgate: o nó central é só "Receitas"
+    assert eng.sankey(p, 0)["hub"] == "Receitas"

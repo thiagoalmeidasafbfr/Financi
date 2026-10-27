@@ -733,9 +733,12 @@ def loans_timeline(loans: list[LoanIn]) -> dict:
 
 
 def sankey(projection: dict, month_index: int | None = None, min_share: float = 0.01) -> dict:
-    """Fluxo do dinheiro: fontes de receita → Receitas → grupos → categorias.
+    """Fluxo do dinheiro: fontes → entradas → grupos → categorias.
 
-    month_index=None soma todo o horizonte; caso contrário usa um único mês.
+    As entradas são as receitas; quando há resgate de investimentos ou uso de saldo de meses
+    anteriores (que NÃO são receita), eles entram como fontes separadas e o nó central passa a se
+    chamar "Entradas: …". O rendimento dos investimentos não passa pela conta e não aparece aqui.
+    month_index=None soma todo o período; caso contrário usa um único mês.
     Categorias com menos de `min_share` das entradas viram "Outros (grupo)"."""
     s = projection["series"]
     pick = (lambda vals: sum(vals)) if month_index is None else (lambda vals: vals[month_index])
@@ -770,8 +773,10 @@ def sankey(projection: dict, month_index: int | None = None, min_share: float = 
     outflows = pick(s["total_despesas"]) + pick(s["investimentos"])
     entradas = receitas + resgates
     threshold = max(entradas, outflows) * min_share
+    deficit = max(0.0, outflows - entradas)
 
-    hub = node("hub", "Receitas", "receita", 1)
+    extras = (["resgates"] if resgates > 0.005 else []) + (["saldo anterior"] if deficit > 0.005 else [])
+    hub = node("hub", "Entradas: receitas + " + " + ".join(extras) if extras else "Receitas", "receita", 1)
     small_in = 0.0
     for r in rows:
         if r["group"] == "receita":
@@ -782,9 +787,9 @@ def sankey(projection: dict, month_index: int | None = None, min_share: float = 
                 link(node(f"c{r['category_id']}", r["name"], "receita", 0), hub, v)
     link(node("outras_rec", "Outras receitas", "receita", 0), hub, small_in)
     if resgates > 0.005:
-        link(node("resgates", "Resgates de investimentos", "outros", 0), hub, resgates)
-    if outflows > entradas + 0.005:
-        link(node("deficit", "Saldo anterior em conta / déficit", "outros", 0), hub, outflows - entradas)
+        link(node("resgates", "Resgate de investimentos", "outros", 0), hub, resgates)
+    if deficit > 0.005:
+        link(node("deficit", "Saldo de meses anteriores", "outros", 0), hub, deficit)
 
     for group in ("despesa_fixa", "divida", "despesa_variavel", "investimento"):
         g = node(f"g_{group}", GROUP_LABELS[group], group, 2)
@@ -806,4 +811,5 @@ def sankey(projection: dict, month_index: int | None = None, min_share: float = 
         link(hub, node("sobra", "Sobra em conta", "sobra", 2), sobra)
 
     used_names = {l["source"] for l in links} | {l["target"] for l in links}
-    return {"nodes": [n for n in nodes.values() if n["name"] in used_names], "links": links}
+    return {"nodes": [n for n in nodes.values() if n["name"] in used_names], "links": links,
+            "hub": hub, "sources": {"receitas": receitas, "resgates": resgates, "saldo_anterior": deficit}}
