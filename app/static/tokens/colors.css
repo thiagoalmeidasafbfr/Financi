@@ -1,0 +1,45 @@
+:root{
+/* ---- base palette (from Ledgerix brand sheet) ---- */
+--sand-50:#FEFEFD;--sand-100:#FAF9F6;--sand-200:#F7F6F2;--sand-300:#F4F3EE;
+--sand-400:#F2F0EB;--sand-500:#E4E0D4;--sand-600:#D3CDBC;--sand-700:#8E8776;--sand-800:#59533F;
+--ink-900:#000000;--ink-800:#121214;--ink-700:#1C1C1F;--ink-600:#2B2B2F;
+--gray-700:#4E4D51;--gray-600:#77767A;--gray-500:#AAA9AB;--gray-400:#C6C5C8;--gray-300:#DBDADD;
+--gray-200:#E6E6E8;--gray-150:#ECECEE;--gray-100:#F0F0F1;--gray-50:#F7F7F8;--white:#FFFFFF;
+--red-400:#FF7A6E;--red-500:#FF5C4D;--red-600:#E8402F;
+--amber-400:#FFD36B;--amber-500:#FFC02E;
+--lilac-200:#E6E4FA;--lilac-300:#D8D6F5;--lilac-400:#BCB8EC;
+
+/* ---- semantic: text ---- */
+--text-primary:var(--ink-900);--text-secondary:var(--gray-600);--text-muted:var(--gray-500);
+--text-disabled:var(--gray-400);--text-inverse:var(--white);--text-on-accent:var(--ink-900);
+--text-positive:var(--sand-800);--text-negative:var(--red-600);--text-link:var(--ink-900);
+
+/* ---- semantic: surface ---- */
+--surface-page:var(--gray-100);--surface-card:var(--white);--surface-sunken:var(--gray-50);
+--surface-raised:var(--white);--surface-inverse:var(--ink-900);--surface-inverse-soft:var(--ink-700);
+--surface-accent:var(--sand-400);--surface-accent-soft:var(--sand-200);
+--surface-negative-soft:#FFE9E6;--surface-scrim:rgba(0,0,0,.45);--surface-glass:rgba(255,255,255,.72);
+
+/* ---- semantic: border ---- */
+--border-subtle:var(--gray-200);--border-default:var(--gray-300);--border-strong:var(--gray-500);
+--border-inverse:rgba(255,255,255,.16);--border-accent:var(--sand-600);--border-focus:var(--ink-900);
+
+/* ---- semantic: interactive ---- */
+--accent:var(--sand-400);--accent-hover:var(--sand-500);--accent-press:var(--sand-600);
+/* the brand colour is near-white, so accent fills carry a hairline to stay visible on light surfaces */
+--accent-line:var(--ink-900);--accent-line-soft:var(--sand-600);
+/* a light fill is unreadable in a chart, so data ink uses the deep step */
+--accent-ink-strong:var(--sand-700);
+--action-inverse:var(--ink-900);--action-inverse-hover:var(--ink-700);
+--action-ghost-hover:var(--gray-50);--action-ghost-press:var(--gray-150);
+
+/* ---- data visualisation ---- */
+--chart-1:var(--sand-700);--chart-2:var(--ink-900);--chart-3:var(--gray-500);
+--chart-4:var(--lilac-300);--chart-5:var(--gray-300);--chart-grid:var(--gray-200);
+--chart-track:var(--gray-200);--chart-hatch:rgba(142,135,118,.35);
+
+/* ---- brand gradients (used on covers, tags, out-of-home) ---- */
+--gradient-mint:linear-gradient(180deg,#FFFFFF 0%,#FAF9F6 55%,#F2F0EB 100%); /* @kind color */
+--gradient-mint-soft:radial-gradient(120% 90% at 50% 120%,#E4E0D4 0%,rgba(242,240,235,0) 70%); /* @kind color */
+--gradient-ink:linear-gradient(180deg,#1C1C1F 0%,#000000 100%); /* @kind color */
+}

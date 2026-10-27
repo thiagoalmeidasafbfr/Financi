@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Financi</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/vendor/echarts.min.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="wordmark">Financi <span>controle financeiro</span></div>
+  <nav class="rail" id="nav">
+    <button data-tab="painel" class="active">Painel</button>
+    <button data-tab="fluxo">Fluxo mensal</button>
+    <button data-tab="premissas">Premissas</button>
+    <button data-tab="consignados">Consignados</button>
+    <button data-tab="comparar">Comparar cenários</button>
+    <button data-tab="lancamentos">Lançamentos</button>
+    <button data-tab="orcado">Orçado × realizado</button>
+    <button data-tab="cadastros">Cadastros</button>
+  </nav>
+  <div class="scenario-pick">
+    <span class="muted">Cenário</span>
+    <select id="scenario" aria-label="Cenário"></select>
+  </div>
+</header>
+
+<main>
+  <!-- PAINEL -->
+  <section class="tab active" id="tab-painel">
+    <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Painel do cenário</h1></div>
+    <div class="card">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">Patrimônio ao fim do horizonte · conta + investimentos + FGTS</p>
+          <div class="metric" id="hero-value">–</div>
+          <div class="caption" id="hero-caption"></div>
+        </div>
+        <div id="hero-insight"></div>
+      </div>
+    </div>
+    <div class="tiles" id="kpi-tiles"></div>
+    <div class="card">
+      <div class="card-head">
+        <p class="eyebrow">Para onde vai o dinheiro</p>
+        <div class="row" style="margin:0">
+          <div class="segmented" id="sankey-mode">
+            <button data-mode="all" class="active">Período inteiro</button>
+            <button data-mode="month">Mês</button>
+          </div>
+          <select id="sankey-month" hidden aria-label="Mês do Sankey"></select>
+        </div>
+      </div>
+      <p class="hint">Fontes de receita → receitas → grupos de gasto → categorias. Passe o mouse para ver valores.</p>
+      <div id="chart-sankey" class="chart tall"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><p class="eyebrow">Saldo em conta, investido e total</p><div id="chart-balance" class="chart"></div></div>
+      <div class="card"><p class="eyebrow">Receitas × despesas por mês</p><div id="chart-flow" class="chart"></div></div>
+    </div>
+    <div class="card"><p class="eyebrow">Indicadores detalhados</p><div class="table-wrap" id="kpi-table"></div></div>
+  </section>
+
+  <!-- FLUXO -->
+  <section class="tab" id="tab-fluxo">
+    <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Fluxo mensal</h1></div>
+    <div class="card">
+      <p class="hint">Clique numa célula para editar. Linhas cinza são calculadas pelas premissas; um valor digitado nelas vira
+        <span class="badge accent">ajuste</span> daquele mês (apague para voltar ao cálculo). Use “Repetir” para lançar um valor em vários meses.</p>
+      <div class="row"><label class="pick"><input type="checkbox" id="flow-empty"> Mostrar linhas sem valores</label></div>
+      <div class="table-wrap"><table class="flow" id="flow-table"></table></div>
+    </div>
+  </section>
+
+  <!-- PREMISSAS -->
+  <section class="tab" id="tab-premissas">
+    <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Premissas do cenário</h1></div>
+    <div class="card">
+      <div class="card-head">
+        <p class="eyebrow">Cenário</p>
+        <div class="row" style="margin:0">
+          <button id="btn-new-scenario">Novo cenário</button>
+          <button id="btn-dup-scenario">Duplicar</button>
+          <button id="btn-del-scenario" class="danger">Excluir</button>
+        </div>
+      </div>
+      <form id="scenario-form" class="form"></form>
+      <div class="row" style="margin-top:16px"><button class="primary" id="btn-save-scenario">Salvar premissas</button></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <p class="eyebrow">Reajustes do salário líquido</p>
+        <p class="hint">Informe o novo salário <b>ou</b> o % de reajuste sobre o anterior.</p>
+        <table id="salary-table"></table>
+        <div class="row"><button id="btn-add-salary">Adicionar reajuste</button><button class="primary" id="btn-save-salary">Salvar</button></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Inflação anual das despesas</p>
+        <p class="hint">Aplicada no mês do reajuste quando “Aplicar inflação” estiver marcado.</p>
+        <table id="inflation-table"></table>
+        <div class="row"><button id="btn-add-infl">Adicionar ano</button><button class="primary" id="btn-save-infl">Salvar</button></div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="eyebrow">Parâmetros mês a mês</p>
+      <p class="hint">Campo vazio mantém o valor do mês anterior. Resgate manual vale só no mês informado.</p>
+      <div class="table-wrap"><table id="month-table"></table></div>
+      <div class="row"><button class="primary" id="btn-save-months">Salvar</button></div>
+    </div>
+  </section>
+
+  <!-- CONSIGNADOS -->
+  <section class="tab" id="tab-consignados">
+    <div class="page-title"><div class="crumb">Dívidas / <span data-scn></span></div><h1>Quitação de consignados</h1></div>
+    <div class="tiles" id="loan-tiles"></div>
+    <div class="card">
+      <p class="eyebrow">Quitação de cada contrato · cenário selecionado</p>
+      <p class="hint">Escolha o mês de quitação de cada contrato. Valor da quitação = valor presente das parcelas restantes à taxa do contrato.</p>
+      <div class="table-wrap"><table id="loan-table"></table></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><p class="eyebrow">Desembolso de caixa: parcelas e quitações</p><div id="chart-loan-cash" class="chart"></div></div>
+      <div class="card"><p class="eyebrow">Economia acumulada líquida · parcelas evitadas − desembolso</p><div id="chart-loan-cum" class="chart"></div></div>
+    </div>
+    <div class="card">
+      <p class="eyebrow">Comparação entre cenários</p>
+      <div class="table-wrap" id="loan-compare-table"></div>
+      <div class="grid2" style="margin-top:16px">
+        <div><p class="eyebrow">Economia acumulada líquida por cenário</p><div id="chart-loan-compare" class="chart"></div></div>
+        <div><p class="eyebrow">Desembolso, parcelas evitadas e economia por cenário</p><div id="chart-loan-bars" class="chart"></div></div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="eyebrow">Contratos</p>
+      <div class="table-wrap"><table id="contracts-table"></table></div>
+      <div class="row"><button id="btn-add-contract">Adicionar contrato</button></div>
+    </div>
+  </section>
+
+  <!-- COMPARAR -->
+  <section class="tab" id="tab-comparar">
+    <div class="page-title"><div class="crumb">Planejamento</div><h1>Comparar cenários</h1></div>
+    <div class="card">
+      <div class="row" id="compare-picks"></div>
+      <div class="table-wrap" id="compare-table"></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><p class="eyebrow">Saldo total · conta + investimentos</p><div id="chart-cmp-total" class="chart"></div></div>
+      <div class="card"><p class="eyebrow">Saldo em conta</p><div id="chart-cmp-conta" class="chart"></div></div>
+    </div>
+    <div class="card"><p class="eyebrow">Destino do dinheiro no período · totais por grupo</p><div id="chart-cmp-groups" class="chart"></div></div>
+    <h2>Sankey por cenário</h2>
+    <div class="grid2 wide" id="compare-sankeys"></div>
+  </section>
+
+  <!-- LANÇAMENTOS -->
+  <section class="tab" id="tab-lancamentos">
+    <div class="page-title"><div class="crumb">Controle</div><h1>Lançamentos realizados</h1></div>
+    <div class="card">
+      <p class="eyebrow">Novo lançamento</p>
+      <form id="tx-form" class="form">
+        <label class="field">Data<input type="date" name="date" required></label>
+        <label class="field">Descrição<input name="description" required></label>
+        <label class="field">Valor (− saída, + entrada)<input name="amount" type="number" step="0.01" required></label>
+        <label class="field">Categoria<select name="category_id"></select></label>
+        <label class="field">Conta<select name="account_id"></select></label>
+        <label class="field">&nbsp;<button class="primary" type="submit">Adicionar</button></label>
+      </form>
+    </div>
+    <div class="card">
+      <div class="row">
+        <label class="field">Mês<input type="month" id="tx-month"></label>
+        <label class="field">Importar CSV<input type="file" id="tx-csv" accept=".csv"></label>
+        <span class="hint" style="margin:18px 0 0">Colunas: data;descricao;valor;categoria;conta</span>
+      </div>
+      <div class="table-wrap"><table id="tx-table"></table></div>
+    </div>
+  </section>
+
+  <!-- ORÇADO x REALIZADO -->
+  <section class="tab" id="tab-orcado">
+    <div class="page-title"><div class="crumb">Controle / <span id="bva-scenario"></span></div><h1>Orçado × realizado</h1></div>
+    <div class="card">
+      <div class="row"><label class="field">Mês<input type="month" id="bva-month"></label></div>
+      <div class="tiles" id="bva-summary" style="margin-top:12px"></div>
+      <div class="table-wrap"><table id="bva-table"></table></div>
+    </div>
+  </section>
+
+  <!-- CADASTROS -->
+  <section class="tab" id="tab-cadastros">
+    <div class="page-title"><div class="crumb">Configurações</div><h1>Cadastros</h1></div>
+    <div class="card">
+      <p class="eyebrow">Importar planilha .xlsx</p>
+      <p class="hint">Cada aba “Fluxo Mensal - …” vira um cenário (cenários com o mesmo nome são substituídos). Contratos vêm de CLT1/CLT2 e as quitações da aba Quitações.</p>
+      <div class="row"><input type="file" id="xlsx-file" accept=".xlsx"><button class="primary" id="btn-import">Importar</button></div>
+      <pre class="report" id="import-report" hidden></pre>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <p class="eyebrow">Categorias</p>
+        <div class="table-wrap"><table id="cat-table"></table></div>
+        <div class="row"><button id="btn-add-cat">Adicionar categoria</button></div>
+      </div>
+      <div class="card">
+        <p class="eyebrow">Contas</p>
+        <table id="acc-table"></table>
+        <div class="row"><button id="btn-add-acc">Adicionar conta</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+<div class="toast" id="toast" role="status"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+:root{
+--font-weight-light:300;--font-weight-regular:400;--font-weight-medium:500;--font-weight-semibold:600;
+--text-display-size:64px;--text-display-line:1.02;--text-display-weight:600;--text-display-tracking:-.03em;
+--text-hero-size:48px;--text-hero-line:1.06;--text-hero-weight:400;--text-hero-tracking:-.02em;
+--text-metric-size:44px;--text-metric-line:1.05;--text-metric-weight:500;--text-metric-tracking:-.02em;
+--text-h1-size:36px;--text-h1-line:1.14;--text-h1-weight:600;--text-h1-tracking:-.02em;
+--text-h2-size:28px;--text-h2-line:1.2;--text-h2-weight:500;--text-h2-tracking:-.015em;
+--text-title-size:24px;--text-title-line:1.25;--text-title-weight:400;--text-title-tracking:-.01em;
+--text-subtitle-size:18px;--text-subtitle-line:1.35;--text-subtitle-weight:400;
+--text-body-size:14px;--text-body-line:1.5;--text-body-weight:400;
+--text-body-sm-size:12px;--text-body-sm-line:1.5;--text-body-sm-weight:400;
+--text-caption-size:11px;--text-caption-line:1.4;--text-caption-weight:400;
+--text-overline-size:10px;--text-overline-line:1.2;--text-overline-weight:400;--text-overline-tracking:.09em;
+}
