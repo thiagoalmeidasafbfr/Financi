@@ -17,13 +17,35 @@ de forma que cada cenário fica guardado no banco e pode ser editado, duplicado 
 | **Orçado × realizado** | Planejado do cenário base contra os lançamentos do mês, por categoria |
 | **Cadastros** | Importar a planilha .xlsx, categorias e contas |
 
-Visual baseado no design system Glorioso Finance (tokens em `app/static/tokens/`, fonte Urbanist).
+Visual baseado no design system Glorioso Finance (tokens em `public/static/tokens/`, fonte Urbanist).
 
-## Rodando
+## Publicando no Vercel + Neon
+
+1. **Neon**: no painel do projeto, clique em **Connect**, marque **Connection pooling** e copie a connection
+   string (começa com `postgresql://` e tem `-pooler` no host). Pode usar como está: o app converte para o driver psycopg.
+2. **Vercel**: *Add New → Project*, importe este repositório do GitHub. O Vercel detecta o FastAPI pelo `index.py`
+   (não precisa mudar build nem framework).
+3. Em *Environment Variables*, antes do primeiro deploy:
+
+   | Variável | Valor |
+   | --- | --- |
+   | `DATABASE_URL` | a connection string do Neon |
+   | `FINANCI_PASSWORD` | uma senha forte: o app passa a pedir usuário e senha |
+   | `FINANCI_USER` | opcional, padrão `financi` |
+
+4. *Deploy*. As tabelas são criadas no Neon no primeiro acesso. Abra o endereço do projeto, entre com
+   o usuário e a senha e importe a planilha em **Cadastros**.
+
+Detalhes: `vercel.json` coloca a função em São Paulo (`gru1`), na mesma região do Neon (`sa-east-1`);
+os arquivos de `public/` são servidos pela CDN; `/healthz` responde sem senha.
+
+> Sem `FINANCI_PASSWORD` o app fica aberto: qualquer pessoa com o link vê seus dados.
+
+## Rodando localmente
 
 ```bash
 python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 uvicorn app.main:app --reload
 # abra http://localhost:8000  (documentação da API em /docs)
 ```
@@ -48,7 +70,7 @@ Configurado por `DATABASE_URL` (variável de ambiente ou arquivo `.env`, veja `.
 | --- | --- |
 | SQLite local (padrão) | `sqlite:///./financi.db` |
 | PostgreSQL | `postgresql+psycopg://usuario:senha@host:5432/financi` |
-| Supabase / Neon | a connection string do provedor, com o prefixo `postgresql+psycopg://` |
+| Neon / Supabase | a connection string do provedor (`postgresql://…`, convertida automaticamente) |
 
 As tabelas são criadas automaticamente na primeira execução. Para conferir a conexão:
 
@@ -56,7 +78,7 @@ As tabelas são criadas automaticamente na primeira execução. Para conferir a 
 python -m app.check_db      # mostra o banco (sem a senha), a versão e cria as tabelas
 ```
 
-### Neon
+### Neon (rodando localmente)
 
 1. No painel do projeto, clique em **Connect**, escolha o branch `production`, o banco `neondb`
    e copie a connection string (aba `.env`). Ela começa com `postgresql://` e termina com
@@ -75,8 +97,6 @@ Para testar mudanças sem mexer nos dados reais, crie um branch filho no Neon (*
 e aponte o `.env` para ele.
 
 ### Docker
-
-
 
 ```bash
 docker compose up --build    # app + PostgreSQL 16 em http://localhost:8000
@@ -133,12 +153,14 @@ app/
   services.py      banco → motor, categorias padrão, duplicação de cenário
   importer.py      importação da planilha .xlsx
   routers/         API REST (cenários, cadastros, lançamentos, relatórios)
-  static/          interface (HTML + JS + ECharts embutido)
+  index.html       interface
+public/static/     JS, CSS, tokens do design system e ECharts embutido
+index.py           entrada do Vercel
 tests/
 ```
 
 ## Próximos passos sugeridos
 
 - Migrações com Alembic, antes de alterar o schema com dados reais em produção.
-- Autenticação, se o app for publicado fora do computador local.
+- Login com contas de usuário (hoje é uma senha única via `FINANCI_PASSWORD`).
 - Conciliação automática do realizado (OFX/extrato bancário) e regras de categorização.

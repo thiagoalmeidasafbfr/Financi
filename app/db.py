@@ -19,7 +19,11 @@ def make_engine(url: str):
         return engine
     # Bancos serverless (Neon) suspendem a compute por inatividade e derrubam as
     # conexões abertas: testa a conexão antes de usar e recicla as antigas.
-    return create_engine(url, pool_pre_ping=True, pool_recycle=300)
+    connect_args = {}
+    if "-pooler." in url:
+        # pooler do Neon (PgBouncer em modo transação): não depende de prepared statements no servidor
+        connect_args["prepare_threshold"] = None
+    return create_engine(url, pool_pre_ping=True, pool_recycle=300, connect_args=connect_args)
 
 
 engine = make_engine(DATABASE_URL)
