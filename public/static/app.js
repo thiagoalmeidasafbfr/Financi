@@ -598,20 +598,33 @@ const NUM0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 
 function renderPlanner(pl) {
   const months = pl.months;
-  let h = `<thead><tr><th>R$</th>${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>`;
+  const cb = '<td class="cb"></td><td class="cb"></td><td class="cb last"></td>';
+  let h = `<thead><tr><th>R$</th><th class="cb" title="Parcela descontada por mês">Parcela</th>
+    <th class="cb" title="Parcela liberada por mês para cada R$ 1.000 usados na quitação (no mês agendado ou, sem agendamento, no primeiro mês)">Libera por R$ 1 mil</th>
+    <th class="cb last" title="Economia total (parcelas evitadas − valor da quitação) ÷ valor investido">Ganho total</th>
+    ${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>`;
   for (const [k, label, cls] of PLANNER_ROWS) {
     const sub = label.startsWith("  ");
-    h += `<tr class="${cls || ""}"><td class="${sub ? "muted" : ""}" style="${sub ? "padding-left:22px" : ""}">${label.trim()}</td>${pl.account[k].map((v) =>
+    h += `<tr class="${cls || ""}"><td class="${sub ? "muted" : ""}" style="${sub ? "padding-left:22px" : ""}">${label.trim()}</td>${cb}${pl.account[k].map((v) =>
       `<td class="${v < -0.5 ? "neg" : ""} ${sub ? "muted" : ""}">${Math.abs(v) < 0.5 ? "" : NUM0.format(v)}</td>`).join("")}</tr>`;
   }
-  h += `<tr class="group"><td>Valor para quitar em cada mês · clique para agendar</td>${months.map(() => "<td></td>").join("")}</tr>`;
+  h += `<tr class="group"><td>Valor para quitar em cada mês · clique para agendar</td><td class="cb" colspan="3">custo-benefício</td>${months.map(() => "<td></td>").join("")}</tr>`;
+  const refs = pl.contracts.map((c) => c.ref?.monthly_return || 0);
+  const best = [...refs].sort((a, b) => b - a).slice(0, 3);
   for (const c of pl.contracts) {
-    h += `<tr><td title="Parcela ${fmt2(c.installment)} · taxa ${c.monthly_rate != null ? pct(c.monthly_rate, 2) : "–"} · último desconto ${mlabel(c.last_month)}">${esc(c.name)}
-      <span class="muted">${fmt(c.installment)}/mês</span></td>`;
+    const r = c.ref;
+    const refTip = r ? `Referência: quitar em ${mlabel(r.month)} por ${fmt2(r.value)}` : "";
+    h += `<tr><td title="Taxa ${c.monthly_rate != null ? pct(c.monthly_rate, 2) : "–"} a.m. · último desconto ${mlabel(c.last_month)}">${esc(c.name)}</td>
+      <td class="cb">${fmt(c.installment)}</td>
+      <td class="cb ${r && best.includes(r.monthly_return) ? "best-cb" : ""}" title="${refTip}: cada R$ 1.000 liberam ${r ? fmt2(r.monthly_return * 1000) : "–"} de parcela por mês">${r ? `${fmt(r.monthly_return * 1000)}<span class="muted">/mês</span>` : "–"}</td>
+      ${c.monthly_rate == null
+        ? '<td class="cb last muted" title="Informe a taxa do contrato (em Contratos) para calcular o valor presente e a economia">sem taxa</td>'
+        : `<td class="cb last" title="${refTip}: economia de ${r ? fmt2(r.total_gain * r.value) : "–"} sobre o valor investido">${r ? pct(r.total_gain) : "–"}</td>`}`;
     c.cells.forEach((cell, i) => {
       if (!cell) return (h += "<td></td>");
       const cls = cell.scheduled ? "scheduled" : cell.fits ? "fits" : "nofit";
       const tip = `Quitar em ${mlabel(months[i])}: ${fmt2(cell.value)} · ${cell.remaining} parcelas restantes · juros evitados ${fmt2(cell.interest_saved)}` +
+        ` · cada R$ 1.000 liberam ${fmt2((c.installment / cell.value) * 1000)}/mês · ganho total ${pct(cell.interest_saved / cell.value)}` +
         (cell.scheduled ? " · clique para desmarcar" : " · clique para agendar");
       h += `<td class="pcell ${cls}" data-contract="${c.id}" data-month="${months[i]}" data-scheduled="${cell.scheduled ? 1 : ""}" title="${tip}">${NUM0.format(cell.value)}</td>`;
     });

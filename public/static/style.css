@@ -242,3 +242,8 @@ td.pcell.scheduled { background: var(--surface-accent); box-shadow: inset 0 0 0 
 .swatch-cell.scheduled { background: var(--surface-accent); border-color: var(--ink-900); }
 .swatch-cell.fits { background: var(--surface-card); }
 .swatch-cell.nofit { background: var(--surface-negative-soft); border-color: var(--red-400); }
+table.planner .cb { color: var(--text-secondary); background: var(--surface-sunken); }
+table.planner .cb.last { box-shadow: inset -1px 0 0 var(--border-default); }
+table.planner tr.highlight .cb { background: var(--surface-accent-soft); }
+table.planner td.best-cb { color: var(--text-primary); font-weight: var(--font-weight-semibold); }
+table.planner td.best-cb::after { content: " ●"; color: var(--series-1); font-size: 9px; }

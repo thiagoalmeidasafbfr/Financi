@@ -182,3 +182,8 @@ def test_payoff_planner_cells_and_fit():
     assert pl["account"]["quitacoes"][m.index("2027-02-01")] == pytest.approx(2158.87, abs=0.01)
     # com salário de 10 mil e sem despesas, qualquer quitação cabe no saldo
     assert all(c["fits"] for c in cells if c)
+    # custo-benefício no mês agendado (mesmos números da aba Quitações)
+    ref = pl["contracts"][0]["ref"]
+    assert ref["month"] == "2027-02-01"
+    assert ref["monthly_return"] * 1000 == pytest.approx(364.89 / 2158.87 * 1000, abs=0.01)
+    assert ref["total_gain"] == pytest.approx(395.36 / 2158.87, abs=1e-4)

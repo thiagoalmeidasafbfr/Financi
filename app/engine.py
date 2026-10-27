@@ -189,10 +189,22 @@ def payoff_planner(projection: dict, loans: list[LoanIn]) -> dict:
             cells.append({"value": a["payoff_value"], "remaining": a["remaining"],
                           "interest_saved": a["interest_saved"], "scheduled": scheduled,
                           "fits": a["payoff_value"] <= room + 0.005})
+        # custo-benefício no mês de referência: o agendado ou, sem agendamento, o primeiro mês possível
+        ref_i = next((i for i, c in enumerate(cells) if c and c["scheduled"]), None)
+        if ref_i is None:
+            ref_i = next((i for i, c in enumerate(cells) if c and c["value"] > 0), None)
+        ref = None
+        if ref_i is not None:
+            c = cells[ref_i]
+            ref = {"month": projection["months"][ref_i], "value": c["value"],
+                   # R$ de parcela liberada por mês para cada R$ investido na quitação
+                   "monthly_return": loan.installment / c["value"],
+                   # economia total (parcelas evitadas − quitação) ÷ valor investido
+                   "total_gain": c["interest_saved"] / c["value"]}
         contracts.append({"id": loan.id, "name": loan.name, "installment": loan.installment,
                           "monthly_rate": loan.monthly_rate, "last_month": loan.last_month.isoformat(),
                           "payoff_month": loan.payoff_month.isoformat() if loan.payoff_month else None,
-                          "cells": cells})
+                          "ref": ref, "cells": cells})
     consig = next((r["values"] for r in projection["rows"] if r["kind"] == "consignados"), [0.0] * len(months))
     return {
         "months": projection["months"],
