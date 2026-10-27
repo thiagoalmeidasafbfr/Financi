@@ -215,3 +215,13 @@ table.flow td { padding-top: 5px; padding-bottom: 5px; }
 table.flow .rowtools button { height: 20px; padding: 0 6px; font-size: 11px; }
 #salary-table input, #inflation-table input { width: 100%; min-width: 0; }
 #salary-table td:last-child, #inflation-table td:last-child { width: 1%; }
+
+/* aviso de configuração e primeiro acesso */
+.banner {
+  margin: 0 var(--gutter-screen); padding: var(--space-3) var(--space-4); border-radius: var(--radius-lg);
+  background: var(--surface-negative-soft); color: var(--text-primary); display: grid; gap: var(--space-2);
+}
+.onboarding { padding: var(--space-7) var(--gutter-card); background: var(--gradient-mint); }
+.two-part { font-size: var(--text-h2-size); line-height: var(--text-h2-line); letter-spacing: var(--text-h2-tracking); margin: 0 0 var(--space-3); }
+.two-part span { display: block; font-weight: var(--font-weight-regular); }
+.two-part b { display: block; font-weight: var(--font-weight-semibold); }

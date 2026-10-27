@@ -180,10 +180,9 @@ async function loadProjection() {
 
 async function refresh() {
   $$("[data-scn]").forEach((el) => (el.textContent = currentScenario()?.name || "sem cenário"));
-  if (!state.current) {
-    $("#hero-value").textContent = "–";
-    $("#hero-caption").textContent = "Nenhum cenário. Importe sua planilha em Cadastros ou crie um cenário em Premissas.";
-  }
+  const empty = !state.scenarios.length;
+  $("#empty-state").hidden = !empty;
+  $("#painel-content").hidden = empty;
   await loadProjection();
   await (RENDER[state.tab] || (() => {}))();
 }
@@ -874,24 +873,29 @@ $("#btn-add-acc").onclick = () => {
   state.accounts.push({ id: "", name: "", type: "corrente", opening_balance: 0 });
   renderCadastros();
 };
-$("#btn-import").onclick = async () => {
-  const f = $("#xlsx-file").files[0];
+async function importXlsx(input, button, report) {
+  const f = input.files[0];
   if (!f) return toast("Escolha o arquivo .xlsx");
   const fd = new FormData();
   fd.append("file", f);
-  $("#btn-import").disabled = true;
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = "Importando…";
   try {
     const r = await api("POST", "/api/import/xlsx", fd);
-    const rep = $("#import-report");
-    rep.hidden = false;
-    rep.textContent = r.report.join("\n");
+    report.hidden = false;
+    report.textContent = r.report.join("\n");
     toast("Planilha importada");
     await loadBase();
     await refresh();
   } finally {
-    $("#btn-import").disabled = false;
+    button.disabled = false;
+    button.textContent = label;
   }
-};
+}
+$("#btn-import").onclick = () => importXlsx($("#xlsx-file"), $("#btn-import"), $("#import-report"));
+$("#btn-empty-import").onclick = () => importXlsx($("#empty-xlsx"), $("#btn-empty-import"), $("#empty-report"));
+$("#btn-empty-new").onclick = () => $("#btn-new-scenario").click();
 
 // ------------------------------------------------------------------ navegação
 const RENDER = {
@@ -925,7 +929,18 @@ $("#sankey-mode").addEventListener("click", (e) => {
 });
 $("#sankey-month").addEventListener("change", drawPainelSankey);
 
+async function checkStatus() {
+  const st = await api("GET", "/api/status");
+  const warn = [];
+  if (st.hosted && !st.auth) warn.push("Este endereço está público e sem senha: qualquer pessoa com o link vê seus dados. Defina FINANCI_PASSWORD nas variáveis de ambiente do Vercel e faça um novo deploy.");
+  if (st.hosted && st.database === "sqlite") warn.push("DATABASE_URL não está definida: os dados não ficam salvos. Configure a connection string do Neon no Vercel.");
+  const el = $("#security-banner");
+  el.hidden = !warn.length;
+  el.innerHTML = warn.map((w) => `<div><span class="badge negative">atenção</span> ${esc(w)}</div>`).join("");
+}
+
 (async function init() {
+  checkStatus();
   await loadBase();
   const tab = location.hash.slice(1);
   if (RENDER[tab]) showTab(tab);

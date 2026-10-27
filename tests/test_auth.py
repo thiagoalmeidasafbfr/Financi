@@ -17,3 +17,10 @@ def test_password_required_when_configured(client, monkeypatch):
     assert client.get("/api/scenarios", headers=basic("financi", "errada")).status_code == 401
     assert client.get("/api/scenarios", headers=basic("financi", "s3gredo")).status_code == 200
     assert client.get("/healthz").status_code == 200  # health check do Render fica aberto
+
+
+def test_status_reports_missing_password_when_hosted(client, monkeypatch):
+    monkeypatch.delenv("FINANCI_PASSWORD", raising=False)
+    monkeypatch.setenv("VERCEL", "1")
+    st = client.get("/api/status").json()
+    assert st == {"database": st["database"], "auth": False, "hosted": True}

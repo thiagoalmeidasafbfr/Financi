@@ -26,10 +26,24 @@
   </div>
 </header>
 
+<div class="banner" id="security-banner" hidden></div>
 <main>
   <!-- PAINEL -->
   <section class="tab active" id="tab-painel">
     <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Painel do cenário</h1></div>
+    <div class="card onboarding" id="empty-state" hidden>
+      <p class="eyebrow">Primeiro acesso</p>
+      <h2 class="two-part"><span>O banco ainda está vazio.</span><b>Comece importando sua planilha.</b></h2>
+      <p class="hint">Cada aba “Fluxo Mensal - …” vira um cenário, com os consignados e as quitações. Ao final aparece a conferência com os totais da planilha.</p>
+      <div class="row">
+        <input type="file" id="empty-xlsx" accept=".xlsx" aria-label="Planilha .xlsx">
+        <button class="primary" id="btn-empty-import">Importar planilha</button>
+        <span class="muted">ou</span>
+        <button id="btn-empty-new">Criar cenário do zero</button>
+      </div>
+      <pre class="report" id="empty-report" hidden></pre>
+    </div>
+    <div id="painel-content">
     <div class="card">
       <div class="hero">
         <div>
@@ -60,6 +74,7 @@
       <div class="card"><p class="eyebrow">Receitas × despesas por mês</p><div id="chart-flow" class="chart"></div></div>
     </div>
     <div class="card"><p class="eyebrow">Indicadores detalhados</p><div class="table-wrap" id="kpi-table"></div></div>
+    </div>
   </section>
 
   <!-- FLUXO -->

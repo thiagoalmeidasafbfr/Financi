@@ -59,6 +59,16 @@ def healthz():
     return {"ok": True}
 
 
+@app.get("/api/status", tags=["status"])
+def status():
+    """Usado pela interface para avisar sobre configuração insegura ao publicar."""
+    return {
+        "database": engine.dialect.name,
+        "auth": bool(os.environ.get("FINANCI_PASSWORD")),
+        "hosted": bool(os.environ.get("VERCEL")),
+    }
+
+
 app.include_router(scenarios.router)
 app.include_router(catalog.router)
 app.include_router(transactions.router)
