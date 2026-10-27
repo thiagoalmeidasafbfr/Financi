@@ -255,3 +255,6 @@ td.pcell.after:hover::after { content: "mover para cá"; color: var(--text-muted
 /* seletor de período */
 .period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--gutter-card); }
 .period-bar select { height: var(--control-h-sm); }
+label.field .help { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; border-radius: 50%;
+  border: 1px solid var(--border-default); font-size: 9px; color: var(--text-muted); cursor: help; margin-left: 2px; }
+label.field[title] { cursor: help; }

@@ -587,11 +587,30 @@ const SCN_FIELDS = [
   ["initial_invested", "Saldo inicial investido (R$)", "money"],
 ];
 
+// [exemplo no campo, explicação ao passar o mouse]
+const FIELD_HELP = {
+  months: ["26", "Quantos meses o cenário projeta a partir do mês inicial"],
+  gross_salary: ["12000", "Usado só para o depósito de FGTS (alíquota × salário bruto); o fluxo usa o salário líquido dos reajustes"],
+  bonus_salaries: ["1,5", "Bônus = este número × salário líquido do mês do bônus. Vazio ou 0 = sem bônus"],
+  bonus_month: ["3", "Mês do ano em que o bônus cai (1 = janeiro … 12 = dezembro)"],
+  ir_month: ["5", "Mês do ano em que a restituição cai (1–12). Vazio = sem restituição"],
+  vacation_month: ["9", "Mês do ano em que entra o 1/3 de férias (salário líquido ÷ 3). Vazio = sem 1/3"],
+  thirteenth_first_year: ["2026", "Primeiro ano em que você recebe 13º neste cenário. 13º = metade do salário líquido em cada mês de parcela. Vazio = sem 13º (ex.: MEI/PJ)"],
+  thirteenth_last_year: ["2028", "Último ano em que você recebe 13º (normalmente o último ano do horizonte). Vazio = sem 13º"],
+  thirteenth_month_1: ["11", "Mês da 1ª parcela do 13º (normalmente 11 = novembro)"],
+  thirteenth_month_2: ["12", "Mês da 2ª parcela do 13º (normalmente 12 = dezembro)"],
+  inflation_month: ["6", "Mês do ano em que a inflação das despesas é aplicada"],
+  invest_pct: ["90", "Quanto do saldo vai para investimentos todo mês (pode variar mês a mês em Parâmetros mês a mês)"],
+  min_balance: ["1000", "Valor que sempre fica em conta; abaixo disso o app resgata dos investimentos"],
+  invest_return_monthly: ["1,1", "Rentabilidade mensal dos investimentos, em % ao mês"],
+};
+
 function scenarioFormHTML(sc) {
   return SCN_FIELDS.map(([k, label, t]) => {
     const v = sc[k];
+    const [ph, tip] = FIELD_HELP[k] || ["", ""];
     if (t === "bool") return `<label class="field check"><input type="checkbox" name="${k}" ${v ? "checked" : ""}>${label}</label>`;
-    if (t === "mode") return `<label class="field">${label}<select name="${k}">
+    if (t === "mode") return `<label class="field" title="% do saldo acima do mínimo: investe parte de tudo que está em conta acima do saldo mínimo. % da sobra do mês: investe parte só do que sobrou no mês (regra das abas antigas)"><span>${label} <span class="help">?</span></span><select name="${k}">
       <option value="excedente" ${v === "excedente" ? "selected" : ""}>% do saldo acima do mínimo</option>
       <option value="saldo_mes" ${v === "saldo_mes" ? "selected" : ""}>% da sobra do mês</option></select></label>`;
     let val = v ?? "";
@@ -599,7 +618,8 @@ function scenarioFormHTML(sc) {
     if (t === "pct" && v != null) val = +(v * 100).toFixed(4);
     const type = t === "month" ? "month" : t === "text" ? "text" : "number";
     const step = t === "int" ? "1" : "any";
-    return `<label class="field">${label}<input name="${k}" type="${type}" step="${step}" value="${esc(val)}"></label>`;
+    return `<label class="field" ${tip ? `title="${esc(tip)}"` : ""}><span>${label}${tip ? ' <span class="help">?</span>' : ""}</span>
+      <input name="${k}" type="${type}" step="${step}" value="${esc(val)}" ${ph ? `placeholder="ex.: ${esc(ph)}"` : ""}></label>`;
   }).join("");
 }
 
