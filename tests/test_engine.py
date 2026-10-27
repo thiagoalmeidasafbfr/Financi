@@ -210,3 +210,29 @@ def test_best_payoffs_maximizes_freed_installment_within_budget():
     # contrato já quitado antes do mês não é candidato
     loans[0].payoff_month = date(2026, 11, 1)
     assert 1 not in {c["id"] for c in eng.best_payoffs(loans, m, 1e9)["candidates"]}
+
+
+def test_waterfall_bridges_total_balance_and_period_slice():
+    entries = {(5, eng.add_months(START, i)): 3000.0 for i in range(14)}
+    sc = scenario(entries=entries, invest_pct=0.5, min_balance=500, invest_return_monthly=0.01,
+                  initial_balance=2000, initial_invested=1000)
+    full = eng.project(sc)
+    w = full["waterfall"]
+    assert w["start"] == 3000
+    assert w["start"] + sum(x["value"] for x in w["steps"]) == pytest.approx(w["end"])
+
+    part = eng.slice_projection(full, sc, date(2027, 3, 1), date(2027, 8, 1))
+    m = full["months"]
+    i, j = m.index("2027-03-01"), m.index("2027-08-01")
+    assert part["months"] == m[i:j + 1]
+    assert part["kpis"]["n_meses"] == 6
+    # saldos iniciais do período = fim do mês anterior
+    assert part["kpis"]["saldo_inicial_conta"] == pytest.approx(full["series"]["saldo_conta"][i - 1])
+    assert part["waterfall"]["start"] == pytest.approx(full["series"]["saldo_total"][i - 1])
+    assert part["waterfall"]["end"] == pytest.approx(full["series"]["saldo_total"][j])
+    pw = part["waterfall"]
+    assert pw["start"] + sum(x["value"] for x in pw["steps"]) == pytest.approx(pw["end"])
+    aluguel = next(r for r in part["rows"] if r["name"] == "Aluguel")
+    assert aluguel["total"] == 3000 * 6
+    with pytest.raises(ValueError):
+        eng.slice_projection(full, sc, date(2030, 1, 1), None)

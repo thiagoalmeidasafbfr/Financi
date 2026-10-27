@@ -8,7 +8,7 @@ de forma que cada cenário fica guardado no banco e pode ser editado, duplicado 
 
 | Tela | O que faz |
 | --- | --- |
-| **Painel** | Patrimônio final, KPIs, **Sankey de para onde vai o dinheiro** (período inteiro ou um mês), saldos e receitas × despesas |
+| **Painel** | **Seletor de período** (de X a Y, ano, próximos 12 meses), patrimônio e KPIs do período, **Sankey** de para onde vai o dinheiro, **waterfall** do saldo (inicial → receitas → despesas → rendimentos → final) e linhas de receitas, despesas, saldo conta + investido e FGTS |
 | **Fluxo mensal** | Grade editável mês a mês: receitas, despesas fixas, dívidas, variáveis, investimentos e visão consolidada. **+ Nova linha** em cada grupo; renomear e remover linhas |
 | **Premissas** | Parâmetros do cenário, reajustes de salário, inflação, % a investir / saldo mínimo / rentabilidade mês a mês |
 | **Consignados** | **Desafogar o caixa**: informe mês e valor disponível e o app escolhe a combinação de quitações que libera a maior parcela mensal (todas as combinações testadas). Planejador mês a mês da conta com clique para agendar. Quitação de cada contrato por cenário: valor de quitação (VP), **desembolso de caixa**, parcelas evitadas, juros evitados, payback e **comparação de economia entre cenários** |

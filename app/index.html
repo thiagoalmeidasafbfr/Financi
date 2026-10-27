@@ -32,6 +32,7 @@
   <!-- PAINEL -->
   <section class="tab active" id="tab-painel">
     <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Painel do cenário</h1></div>
+    <div class="period-bar card"></div>
     <div class="card onboarding" id="empty-state" hidden>
       <p class="eyebrow">Primeiro acesso</p>
       <h2 class="two-part"><span>O banco ainda está vazio.</span><b>Comece importando sua planilha.</b></h2>
@@ -48,7 +49,7 @@
     <div class="card">
       <div class="hero">
         <div>
-          <p class="eyebrow">Patrimônio ao fim do horizonte · conta + investimentos + FGTS</p>
+          <p class="eyebrow" id="hero-eyebrow">Patrimônio ao fim do período · conta + investimentos + FGTS</p>
           <div class="metric" id="hero-value">–</div>
           <div class="caption" id="hero-caption"></div>
         </div>
@@ -61,7 +62,7 @@
         <p class="eyebrow">Para onde vai o dinheiro</p>
         <div class="row" style="margin:0">
           <div class="segmented" id="sankey-mode">
-            <button data-mode="all" class="active">Período inteiro</button>
+            <button data-mode="all" class="active">Período selecionado</button>
             <button data-mode="month">Mês</button>
           </div>
           <select id="sankey-month" hidden aria-label="Mês do Sankey"></select>
@@ -71,8 +72,12 @@
       <div id="chart-sankey" class="chart tall"></div>
     </div>
     <div class="grid2">
-      <div class="card"><p class="eyebrow">Saldo em conta, investido e total</p><div id="chart-balance" class="chart"></div></div>
-      <div class="card"><p class="eyebrow">Receitas × despesas por mês</p><div id="chart-flow" class="chart"></div></div>
+      <div class="card"><p class="eyebrow">Ponte do saldo no período · conta + investimentos</p>
+        <p class="hint">Do saldo inicial ao final: investir e resgatar só movem dinheiro entre conta e investimentos, por isso não aparecem.</p>
+        <div id="chart-waterfall" class="chart"></div></div>
+      <div class="card"><p class="eyebrow">Receitas, despesas, saldo (conta + investido) e FGTS</p>
+        <p class="hint">Receitas e despesas são do mês; saldo e FGTS são acumulados no fim de cada mês.</p>
+        <div id="chart-lines" class="chart"></div></div>
     </div>
     <div class="card"><p class="eyebrow">Indicadores detalhados</p><div class="table-wrap" id="kpi-table"></div></div>
     </div>
@@ -81,6 +86,7 @@
   <!-- FLUXO -->
   <section class="tab" id="tab-fluxo">
     <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Fluxo mensal</h1></div>
+    <div class="period-bar card"></div>
     <div class="card">
       <p class="hint">Clique numa célula para editar. Linhas cinza são calculadas pelas premissas; um valor digitado nelas vira
         <span class="badge accent">ajuste</span> daquele mês (apague para voltar ao cálculo). Use “Repetir” para lançar um valor em vários meses.</p>

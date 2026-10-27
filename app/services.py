@@ -116,8 +116,13 @@ def scenario_input(db: Session, sc: Scenario) -> eng.ScenarioIn:
     )
 
 
-def project_scenario(db: Session, sc: Scenario) -> dict:
-    result = eng.project(scenario_input(db, sc))
+def project_scenario(db: Session, sc: Scenario, start=None, end=None) -> dict:
+    """Projeção do cenário; com start/end, recortada nesse período (KPIs e totais do período)."""
+    inp = scenario_input(db, sc)
+    result = eng.project(inp)
+    result["horizon"] = {"start": result["months"][0], "end": result["months"][-1]} if result["months"] else None
+    if start or end:
+        result = eng.slice_projection(result, inp, start, end)
     result["scenario"] = {"id": sc.id, "name": sc.name}
     return result
 

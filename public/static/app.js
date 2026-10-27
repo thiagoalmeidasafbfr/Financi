@@ -147,7 +147,7 @@ function renderSankey(id, data, compact = false) {
 // ------------------------------------------------------------------ estado
 const state = {
   scenarios: [], categories: [], accounts: [], loans: [],
-  current: null, projection: null, tab: "painel", arrears: [], newLines: new Set(), sug: { month: null, result: null },
+  current: null, projection: null, view: null, period: { start: null, end: null }, tab: "painel", arrears: [], newLines: new Set(), sug: { month: null, result: null },
   sankeyMonth: null, compareIds: null,
 };
 const GROUPS = {
@@ -176,8 +176,80 @@ async function loadBase() {
 const currentScenario = () => state.scenarios.find((s) => s.id === state.current);
 
 async function loadProjection() {
-  state.projection = state.current ? await api("GET", `/api/scenarios/${state.current}/projection`) : null;
+  if (!state.current) {
+    state.projection = state.view = null;
+    return;
+  }
+  state.projection = await api("GET", `/api/scenarios/${state.current}/projection`);
+  const months = state.projection.months;
+  let { start, end } = state.period;
+  if (start && !months.includes(start)) start = null;
+  if (end && !months.includes(end)) end = null;
+  if (start && end && start > end) [start, end] = [end, start];
+  state.period = { start, end };
+  // Painel e Fluxo usam o recorte do período; as demais telas usam o horizonte inteiro
+  state.view = start || end
+    ? await api("GET", `/api/scenarios/${state.current}/projection?${periodQuery()}`)
+    : state.projection;
 }
+
+function periodQuery() {
+  const q = new URLSearchParams();
+  if (state.period.start) q.set("start", state.period.start);
+  if (state.period.end) q.set("end", state.period.end);
+  return q.toString();
+}
+
+function periodPresets(months) {
+  const presets = [["Horizonte todo", null, null]];
+  const today = new Date().toISOString().slice(0, 7) + "-01";
+  const from = months.find((m) => m >= today);
+  if (from) {
+    const i = months.indexOf(from);
+    presets.push(["Próximos 12 meses", from, months[Math.min(i + 11, months.length - 1)]]);
+  }
+  for (const y of [...new Set(months.map((m) => m.slice(0, 4)))]) {
+    const ms = months.filter((m) => m.startsWith(y));
+    presets.push([y, ms[0], ms[ms.length - 1]]);
+  }
+  return presets;
+}
+
+function renderPeriodBars() {
+  const months = state.projection?.months || [];
+  const { start, end } = state.period;
+  const s = start || months[0], e = end || months[months.length - 1];
+  const opts = (sel) => months.map((m) => `<option value="${m}" ${m === sel ? "selected" : ""}>${mlabel(m)}</option>`).join("");
+  const presets = periodPresets(months);
+  $$(".period-bar").forEach((bar) => {
+    bar.innerHTML = `<span class="eyebrow" style="margin:0">Período</span>
+      <select data-p="start" aria-label="Início do período">${opts(s)}</select><span class="muted">a</span>
+      <select data-p="end" aria-label="Fim do período">${opts(e)}</select>
+      <div class="segmented">${presets.map(([label, a, b]) =>
+        `<button data-a="${a || ""}" data-b="${b || ""}" class="${(a || null) === start && (b || null) === end ? "active" : ""}">${label}</button>`).join("")}</div>
+      <span class="muted">${state.view ? `${state.view.months.length} meses` : ""}</span>`;
+  });
+}
+
+async function setPeriod(start, end) {
+  const months = state.projection?.months || [];
+  // período igual ao horizonte inteiro = sem recorte
+  state.period = {
+    start: start && start !== months[0] ? start : null,
+    end: end && end !== months[months.length - 1] ? end : null,
+  };
+  await refresh();
+}
+
+document.addEventListener("change", (e) => {
+  const bar = e.target.closest(".period-bar");
+  if (!bar || !e.target.dataset.p) return;
+  setPeriod(bar.querySelector('[data-p="start"]').value, bar.querySelector('[data-p="end"]').value);
+});
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".period-bar .segmented button");
+  if (b) setPeriod(b.dataset.a || null, b.dataset.b || null);
+});
 
 async function refresh() {
   $$("[data-scn]").forEach((el) => (el.textContent = currentScenario()?.name || "sem cenário"));
@@ -185,6 +257,7 @@ async function refresh() {
   $("#empty-state").hidden = !empty;
   $("#painel-content").hidden = empty;
   await loadProjection();
+  renderPeriodBars();
   await (RENDER[state.tab] || (() => {}))();
 }
 
@@ -214,9 +287,11 @@ const KPI_LABELS = [
 const kfmt = (v, t) => (t === "m" ? mlabel(v) : t === "n" ? String(v ?? "–") : t === "p" ? pct(v) : fmt(v));
 
 async function renderPainel() {
-  const p = state.projection;
+  const p = state.view;
   if (!p) return;
   const k = p.kpis, s = p.series, months = p.months;
+  const whole = !state.period.start && !state.period.end;
+  $("#hero-eyebrow").textContent = `Patrimônio ao fim ${whole ? "do horizonte" : `de ${mlabel(k.mes_final)}`} · conta + investimentos + FGTS`;
   $("#hero-value").textContent = fmt(k.patrimonio_final);
   $("#hero-caption").textContent = `${mlabel(k.mes_inicial)} a ${mlabel(k.mes_final)} · ${k.n_meses} meses`;
   const neg = k.meses_saldo_negativo;
@@ -241,26 +316,18 @@ async function renderPainel() {
   if (state.sankeyMonth && months.includes(state.sankeyMonth)) mSel.value = state.sankeyMonth;
   await drawPainelSankey();
 
-  // saldo
+  renderWaterfall(p.waterfall, k);
   const pal = SERIES();
-  const c1 = chart("chart-balance");
-  c1.setOption({
+  const line = (name, data, color, extra = {}) => ({ name, type: "line", data, color, symbol: "none", lineStyle: { width: 2 }, ...extra });
+  chart("chart-lines").setOption({
     ...baseOption(),
     xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
     series: [
-      { name: "Saldo total", type: "line", data: s.saldo_total, color: css("--ink-900"), symbol: "none", lineStyle: { width: 2 } },
-      { name: "Em conta", type: "line", data: s.saldo_conta, color: pal[0], symbol: "none", lineStyle: { width: 2 } },
-      { name: "Investido", type: "line", data: s.inv_saldo_fim, color: pal[1], symbol: "none", lineStyle: { width: 2 } },
-    ],
-  }, true);
-
-  const c2 = chart("chart-flow");
-  c2.setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
-    series: [
-      { name: "Receitas", type: "bar", data: s.receitas, color: pal[0], barGap: "8%", itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Despesas", type: "bar", data: s.total_despesas, color: css("--ink-900"), itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      line("Receitas", s.receitas, pal[0]),
+      line("Despesas", s.total_despesas, pal[1]),
+      line("Saldo conta + investido", s.saldo_total, css("--ink-900"), { lineStyle: { width: 2.5 },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } }),
+      line("FGTS", s.fgts_saldo, pal[2], { lineStyle: { width: 2, type: "dashed" } }),
     ],
   }, true);
 
@@ -273,14 +340,61 @@ async function renderPainel() {
   $("#kpi-table").innerHTML = html + "</table>";
 }
 
+function renderWaterfall(w, k) {
+  const cats = ["Saldo inicial", ...w.steps.map((x) => x.label), "Saldo final"];
+  const items = [];
+  let run = w.start;
+  items.push({ y0: 0, y1: w.start, v: w.start, kind: "total" });
+  for (const st of w.steps) {
+    items.push({ y0: run, y1: run + st.value, v: st.value, kind: st.value >= 0 ? "up" : "down" });
+    run += st.value;
+  }
+  items.push({ y0: 0, y1: w.end, v: w.end, kind: "total" });
+  const color = { total: css("--ink-900"), up: css("--series-2"), down: css("--red-500") };
+  const signed = (v, kind) => (kind === "total" ? fmt(v) : `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`);
+  chart("chart-waterfall").setOption({
+    ...baseOption(),
+    legend: { show: false },
+    grid: { left: 8, right: 16, top: 30, bottom: 8, containLabel: true },
+    tooltip: { ...baseOption().tooltip, trigger: "item", formatter: (p) => {
+      const it = items[p.dataIndex];
+      return `${cats[p.dataIndex]}<br><b>${signed(it.v, it.kind)}</b>` +
+        (p.dataIndex === 0 ? `<br><span style="color:${css("--text-muted")}">fim de ${mlabel(prevMonth(k.mes_inicial))}</span>` : "") +
+        (p.dataIndex === items.length - 1 ? `<br><span style="color:${css("--text-muted")}">fim de ${mlabel(k.mes_final)}</span>` : "");
+    } },
+    xAxis: { ...baseOption().xAxis, data: cats, axisLabel: { color: css("--text-secondary"), interval: 0, width: 80, overflow: "break", fontSize: 11 } },
+    series: [{
+      type: "custom",
+      data: items.map((it, i) => [i, it.y0, it.y1]),
+      renderItem: (params, api) => {
+        const i = api.value(0), a = api.coord([i, api.value(1)]), b = api.coord([i, api.value(2)]);
+        const w2 = api.size([1, 0])[0] * 0.56;
+        const it = items[i];
+        return {
+          type: "group",
+          children: [
+            { type: "rect", shape: { x: a[0] - w2 / 2, y: Math.min(a[1], b[1]), width: w2, height: Math.max(1, Math.abs(a[1] - b[1])), r: 3 },
+              style: { fill: color[it.kind] } },
+            { type: "text", style: { text: short(it.v), x: a[0], y: Math.min(a[1], b[1]) - 6, align: "center", verticalAlign: "bottom",
+              fill: css("--text-secondary"), font: `11px ${css("--font-core")}` } },
+          ],
+        };
+      },
+      encode: { x: 0, y: [1, 2] },
+    }],
+  }, true);
+}
+
+const prevMonth = (iso) => { const [y, m] = iso.split("-").map(Number); return m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, "0")}-01`; };
+
 async function drawPainelSankey() {
   const mode = $("#sankey-mode .active").dataset.mode;
   const sel = $("#sankey-month");
   sel.hidden = mode !== "month";
-  let url = `/api/scenarios/${state.current}/sankey`;
+  let url = `/api/scenarios/${state.current}/sankey?${periodQuery()}`;
   if (mode === "month") {
     state.sankeyMonth = sel.value;
-    url += `?month=${sel.value}`;
+    url = `/api/scenarios/${state.current}/sankey?month=${sel.value}`;
   }
   renderSankey("chart-sankey", await api("GET", url));
 }
@@ -319,7 +433,7 @@ function investYieldRows(p) {
 }
 
 function renderFluxo() {
-  const p = state.projection;
+  const p = state.view;
   if (!p) return;
   const months = p.months;
   let h = `<thead><tr><th>R$</th>${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}<th>Total</th><th>Média</th></tr></thead><tbody>`;
@@ -371,8 +485,8 @@ $("#flow-table").addEventListener("click", async (ev) => {
   const td = ev.target.closest("td.cell");
   if (!td || td.querySelector("input")) return;
   const catId = +td.parentElement.dataset.cat, i = +td.dataset.i;
-  const row = state.projection.rows.find((r) => r.category_id === catId);
-  const month = state.projection.months[i];
+  const row = state.view.rows.find((r) => r.category_id === catId);
+  const month = state.view.months[i];
   const editable = row.kind === "manual" ? row.values[i] : row.overridden[i] ? row.values[i] : "";
   td.innerHTML = `<input class="edit" value="${editable ? String(editable).replace(".", ",") : ""}">`;
   const input = td.querySelector("input");
@@ -431,8 +545,8 @@ async function clearLine(catId) {
 }
 
 async function fillRow(catId) {
-  const row = state.projection.rows.find((r) => r.category_id === catId);
-  const months = state.projection.months;
+  const row = state.view.rows.find((r) => r.category_id === catId);
+  const months = state.view.months;
   const value = prompt(`Valor para "${row.name}" (vazio = limpar):`, "");
   if (value === null) return;
   const v = parseNum(value);

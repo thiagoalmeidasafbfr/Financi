@@ -251,3 +251,7 @@ table.flow tr.info td { color: var(--text-secondary); font-size: 12px; }
 table.flow tr.info td:first-child { padding-left: 22px; }
 td.pcell.after { background: transparent; }
 td.pcell.after:hover::after { content: "mover para cá"; color: var(--text-muted); font-size: 11px; }
+
+/* seletor de período */
+.period-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--gutter-card); }
+.period-bar select { height: var(--control-h-sm); }

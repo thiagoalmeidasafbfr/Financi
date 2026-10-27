@@ -81,14 +81,24 @@ def duplicate(scenario_id: int, name: str, db: Session = Depends(get_session)):
 
 # ----------------------------------------------------------------- projeção e análises
 
+def _period(db: Session, scenario_id: int, start: date | None, end: date | None) -> dict:
+    try:
+        return project_scenario(db, _get(db, scenario_id), start, end)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from None
+
+
 @router.get("/{scenario_id}/projection")
-def projection(scenario_id: int, db: Session = Depends(get_session)):
-    return project_scenario(db, _get(db, scenario_id))
+def projection(scenario_id: int, start: date | None = None, end: date | None = None,
+               db: Session = Depends(get_session)):
+    """Projeção mês a mês. Com start/end (inclusive), totais, KPIs e waterfall valem para o período."""
+    return _period(db, scenario_id, start, end)
 
 
 @router.get("/{scenario_id}/sankey")
-def sankey(scenario_id: int, month: date | None = None, db: Session = Depends(get_session)):
-    proj = project_scenario(db, _get(db, scenario_id))
+def sankey(scenario_id: int, month: date | None = None, start: date | None = None, end: date | None = None,
+           db: Session = Depends(get_session)):
+    proj = _period(db, scenario_id, start, end)
     idx = None
     if month is not None:
         key = eng.month_start(month).isoformat()

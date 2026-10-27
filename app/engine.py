@@ -12,7 +12,7 @@ Reproduz a lógica da aba "Fluxo Mensal - BR" da planilha original:
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 GROUP_LABELS = {
@@ -540,6 +540,63 @@ def project(sc: ScenarioIn) -> dict:
         "series": s,
         "loans": loan_rows,
         "kpis": compute_kpis(months, rows, s, sc),
+        "waterfall": waterfall(s, sc.initial_balance + sc.initial_invested),
+        "period": {"start": months[0].isoformat() if months else None,
+                   "end": months[-1].isoformat() if months else None},
+    }
+
+
+def waterfall(s: dict, start_total: float) -> dict:
+    """Ponte do saldo total (conta + investimentos) no período. Investir e resgatar só movem dinheiro
+    entre conta e investimentos, então: final = inicial + receitas − despesas + rendimentos."""
+    steps = [
+        ("receitas", "Receitas", sum(s["receitas"])),
+        ("despesas_fixas", "Despesas fixas", -sum(s["despesas_fixas"])),
+        ("dividas", "Empréstimos e dívidas", -sum(s["dividas"])),
+        ("despesas_variaveis", "Despesas variáveis", -sum(s["despesas_variaveis"])),
+        ("rendimento", "Rendimentos", sum(s["inv_rendimento"])),
+    ]
+    end = s["saldo_total"][-1] if s["saldo_total"] else start_total
+    return {"start": start_total, "end": end,
+            "steps": [{"key": k, "label": label, "value": v} for k, label, v in steps]}
+
+
+def slice_projection(proj: dict, sc: ScenarioIn, start: date | None, end: date | None) -> dict:
+    """Recorta a projeção no período [start, end] e recalcula totais, KPIs e a ponte de saldos.
+    Os saldos iniciais do período são os saldos do fim do mês anterior."""
+    months = [date.fromisoformat(m) for m in proj["months"]]
+    if not months:
+        return proj
+    lo = month_start(start) if start else months[0]
+    hi = month_start(end) if end else months[-1]
+    idx = [i for i, m in enumerate(months) if lo <= m <= hi]
+    if not idx:
+        raise ValueError("Período fora do horizonte do cenário")
+    a, b = idx[0], idx[-1] + 1
+    n = b - a
+    rows = []
+    for r in proj["rows"]:
+        vals = r["values"][a:b]
+        rows.append({**r, "values": vals, "overridden": r["overridden"][a:b], "total": sum(vals),
+                     "average": sum(vals) / n})
+    s = {k: v[a:b] for k, v in proj["series"].items()}
+    prev = a - 1
+    base = replace(
+        sc,
+        initial_balance=proj["series"]["saldo_conta"][prev] if prev >= 0 else sc.initial_balance,
+        initial_invested=proj["series"]["inv_saldo_fim"][prev] if prev >= 0 else sc.initial_invested,
+        fgts_initial=proj["series"]["fgts_saldo"][prev] if prev >= 0 else sc.fgts_initial,
+    )
+    sub_months = months[a:b]
+    return {
+        **proj,
+        "months": [m.isoformat() for m in sub_months],
+        "rows": rows,
+        "series": s,
+        "kpis": compute_kpis(sub_months, rows, s, base),
+        "waterfall": waterfall(s, base.initial_balance + base.initial_invested),
+        "period": {"start": sub_months[0].isoformat(), "end": sub_months[-1].isoformat()},
+        "horizon": {"start": proj["months"][0], "end": proj["months"][-1]},
     }
 
 

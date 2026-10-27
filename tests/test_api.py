@@ -141,3 +141,16 @@ def test_payoff_suggestion_endpoint(client):
                    params={"month": "2026-11-01", "budget": 20000}).json()
     assert [c["id"] for c in r["selected"]] == [a["id"]]
     assert r["totals"]["parcela_liberada"] == 400
+
+
+def test_projection_and_sankey_for_period(client):
+    sc = make_scenario(client)
+    client.put(f"/api/scenarios/{sc['id']}/salary-changes", json=[{"start_month": "2026-11-01", "amount": 5000}])
+    p = client.get(f"/api/scenarios/{sc['id']}/projection",
+                   params={"start": "2027-01-01", "end": "2027-03-01"}).json()
+    assert p["months"] == ["2027-01-01", "2027-02-01", "2027-03-01"]
+    assert p["horizon"] == {"start": "2026-11-01", "end": "2027-10-01"}
+    assert sum(p["series"]["receitas"]) == 15000
+    sk = client.get(f"/api/scenarios/{sc['id']}/sankey", params={"start": "2027-01-01", "end": "2027-03-01"}).json()
+    assert sum(l["value"] for l in sk["links"] if l["source"] == "Salário líquido") == 15000
+    assert client.get(f"/api/scenarios/{sc['id']}/projection", params={"start": "2031-01-01"}).status_code == 400
