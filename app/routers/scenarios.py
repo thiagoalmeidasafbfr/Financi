@@ -104,6 +104,13 @@ def loans_analysis(scenario_id: int, db: Session = Depends(get_session)):
     return eng.loans_timeline(loans_for(db, scenario_id))
 
 
+@router.get("/{scenario_id}/payoff-planner")
+def payoff_planner(scenario_id: int, db: Session = Depends(get_session)):
+    """Mês a mês da conta e valor de quitação de cada contrato em cada mês do cenário."""
+    proj = project_scenario(db, _get(db, scenario_id))
+    return eng.payoff_planner(proj, loans_for(db, scenario_id))
+
+
 # ----------------------------------------------------------------- valores planejados
 
 @router.get("/{scenario_id}/entries", response_model=list[schemas.EntryIn])

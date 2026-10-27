@@ -168,6 +168,49 @@ def loan_payoff_analysis(loan: LoanIn) -> dict:
     }
 
 
+def payoff_planner(projection: dict, loans: list[LoanIn]) -> dict:
+    """Mês a mês da conta + valor para quitar cada contrato em cada mês do horizonte.
+
+    `fits` indica se a quitação cabe no saldo total (conta + investimentos) do mês;
+    a quitação já agendada naquele mês é devolvida ao saldo para não se autoexcluir."""
+    s = projection["series"]
+    months = [date.fromisoformat(m) for m in projection["months"]]
+    quit_row = next((r["values"] for r in projection["rows"] if r["kind"] == "quitacao"), [0.0] * len(months))
+    contracts = []
+    for loan in loans:
+        cells = []
+        for i, m in enumerate(months):
+            if m > month_start(loan.last_month):
+                cells.append(None)
+                continue
+            a = loan_payoff_analysis(LoanIn(**{**loan.__dict__, "payoff_month": m}))
+            scheduled = loan.payoff_month is not None and month_start(loan.payoff_month) == m
+            room = s["saldo_total"][i] + (a["payoff_value"] if scheduled else 0.0)
+            cells.append({"value": a["payoff_value"], "remaining": a["remaining"],
+                          "interest_saved": a["interest_saved"], "scheduled": scheduled,
+                          "fits": a["payoff_value"] <= room + 0.005})
+        contracts.append({"id": loan.id, "name": loan.name, "installment": loan.installment,
+                          "monthly_rate": loan.monthly_rate, "last_month": loan.last_month.isoformat(),
+                          "payoff_month": loan.payoff_month.isoformat() if loan.payoff_month else None,
+                          "cells": cells})
+    consig = next((r["values"] for r in projection["rows"] if r["kind"] == "consignados"), [0.0] * len(months))
+    return {
+        "months": projection["months"],
+        "account": {
+            "receitas": s["receitas"],
+            "despesas_sem_quitacoes": [d - q for d, q in zip(s["total_despesas"], quit_row)],
+            "parcelas_consignados": consig,
+            "quitacoes": quit_row,
+            "investimentos": s["investimentos"],
+            "resgates": [a + b for a, b in zip(s["inv_resgate_manual"], s["inv_resgate_automatico"])],
+            "saldo_conta": s["saldo_conta"],
+            "saldo_investido": s["inv_saldo_fim"],
+            "saldo_total": s["saldo_total"],
+        },
+        "contracts": contracts,
+    }
+
+
 # --------------------------------------------------------------------------- atrasos
 
 def arrear_months_late(a: ArrearIn, at: date) -> int:

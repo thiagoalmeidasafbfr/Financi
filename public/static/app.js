@@ -587,11 +587,67 @@ $("#btn-del-scenario").onclick = async () => {
 };
 
 // ------------------------------------------------------------------ CONSIGNADOS
+const PLANNER_ROWS = [
+  ["receitas", "Receitas"], ["despesas_sem_quitacoes", "Despesas (sem quitações)"],
+  ["parcelas_consignados", "  dos quais: parcelas de consignados"], ["quitacoes", "Quitações agendadas"],
+  ["investimentos", "(−) Investido no mês"], ["resgates", "(+) Resgates"],
+  ["saldo_conta", "Saldo em conta"], ["saldo_investido", "Saldo investido"],
+  ["saldo_total", "Saldo total disponível (conta + investimentos)", "highlight"],
+];
+const NUM0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+
+function renderPlanner(pl) {
+  const months = pl.months;
+  let h = `<thead><tr><th>R$</th>${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>`;
+  for (const [k, label, cls] of PLANNER_ROWS) {
+    const sub = label.startsWith("  ");
+    h += `<tr class="${cls || ""}"><td class="${sub ? "muted" : ""}" style="${sub ? "padding-left:22px" : ""}">${label.trim()}</td>${pl.account[k].map((v) =>
+      `<td class="${v < -0.5 ? "neg" : ""} ${sub ? "muted" : ""}">${Math.abs(v) < 0.5 ? "" : NUM0.format(v)}</td>`).join("")}</tr>`;
+  }
+  h += `<tr class="group"><td>Valor para quitar em cada mês · clique para agendar</td>${months.map(() => "<td></td>").join("")}</tr>`;
+  for (const c of pl.contracts) {
+    h += `<tr><td title="Parcela ${fmt2(c.installment)} · taxa ${c.monthly_rate != null ? pct(c.monthly_rate, 2) : "–"} · último desconto ${mlabel(c.last_month)}">${esc(c.name)}
+      <span class="muted">${fmt(c.installment)}/mês</span></td>`;
+    c.cells.forEach((cell, i) => {
+      if (!cell) return (h += "<td></td>");
+      const cls = cell.scheduled ? "scheduled" : cell.fits ? "fits" : "nofit";
+      const tip = `Quitar em ${mlabel(months[i])}: ${fmt2(cell.value)} · ${cell.remaining} parcelas restantes · juros evitados ${fmt2(cell.interest_saved)}` +
+        (cell.scheduled ? " · clique para desmarcar" : " · clique para agendar");
+      h += `<td class="pcell ${cls}" data-contract="${c.id}" data-month="${months[i]}" data-scheduled="${cell.scheduled ? 1 : ""}" title="${tip}">${NUM0.format(cell.value)}</td>`;
+    });
+    h += "</tr>";
+  }
+  $("#payoff-planner").innerHTML = h + "</tbody>";
+
+  const pal = SERIES();
+  chart("chart-planner").setOption({
+    ...baseOption(),
+    grid: { left: 8, right: 16, top: 30, bottom: 4, containLabel: true },
+    xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
+    series: [
+      { name: "Saldo total (conta + investimentos)", type: "line", data: pl.account.saldo_total, color: css("--ink-900"), symbol: "none", lineStyle: { width: 2 },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
+      { name: "Quitações agendadas", type: "bar", data: pl.account.quitacoes, color: pal[0], barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
+    ],
+  }, true);
+}
+
+$("#payoff-planner").addEventListener("click", async (e) => {
+  const td = e.target.closest("td.pcell");
+  if (!td) return;
+  const month = td.dataset.scheduled ? null : td.dataset.month;
+  await api("PUT", `/api/scenarios/${state.current}/payoffs`, [{ contract_id: +td.dataset.contract, payoff_month: month }]);
+  toast(month ? `Quitação agendada para ${mlabel(month)}` : "Quitação desmarcada");
+  await refresh();
+});
+
 async function renderConsignados() {
   if (!state.current) return;
-  const [t, cmp] = await Promise.all([
+  const [t, cmp, pl] = await Promise.all([
     api("GET", `/api/scenarios/${state.current}/loans`), api("GET", "/api/reports/loans-compare"),
+    api("GET", `/api/scenarios/${state.current}/payoff-planner`),
   ]);
+  renderPlanner(pl);
   const T = t.totals || {};
   $("#loan-tiles").innerHTML = [
     ["Desembolso com quitações", fmt(T.desembolso_quitacoes), "saída de caixa nos meses de quitação"],

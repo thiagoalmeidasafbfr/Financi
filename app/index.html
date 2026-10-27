@@ -131,6 +131,21 @@
     <div class="page-title"><div class="crumb">Dívidas / <span data-scn></span></div><h1>Quitação de consignados</h1></div>
     <div class="tiles" id="loan-tiles"></div>
     <div class="card">
+      <div class="card-head">
+        <p class="eyebrow">Planejador de quitações · mês a mês da conta</p>
+        <div class="legend">
+          <span><span class="swatch-cell scheduled"></span>quitação agendada</span>
+          <span><span class="swatch-cell fits"></span>cabe no saldo do mês</span>
+          <span><span class="swatch-cell nofit"></span>não cabe</span>
+        </div>
+      </div>
+      <p class="hint">Em cima, o caixa do cenário em cada mês (já com as quitações agendadas). Embaixo, quanto custa quitar cada contrato
+        em cada mês: <b>clique na célula para agendar</b> a quitação naquele mês; clique de novo para desmarcar.
+        “Cabe” compara o valor com o saldo total (conta + investimentos) do fim do mês.</p>
+      <div id="chart-planner" class="chart" style="height:240px"></div>
+      <div class="table-wrap"><table class="flow planner" id="payoff-planner"></table></div>
+    </div>
+    <div class="card">
       <p class="eyebrow">Quitação de cada contrato · cenário selecionado</p>
       <p class="hint">Escolha o mês de quitação de cada contrato. Valor da quitação = valor presente das parcelas restantes à taxa do contrato.</p>
       <div class="table-wrap"><table id="loan-table"></table></div>

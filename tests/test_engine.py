@@ -167,3 +167,18 @@ def test_arrear_plan_enters_cash_flow():
     assert s["totals"]["em_aberto"] == 2
     assert s["totals"]["sem_plano"] == 72
     assert s["totals"]["planejado"] == pytest.approx(each * 3)
+
+
+def test_payoff_planner_cells_and_fit():
+    loan = eng.LoanIn(1, "PAN", 364.89, date(2026, 10, 1), date(2027, 8, 1), 0.0439, payoff_month=date(2027, 2, 1))
+    sc = scenario(loans=[loan], categories=CATS)
+    pl = eng.payoff_planner(eng.project(sc), [loan])
+    m = pl["months"]
+    cells = pl["contracts"][0]["cells"]
+    feb = cells[m.index("2027-02-01")]
+    assert feb["scheduled"] and round(feb["value"], 2) == 2158.87
+    assert cells[m.index("2027-08-01")]["remaining"] == 1
+    assert cells[m.index("2027-09-01")] is None  # contrato já terminou
+    assert pl["account"]["quitacoes"][m.index("2027-02-01")] == pytest.approx(2158.87, abs=0.01)
+    # com salário de 10 mil e sem despesas, qualquer quitação cabe no saldo
+    assert all(c["fits"] for c in cells if c)

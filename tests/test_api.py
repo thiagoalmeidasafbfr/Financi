@@ -96,3 +96,17 @@ def test_transactions_and_budget_vs_actual(client):
     assert row["planned"] == 800
     assert round(row["actual"], 2) == 1885.0
     assert round(bva["summary"]["despesa_variavel"]["diff"], 2) == 1085.0
+
+
+def test_payoff_planner_endpoint(client):
+    sc = make_scenario(client)
+    loan = client.post("/api/loans", json={"name": "PAN 2", "monthly_rate": 0.03, "installment": 500,
+                                           "first_month": "2026-10-01", "last_month": "2027-12-01"}).json()
+    pl = client.get(f"/api/scenarios/{sc['id']}/payoff-planner").json()
+    assert len(pl["months"]) == 12 and len(pl["contracts"][0]["cells"]) == 12
+    first = pl["contracts"][0]["cells"][0]
+    assert first["fits"] is False  # saldo inicial de 1.000 não cobre a quitação
+    assert {"saldo_total", "quitacoes", "receitas"} <= pl["account"].keys()
+    client.put(f"/api/scenarios/{sc['id']}/payoffs", json=[{"contract_id": loan["id"], "payoff_month": "2026-12-01"}])
+    pl = client.get(f"/api/scenarios/{sc['id']}/payoff-planner").json()
+    assert pl["contracts"][0]["cells"][1]["scheduled"] is True
