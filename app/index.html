@@ -132,6 +132,21 @@
     <div class="tiles" id="loan-tiles"></div>
     <div class="card">
       <div class="card-head">
+        <p class="eyebrow">Desafogar o caixa · quais quitações liberam a maior parcela</p>
+      </div>
+      <p class="hint">Informe o mês e quanto você tem para quitar: o app testa todas as combinações de contratos e escolhe a que
+        <b>libera a maior parcela mensal</b> sem passar do valor. Sem valor informado, usa o saldo total (conta + investimentos) do mês.</p>
+      <div class="row">
+        <label class="field">Mês da quitação<select id="sug-month"></select></label>
+        <label class="field">Valor disponível (R$)<input id="sug-budget" type="number" step="100" min="0" style="width:160px"></label>
+        <label class="field">Ignorar contratos que terminam em até<span class="row" style="margin:0"><input id="sug-min" type="number" min="0" max="24" value="3" style="width:70px"> parcelas</span></label>
+      </div>
+      <div class="tiles" id="sug-tiles" style="margin-top:12px"></div>
+      <div class="table-wrap"><table id="sug-table"></table></div>
+      <div class="row" style="margin-top:12px"><button class="primary" id="btn-sug-apply" hidden></button><span class="hint" id="sug-note" style="margin:0"></span></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
         <p class="eyebrow">Planejador de quitações · mês a mês da conta</p>
         <div class="legend">
           <span><span class="swatch-cell scheduled"></span>quitação agendada</span>

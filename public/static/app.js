@@ -147,7 +147,7 @@ function renderSankey(id, data, compact = false) {
 // ------------------------------------------------------------------ estado
 const state = {
   scenarios: [], categories: [], accounts: [], loans: [],
-  current: null, projection: null, tab: "painel", arrears: [], newLines: new Set(),
+  current: null, projection: null, tab: "painel", arrears: [], newLines: new Set(), sug: { month: null, result: null },
   sankeyMonth: null, compareIds: null,
 };
 const GROUPS = {
@@ -654,12 +654,61 @@ $("#payoff-planner").addEventListener("click", async (e) => {
   await refresh();
 });
 
+async function renderSuggestion() {
+  const months = state.projection?.months || [];
+  const sel = $("#sug-month");
+  if (!months.includes(state.sug.month)) state.sug.month = months[0];
+  sel.innerHTML = months.map((m) => `<option value="${m}" ${m === state.sug.month ? "selected" : ""}>${mlabel(m)}</option>`).join("");
+  const params = new URLSearchParams({ month: state.sug.month, min_remaining: $("#sug-min").value || "0" });
+  const budget = $("#sug-budget").value;
+  if (budget !== "") params.set("budget", budget);
+  const r = await api("GET", `/api/scenarios/${state.current}/payoff-suggestion?${params}`);
+  state.sug.result = r;
+  $("#sug-budget").placeholder = r.available != null ? `saldo do mês: ${NUM0.format(r.available)}` : "";
+  const T = r.totals;
+  $("#sug-tiles").innerHTML = [
+    ["Parcela liberada por mês", fmt(T.parcela_liberada), r.selected.length ? `a partir de ${mlabel(r.month)}` : "nenhuma quitação cabe no valor", true],
+    ["Valor das quitações", fmt(T.valor_quitacao), `de ${fmt(r.budget)} disponíveis`],
+    ["Sobra do valor", fmt(T.sobra), "fica em conta"],
+    ["Libera por R$ 1 mil", T.valor_quitacao ? `${fmt(T.por_mil)}/mês` : "–", "parcela liberada ÷ valor pago"],
+    ["Juros evitados", fmt(T.juros_evitados), "até o fim dos contratos"],
+  ].map(([l, v, s, inv]) => `<div class="tile${inv ? " inverse" : ""}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+  const rows = [...r.candidates, ...r.skipped];
+  $("#sug-table").innerHTML = `<thead><tr><th>Contrato</th><th>Parcela liberada</th><th>Valor para quitar</th><th>Libera por R$ 1 mil</th>
+    <th>Parcelas restantes</th><th>Juros evitados</th><th>Agendado hoje</th><th>Sugestão</th></tr></thead><tbody>` +
+    rows.map((c) => {
+      const skipped = r.skipped.includes(c);
+      return `<tr class="${c.selected ? "highlight" : ""} ${skipped ? "muted" : ""}"><td>${esc(c.name)}</td><td>${fmt2(c.installment)}</td><td>${fmt2(c.value)}</td>
+        <td>${fmt(c.per_thousand)}/mês</td><td>${c.remaining}</td><td>${c.monthly_rate == null ? '<span class="muted">sem taxa</span>' : fmt2(c.interest_saved)}</td>
+        <td>${c.scheduled_month ? mlabel(c.scheduled_month) : "–"}</td>
+        <td>${c.selected ? '<span class="badge inverse">quitar</span>' : skipped ? `<span class="muted">termina em ${c.remaining} ${c.remaining === 1 ? "mês" : "meses"}</span>` : ""}</td></tr>`;
+    }).join("") + "</tbody>";
+  const btn = $("#btn-sug-apply");
+  btn.hidden = !r.selected.length;
+  btn.textContent = `Agendar ${r.selected.length === 1 ? "esta quitação" : `estas ${r.selected.length} quitações`} em ${mlabel(r.month)}`;
+  const moved = r.selected.filter((c) => c.scheduled_month && c.scheduled_month !== r.month);
+  $("#sug-note").textContent = moved.length ? `Muda o agendamento de: ${moved.map((c) => `${c.name} (hoje em ${mlabel(c.scheduled_month)})`).join(", ")}.` : "";
+}
+
+$("#sug-month").addEventListener("change", (e) => { state.sug.month = e.target.value; $("#sug-budget").value = ""; renderSuggestion(); });
+$("#sug-budget").addEventListener("change", renderSuggestion);
+$("#sug-min").addEventListener("change", renderSuggestion);
+$("#btn-sug-apply").onclick = async () => {
+  const r = state.sug.result;
+  await api("PUT", `/api/scenarios/${state.current}/payoffs`, r.selected.map((c) => ({ contract_id: c.id, payoff_month: r.month })));
+  toast(`${r.selected.length} quitação(ões) agendada(s) em ${mlabel(r.month)}: libera ${fmt(r.totals.parcela_liberada)}/mês`);
+  $("#sug-budget").value = "";
+  await refresh();
+};
+
 async function renderConsignados() {
   if (!state.current) return;
   const [t, cmp, pl] = await Promise.all([
     api("GET", `/api/scenarios/${state.current}/loans`), api("GET", "/api/reports/loans-compare"),
-    api("GET", `/api/scenarios/${state.current}/payoff-planner`),
+    api("GET", `/api/scenarios/${state.current}/payoff-planner`), renderSuggestion(),
   ]);
+  // planejador ordenado pelo que mais libera parcela por real investido
+  pl.contracts.sort((a, b) => (b.ref?.monthly_return || 0) - (a.ref?.monthly_return || 0));
   renderPlanner(pl);
   const T = t.totals || {};
   $("#loan-tiles").innerHTML = [

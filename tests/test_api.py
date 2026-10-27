@@ -110,3 +110,15 @@ def test_payoff_planner_endpoint(client):
     client.put(f"/api/scenarios/{sc['id']}/payoffs", json=[{"contract_id": loan["id"], "payoff_month": "2026-12-01"}])
     pl = client.get(f"/api/scenarios/{sc['id']}/payoff-planner").json()
     assert pl["contracts"][0]["cells"][1]["scheduled"] is True
+
+
+def test_payoff_suggestion_endpoint(client):
+    sc = make_scenario(client)
+    a = client.post("/api/loans", json={"name": "A", "monthly_rate": 0.03, "installment": 400,
+                                        "first_month": "2026-01-01", "last_month": "2028-12-01"}).json()
+    r = client.get(f"/api/scenarios/{sc['id']}/payoff-suggestion", params={"month": "2026-11-01"}).json()
+    assert r["available"] == 600 and r["selected"] == []  # saldo inicial (1.000) − parcela de nov (400) não cobre
+    r = client.get(f"/api/scenarios/{sc['id']}/payoff-suggestion",
+                   params={"month": "2026-11-01", "budget": 20000}).json()
+    assert [c["id"] for c in r["selected"]] == [a["id"]]
+    assert r["totals"]["parcela_liberada"] == 400

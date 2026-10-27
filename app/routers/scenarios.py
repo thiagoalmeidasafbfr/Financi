@@ -104,6 +104,24 @@ def loans_analysis(scenario_id: int, db: Session = Depends(get_session)):
     return eng.loans_timeline(loans_for(db, scenario_id))
 
 
+@router.get("/{scenario_id}/payoff-suggestion")
+def payoff_suggestion(scenario_id: int, month: date, budget: float | None = None, min_remaining: int = 3,
+                      db: Session = Depends(get_session)):
+    """Quitações que liberam a maior parcela mensal cabendo no valor disponível.
+    Sem `budget`, usa o saldo total (conta + investimentos) do mês, devolvendo as quitações já agendadas nele."""
+    proj = project_scenario(db, _get(db, scenario_id))
+    loans = loans_for(db, scenario_id)
+    m = eng.month_start(month)
+    available = None
+    if m.isoformat() in proj["months"]:
+        i = proj["months"].index(m.isoformat())
+        quit_row = next((r["values"][i] for r in proj["rows"] if r["kind"] == "quitacao"), 0.0)
+        available = max(0.0, proj["series"]["saldo_total"][i] + quit_row)
+    result = eng.best_payoffs(loans, m, budget if budget is not None else (available or 0.0), min_remaining)
+    result["available"] = available
+    return result
+
+
 @router.get("/{scenario_id}/payoff-planner")
 def payoff_planner(scenario_id: int, db: Session = Depends(get_session)):
     """Mês a mês da conta e valor de quitação de cada contrato em cada mês do cenário."""

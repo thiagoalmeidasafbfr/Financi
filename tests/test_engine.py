@@ -187,3 +187,26 @@ def test_payoff_planner_cells_and_fit():
     assert ref["month"] == "2027-02-01"
     assert ref["monthly_return"] * 1000 == pytest.approx(364.89 / 2158.87 * 1000, abs=0.01)
     assert ref["total_gain"] == pytest.approx(395.36 / 2158.87, abs=1e-4)
+
+
+def test_best_payoffs_maximizes_freed_installment_within_budget():
+    m = date(2026, 12, 1)
+    loans = [
+        eng.LoanIn(1, "A", 400, date(2026, 1, 1), date(2028, 12, 1), 0.03),   # caro, libera 400
+        eng.LoanIn(2, "B", 250, date(2026, 1, 1), date(2027, 12, 1), 0.03),   # libera 250
+        eng.LoanIn(3, "C", 200, date(2026, 1, 1), date(2027, 10, 1), 0.03),   # libera 200
+        eng.LoanIn(4, "D", 500, date(2026, 1, 1), date(2027, 1, 1), 0.03),    # termina em 2 meses
+    ]
+    vals = {l.id: eng.loan_payoff_analysis(eng.LoanIn(**{**l.__dict__, "payoff_month": m}))["payoff_value"] for l in loans}
+    budget = vals[2] + vals[3] + 1  # cabe B+C (450/mês) mas não A+qualquer outro
+    r = eng.best_payoffs(loans, m, budget, min_remaining=3)
+    assert {c["id"] for c in r["selected"]} == {2, 3}
+    assert r["totals"]["parcela_liberada"] == 450
+    assert [c["id"] for c in r["skipped"]] == [4]
+    # sem o filtro, D (500/mês, barato porque termina logo) entra
+    r = eng.best_payoffs(loans, m, budget, min_remaining=0)
+    assert 4 in {c["id"] for c in r["selected"]}
+    assert r["totals"]["valor_quitacao"] <= budget
+    # contrato já quitado antes do mês não é candidato
+    loans[0].payoff_month = date(2026, 11, 1)
+    assert 1 not in {c["id"] for c in eng.best_payoffs(loans, m, 1e9)["candidates"]}

@@ -168,6 +168,59 @@ def loan_payoff_analysis(loan: LoanIn) -> dict:
     }
 
 
+def best_payoffs(loans: list[LoanIn], month: date, budget: float, min_remaining: int = 0) -> dict:
+    """Combinação de quitações no mês que libera a MAIOR parcela mensal cabendo no valor disponível.
+
+    Testa todas as combinações (até 20 contratos); empate fica com a mais barata. Contratos que
+    terminam em até `min_remaining` parcelas ficam de fora (liberam parcela por pouco tempo)."""
+    month = month_start(month)
+    candidates, skipped = [], []
+    for loan in loans:
+        if month > month_start(loan.last_month):
+            continue  # já terminou
+        if loan.payoff_month is not None and month_start(loan.payoff_month) < month:
+            continue  # já quitado antes deste mês
+        a = loan_payoff_analysis(LoanIn(**{**loan.__dict__, "payoff_month": month}))
+        c = {"id": loan.id, "name": loan.name, "installment": loan.installment, "monthly_rate": loan.monthly_rate,
+             "remaining": a["remaining"], "value": a["payoff_value"], "interest_saved": a["interest_saved"],
+             "per_thousand": loan.installment / a["payoff_value"] * 1000 if a["payoff_value"] else 0.0,
+             "scheduled_month": loan.payoff_month.isoformat() if loan.payoff_month else None}
+        (skipped if a["remaining"] <= min_remaining else candidates).append(c)
+
+    best: tuple = (0.0, 0.0, ())  # (parcela liberada, -custo, ids)
+    if len(candidates) <= 20:
+        for mask in range(1, 1 << len(candidates)):
+            chosen = [c for i, c in enumerate(candidates) if mask >> i & 1]
+            cost = sum(c["value"] for c in chosen)
+            if cost > budget + 0.005:
+                continue
+            key = (round(sum(c["installment"] for c in chosen), 2), -cost, tuple(c["id"] for c in chosen))
+            if key[:2] > best[:2]:
+                best = key
+    else:  # muitos contratos: guloso pela parcela liberada por real
+        cost, ids = 0.0, []
+        for c in sorted(candidates, key=lambda c: -c["per_thousand"]):
+            if cost + c["value"] <= budget + 0.005:
+                cost += c["value"]
+                ids.append(c["id"])
+        best = (sum(c["installment"] for c in candidates if c["id"] in ids), -cost, tuple(ids))
+
+    selected = [c for c in candidates if c["id"] in best[2]]
+    total_cost = sum(c["value"] for c in selected)
+    freed = sum(c["installment"] for c in selected)
+    for c in candidates + skipped:
+        c["selected"] = c["id"] in best[2]
+    return {
+        "month": month.isoformat(), "budget": budget, "min_remaining": min_remaining,
+        "selected": selected,
+        "totals": {"parcela_liberada": freed, "valor_quitacao": total_cost, "sobra": budget - total_cost,
+                   "por_mil": freed / total_cost * 1000 if total_cost else 0.0,
+                   "juros_evitados": sum(c["interest_saved"] for c in selected)},
+        "candidates": sorted(candidates, key=lambda c: -c["per_thousand"]),
+        "skipped": skipped,
+    }
+
+
 def payoff_planner(projection: dict, loans: list[LoanIn]) -> dict:
     """Mês a mês da conta + valor para quitar cada contrato em cada mês do horizonte.
 
