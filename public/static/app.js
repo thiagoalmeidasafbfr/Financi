@@ -648,8 +648,14 @@ function renderPlanner(pl) {
       ${c.monthly_rate == null
         ? '<td class="cb last muted" title="Informe a taxa do contrato (em Contratos) para calcular o valor presente e a economia">sem taxa</td>'
         : `<td class="cb last" title="${refTip}: economia de ${r ? fmt2(r.total_gain * r.value) : "–"} sobre o valor investido">${r ? pct(r.total_gain) : "–"}</td>`}`;
+    const paidAt = c.cells.findIndex((x) => x && x.scheduled);
     c.cells.forEach((cell, i) => {
       if (!cell) return (h += "<td></td>");
+      if (paidAt >= 0 && i > paidAt) {
+        // contrato já quitado: os meses seguintes ficam zerados, mas clicar move a quitação para cá
+        return (h += `<td class="pcell after" data-contract="${c.id}" data-month="${months[i]}"
+          title="Já quitado em ${mlabel(months[paidAt])} · clique para mudar a quitação para ${mlabel(months[i])} (${fmt2(cell.value)})"></td>`);
+      }
       const cls = cell.scheduled ? "scheduled" : cell.fits ? "fits" : "nofit";
       const tip = `Quitar em ${mlabel(months[i])}: ${fmt2(cell.value)} · ${cell.remaining} parcelas restantes · juros evitados ${fmt2(cell.interest_saved)}` +
         ` · cada R$ 1.000 liberam ${fmt2((c.installment / cell.value) * 1000)}/mês · ganho total ${pct(cell.interest_saved / cell.value)}` +

@@ -249,3 +249,5 @@ table.planner td.best-cb { color: var(--text-primary); font-weight: var(--font-w
 table.planner td.best-cb::after { content: " ●"; color: var(--series-1); font-size: 9px; }
 table.flow tr.info td { color: var(--text-secondary); font-size: 12px; }
 table.flow tr.info td:first-child { padding-left: 22px; }
+td.pcell.after { background: transparent; }
+td.pcell.after:hover::after { content: "mover para cá"; color: var(--text-muted); font-size: 11px; }
