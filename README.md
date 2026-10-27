@@ -105,18 +105,24 @@ docker compose up --build    # app + PostgreSQL 16 em http://localhost:8000
 
 ### Modelo de dados
 
+Tudo o que é planejamento pertence ao cenário: **duplicar copia tudo** e editar ou excluir num cenário
+não afeta os outros.
+
 ```
 Scenario ─┬─ PlanEntry       valor planejado por categoria × mês (ou ajuste de linha automática)
           ├─ SalaryChange    reajustes do salário líquido
           ├─ InflationRate   inflação anual das despesas
           ├─ MonthSetting    % a investir, saldo mínimo, rentabilidade, salário bruto, resgate manual
-          ├─ LoanPayoff      mês de quitação de cada consignado neste cenário
-          └─ ArrearPlan      início e nº de parcelas para pagar cada atraso neste cenário
-Category       linhas do fluxo (grupo + tipo: manual ou calculada)
-LoanContract   consignados (parcela, taxa, 1º e último desconto)
-Arrear         contas em atraso (valor, vencimento, multa, juros, acordo, situação)
-Account ─ Transaction   realizado
+          ├─ LoanContract    consignados (parcela, taxa, 1º e último desconto, mês de quitação)
+          └─ Arrear          contas em atraso (valor, vencimento, multa, juros, acordo, situação, plano)
+Compartilhado:
+  Category                 nomes das linhas do fluxo (os valores são de cada cenário)
+  Account ─ Transaction    realizado (o que de fato aconteceu é um só)
 ```
+
+Migrações ficam em `app/migrations.py` e rodam sozinhas na inicialização (idempotentes). Bancos criados
+antes desta versão, com consignados e atrasos compartilhados, são convertidos copiando cada registro para
+todos os cenários com o mês de quitação e o plano que cada um tinha.
 
 ## Regras de cálculo (motor em `app/engine.py`)
 

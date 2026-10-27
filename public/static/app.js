@@ -161,8 +161,8 @@ const KINDS = {
 };
 
 async function loadBase() {
-  [state.scenarios, state.categories, state.accounts, state.loans] = await Promise.all([
-    api("GET", "/api/scenarios"), api("GET", "/api/categories"), api("GET", "/api/accounts"), api("GET", "/api/loans"),
+  [state.scenarios, state.categories, state.accounts] = await Promise.all([
+    api("GET", "/api/scenarios"), api("GET", "/api/categories"), api("GET", "/api/accounts"),
   ]);
   const sel = $("#scenario");
   if (!state.scenarios.find((s) => s.id === state.current)) {
@@ -703,10 +703,12 @@ $("#btn-sug-apply").onclick = async () => {
 
 async function renderConsignados() {
   if (!state.current) return;
-  const [t, cmp, pl] = await Promise.all([
+  const [t, cmp, pl, contracts] = await Promise.all([
     api("GET", `/api/scenarios/${state.current}/loans`), api("GET", "/api/reports/loans-compare"),
-    api("GET", `/api/scenarios/${state.current}/payoff-planner`), renderSuggestion(),
+    api("GET", `/api/scenarios/${state.current}/payoff-planner`),
+    api("GET", `/api/scenarios/${state.current}/contracts`), renderSuggestion(),
   ]);
+  state.loans = contracts;
   // planejador ordenado pelo que mais libera parcela por real investido
   pl.contracts.sort((a, b) => (b.ref?.monthly_return || 0) - (a.ref?.monthly_return || 0));
   renderPlanner(pl);
@@ -775,10 +777,12 @@ async function renderConsignados() {
   }
   // detalhe por contrato × cenário
   ct += `</tbody></table><p class="eyebrow" style="margin-top:20px">Mês e valor de quitação por contrato</p><table><thead><tr><th>Contrato</th>${scs.map((s) => `<th>${esc(s.name)}</th>`).join("")}</tr></thead><tbody>`;
-  const names = scs[0]?.contracts.map((c) => c.name) || [];
-  names.forEach((name, i) => {
+  // cada cenário tem os próprios contratos: casa pelo nome
+  const names = [...new Set(scs.flatMap((s) => s.contracts.map((c) => c.name)))];
+  names.forEach((name) => {
     ct += `<tr><td>${esc(name)}</td>${scs.map((s) => {
-      const c = s.contracts[i];
+      const c = s.contracts.find((x) => x.name === name);
+      if (!c) return '<td><span class="muted">sem contrato</span></td>';
       return `<td>${c.payoff_month ? `${mlabel(c.payoff_month)} · ${fmt(c.payoff_value)} <span class="muted">(economia ${fmt(c.interest_saved)})</span>` : '<span class="muted">não quita</span>'}</td>`;
     }).join("")}</tr>`;
   });
@@ -831,17 +835,19 @@ $("#contracts-table").addEventListener("click", async (e) => {
   if (!tr) return;
   const id = tr.dataset.id;
   if (e.target.matches("[data-del]")) {
-    if (!confirm("Excluir contrato?")) return;
-    await api("DELETE", `/api/loans/${id}`);
+    if (!confirm("Excluir este contrato só deste cenário?")) return;
+    await api("DELETE", `/api/scenarios/${state.current}/contracts/${id}`);
   } else if (e.target.matches("[data-save]")) {
     const rate = rowVal(tr, "monthly_rate");
     const body = { name: rowVal(tr, "name"), creditor: rowVal(tr, "creditor") || null,
       monthly_rate: rate === "" ? null : Number(rate) / 100, installment: Number(rowVal(tr, "installment")),
-      first_month: fromMonthInput(rowVal(tr, "first_month")), last_month: fromMonthInput(rowVal(tr, "last_month")) };
-    await api(id ? "PUT" : "POST", id ? `/api/loans/${id}` : "/api/loans", body);
-    toast("Contrato salvo");
+      first_month: fromMonthInput(rowVal(tr, "first_month")), last_month: fromMonthInput(rowVal(tr, "last_month")),
+      payoff_month: state.loans.find((l) => String(l.id) === id)?.payoff_month || null };
+    if (!body.name || !body.first_month || !body.last_month) return toast("Informe nome, 1º e último desconto");
+    const base = `/api/scenarios/${state.current}/contracts`;
+    await api(id ? "PUT" : "POST", id ? `${base}/${id}` : base, body);
+    toast("Contrato salvo neste cenário");
   } else return;
-  await loadBase();
   await refresh();
 });
 $("#btn-add-contract").onclick = () => {
@@ -853,7 +859,8 @@ $("#btn-add-contract").onclick = () => {
 const ARREAR_STATUS = { aberto: "Em aberto", negociado: "Negociado", pago: "Pago" };
 
 async function renderAtrasos() {
-  const data = await api("GET", `/api/arrears${state.current ? `?scenario_id=${state.current}` : ""}`);
+  if (!state.current) return;
+  const data = await api("GET", `/api/scenarios/${state.current}/arrears`);
   state.arrears = data.items;
   const T = data.totals;
   $("#arrear-tiles").innerHTML = [
@@ -929,8 +936,8 @@ $("#arrear-table").addEventListener("click", async (e) => {
       state.arrears = state.arrears.filter((a) => a.id !== "");
       return renderArrearTable();
     }
-    if (!confirm("Excluir este atraso? O plano de pagamento dele some de todos os cenários.")) return;
-    await api("DELETE", `/api/arrears/${id}`);
+    if (!confirm("Excluir este atraso só deste cenário?")) return;
+    await api("DELETE", `/api/scenarios/${state.current}/arrears/${id}`);
   } else if (e.target.matches("[data-save]")) {
     const v = (k) => rowVal(tr, k);
     const numOrNull = (k, scale = 1) => (v(k) === "" ? null : Number(v(k)) / scale);
@@ -940,15 +947,12 @@ $("#arrear-table").addEventListener("click", async (e) => {
       category_id: v("category_id") ? +v("category_id") : null, due_date: v("due_date") || null,
       amount: Number(v("amount")), fine_pct: numOrNull("fine_pct", 100) || 0, interest_monthly: numOrNull("interest_monthly", 100) || 0,
       negotiated_amount: numOrNull("negotiated_amount"), status: v("status"),
+      plan_start: v("status") === "pago" ? null : fromMonthInput(v("plan_start")),
+      plan_installments: Math.max(1, parseInt(v("plan_installments") || "1", 10)),
     };
-    const saved = await api(id ? "PUT" : "POST", id ? `/api/arrears/${id}` : "/api/arrears", body);
-    if (state.current) {
-      await api("PUT", `/api/scenarios/${state.current}/arrear-plans`, [{
-        arrear_id: saved.id, start_month: body.status === "pago" ? null : fromMonthInput(v("plan_start")),
-        installments: Math.max(1, parseInt(v("plan_installments") || "1", 10)),
-      }]);
-    }
-    toast("Atraso salvo");
+    const base = `/api/scenarios/${state.current}/arrears`;
+    await api(id ? "PUT" : "POST", id ? `${base}/${id}` : base, body);
+    toast("Atraso salvo neste cenário");
   } else return;
   await refresh();
 });

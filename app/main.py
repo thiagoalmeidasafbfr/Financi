@@ -10,10 +10,10 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
-from .db import Base, SessionLocal, engine, get_session
+from .db import engine, get_session
 from .importer import import_workbook
+from .migrations import init_db
 from .routers import arrears, catalog, reports, scenarios, transactions
-from .services import seed_categories
 
 ROOT = Path(__file__).resolve().parent.parent
 # Arquivos estáticos ficam em public/: no Vercel a CDN os serve direto em /static/...;
@@ -24,9 +24,7 @@ INDEX = Path(__file__).parent / "index.html"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    Base.metadata.create_all(engine)
-    with SessionLocal() as db:
-        seed_categories(db)
+    init_db()
     yield
 
 

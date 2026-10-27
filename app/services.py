@@ -5,11 +5,9 @@ from sqlalchemy.orm import Session
 from . import engine as eng
 from .models import (
     Arrear,
-    ArrearPlan,
     Category,
     InflationRate,
     LoanContract,
-    LoanPayoff,
     MonthSetting,
     PlanEntry,
     SalaryChange,
@@ -81,31 +79,23 @@ SCENARIO_PARAMS = [
 ]
 
 
-def loans_for(db: Session, scenario_id: int | None) -> list[eng.LoanIn]:
-    payoffs = {}
-    if scenario_id is not None:
-        payoffs = {p.contract_id: p.payoff_month for p in
-                   db.scalars(select(LoanPayoff).where(LoanPayoff.scenario_id == scenario_id))}
+def loans_for(db: Session, scenario_id: int) -> list[eng.LoanIn]:
     return [
         eng.LoanIn(id=c.id, name=c.name, installment=c.installment, first_month=c.first_month,
-                   last_month=c.last_month, monthly_rate=c.monthly_rate, payoff_month=payoffs.get(c.id))
-        for c in db.scalars(select(LoanContract).order_by(LoanContract.id))
+                   last_month=c.last_month, monthly_rate=c.monthly_rate, payoff_month=c.payoff_month)
+        for c in db.scalars(select(LoanContract).where(LoanContract.scenario_id == scenario_id)
+                            .order_by(LoanContract.id))
     ]
 
 
-def arrears_for(db: Session, scenario_id: int | None) -> list[eng.ArrearIn]:
-    plans = {}
-    if scenario_id is not None:
-        plans = {p.arrear_id: p for p in
-                 db.scalars(select(ArrearPlan).where(ArrearPlan.scenario_id == scenario_id))}
-    out = []
-    for a in db.scalars(select(Arrear).order_by(Arrear.id)):
-        p = plans.get(a.id)
-        out.append(eng.ArrearIn(
-            id=a.id, description=a.description, amount=a.amount, due_month=a.due_date, fine_pct=a.fine_pct or 0.0,
-            interest_monthly=a.interest_monthly or 0.0, negotiated_amount=a.negotiated_amount, status=a.status,
-            creditor=a.creditor, plan_start=p.start_month if p else None, plan_installments=p.installments if p else 1))
-    return out
+def arrears_for(db: Session, scenario_id: int) -> list[eng.ArrearIn]:
+    return [
+        eng.ArrearIn(id=a.id, description=a.description, amount=a.amount, due_month=a.due_date,
+                     fine_pct=a.fine_pct or 0.0, interest_monthly=a.interest_monthly or 0.0,
+                     negotiated_amount=a.negotiated_amount, status=a.status, creditor=a.creditor,
+                     plan_start=a.plan_start, plan_installments=a.plan_installments or 1)
+        for a in db.scalars(select(Arrear).where(Arrear.scenario_id == scenario_id).order_by(Arrear.id))
+    ]
 
 
 def scenario_input(db: Session, sc: Scenario) -> eng.ScenarioIn:
@@ -132,7 +122,14 @@ def project_scenario(db: Session, sc: Scenario) -> dict:
     return result
 
 
+def _copy(obj):
+    """Cópia de uma linha filha do cenário (sem id e sem o vínculo com o cenário de origem)."""
+    cols = {c.key: getattr(obj, c.key) for c in obj.__table__.columns if c.key not in ("id", "scenario_id")}
+    return type(obj)(**cols)
+
+
 def duplicate_scenario(db: Session, sc: Scenario, new_name: str) -> Scenario:
+    """Cópia completa e independente: valores, premissas, parâmetros mensais, consignados e atrasos."""
     clone = Scenario(name=new_name, description=sc.description,
                      **{k: getattr(sc, k) for k in SCENARIO_PARAMS})
     clone.entries = [PlanEntry(category_id=e.category_id, month=e.month, amount=e.amount) for e in sc.entries]
@@ -143,9 +140,8 @@ def duplicate_scenario(db: Session, sc: Scenario, new_name: str) -> Scenario:
     clone.month_settings = [MonthSetting(month=m.month, invest_pct=m.invest_pct, min_balance=m.min_balance,
                                          invest_return=m.invest_return, gross_salary=m.gross_salary,
                                          manual_redemption=m.manual_redemption) for m in sc.month_settings]
-    clone.payoffs = [LoanPayoff(contract_id=p.contract_id, payoff_month=p.payoff_month) for p in sc.payoffs]
-    clone.arrear_plans = [ArrearPlan(arrear_id=p.arrear_id, start_month=p.start_month, installments=p.installments)
-                          for p in sc.arrear_plans]
+    clone.loans = [_copy(x) for x in sc.loans]
+    clone.arrears = [_copy(x) for x in sc.arrears]
     db.add(clone)
     db.commit()
     return clone

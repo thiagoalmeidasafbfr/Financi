@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import engine as eng
@@ -10,7 +11,6 @@ from ..db import get_session
 from ..models import (
     InflationRate,
     LoanContract,
-    LoanPayoff,
     MonthSetting,
     PlanEntry,
     SalaryChange,
@@ -223,27 +223,74 @@ def put_month_settings(scenario_id: int, items: list[schemas.MonthSettingIn], db
     return {"saved": len(items)}
 
 
+# ----------------------------------------------------------------- consignados do cenário
+
+def _loan(db: Session, scenario_id: int, contract_id: int) -> LoanContract:
+    c = db.get(LoanContract, contract_id)
+    if c is None or c.scenario_id != scenario_id:
+        raise HTTPException(404, "Contrato não encontrado neste cenário")
+    return c
+
+
+def _loan_fields(data: schemas.LoanIn) -> dict:
+    d = data.model_dump()
+    for k in ("first_month", "last_month", "payoff_month"):
+        if d[k] is not None:
+            d[k] = eng.month_start(d[k])
+    return d
+
+
+def _commit_unique(db: Session) -> None:
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Já existe um contrato com esse nome neste cenário") from None
+
+
+@router.get("/{scenario_id}/contracts", response_model=list[schemas.LoanOut])
+def list_contracts(scenario_id: int, db: Session = Depends(get_session)):
+    return _get(db, scenario_id).loans
+
+
+@router.post("/{scenario_id}/contracts", response_model=schemas.LoanOut, status_code=201)
+def create_contract(scenario_id: int, data: schemas.LoanIn, db: Session = Depends(get_session)):
+    _get(db, scenario_id)
+    c = LoanContract(scenario_id=scenario_id, **_loan_fields(data))
+    db.add(c)
+    _commit_unique(db)
+    return c
+
+
+@router.put("/{scenario_id}/contracts/{contract_id}", response_model=schemas.LoanOut)
+def update_contract(scenario_id: int, contract_id: int, data: schemas.LoanIn, db: Session = Depends(get_session)):
+    c = _loan(db, scenario_id, contract_id)
+    for k, v in _loan_fields(data).items():
+        setattr(c, k, v)
+    _commit_unique(db)
+    return c
+
+
+@router.delete("/{scenario_id}/contracts/{contract_id}", status_code=204)
+def delete_contract(scenario_id: int, contract_id: int, db: Session = Depends(get_session)):
+    db.delete(_loan(db, scenario_id, contract_id))
+    db.commit()
+
+
 @router.get("/{scenario_id}/payoffs", response_model=list[schemas.PayoffIn])
 def get_payoffs(scenario_id: int, db: Session = Depends(get_session)):
-    return [schemas.PayoffIn(contract_id=p.contract_id, payoff_month=p.payoff_month)
-            for p in _get(db, scenario_id).payoffs]
+    return [schemas.PayoffIn(contract_id=c.id, payoff_month=c.payoff_month)
+            for c in _get(db, scenario_id).loans if c.payoff_month]
 
 
 @router.put("/{scenario_id}/payoffs")
 def put_payoffs(scenario_id: int, items: list[schemas.PayoffIn], db: Session = Depends(get_session)):
-    sc = _get(db, scenario_id)
+    """Define (ou limpa, com payoff_month=null) o mês de quitação dos contratos deste cenário."""
+    _get(db, scenario_id)
     for it in items:
-        if db.get(LoanContract, it.contract_id) is None:
-            raise HTTPException(400, f"Contrato {it.contract_id} não existe")
-        row = db.scalar(select(LoanPayoff).where(LoanPayoff.scenario_id == sc.id,
-                                                 LoanPayoff.contract_id == it.contract_id))
-        if it.payoff_month is None:
-            if row:
-                db.delete(row)
-        elif row:
-            row.payoff_month = eng.month_start(it.payoff_month)
-        else:
-            db.add(LoanPayoff(scenario_id=sc.id, contract_id=it.contract_id,
-                              payoff_month=eng.month_start(it.payoff_month)))
+        c = db.get(LoanContract, it.contract_id)
+        if c is None or c.scenario_id != scenario_id:
+            raise HTTPException(400, f"Contrato {it.contract_id} não pertence a este cenário")
+        c.payoff_month = eng.month_start(it.payoff_month) if it.payoff_month else None
     db.commit()
     return {"saved": len(items)}

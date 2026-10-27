@@ -1,14 +1,15 @@
 """Modelo de dados.
 
-Planejamento (por cenário):
+Planejamento (tudo pertence ao cenário; duplicar copia tudo):
   Scenario ─┬─ PlanEntry      valor planejado por categoria × mês (ou override de linha automática)
             ├─ SalaryChange   reajustes do salário líquido
             ├─ InflationRate  inflação anual das despesas
             ├─ MonthSetting   parâmetros mês a mês (% a investir, saldo mínimo, rentabilidade...)
-            └─ LoanPayoff     mês de quitação antecipada de cada contrato
+            ├─ LoanContract   consignados, com o mês de quitação antecipada
+            └─ Arrear         contas em atraso, com o plano de pagamento
 
 Compartilhado entre cenários:
-  Category, LoanContract
+  Category (nomes das linhas)
 
 Realizado (controle do dia a dia):
   Account ─ Transaction ─ Category
@@ -118,8 +119,8 @@ class Scenario(Base):
     salary_changes: Mapped[list["SalaryChange"]] = relationship(cascade="all, delete-orphan", order_by="SalaryChange.start_month")
     inflation_rates: Mapped[list["InflationRate"]] = relationship(cascade="all, delete-orphan", order_by="InflationRate.year")
     month_settings: Mapped[list["MonthSetting"]] = relationship(cascade="all, delete-orphan", order_by="MonthSetting.month")
-    payoffs: Mapped[list["LoanPayoff"]] = relationship(cascade="all, delete-orphan")
-    arrear_plans: Mapped[list["ArrearPlan"]] = relationship(cascade="all, delete-orphan")
+    loans: Mapped[list["LoanContract"]] = relationship(cascade="all, delete-orphan", order_by="LoanContract.id")
+    arrears: Mapped[list["Arrear"]] = relationship(cascade="all, delete-orphan", order_by="Arrear.id")
 
 
 class PlanEntry(Base):
@@ -175,36 +176,32 @@ class MonthSetting(Base):
 
 
 class LoanContract(Base):
-    __tablename__ = "loan_contracts"
+    """Consignado/empréstimo de um cenário (cada cenário tem a sua cópia: editar ou excluir
+    num cenário não afeta os outros)."""
+
+    __tablename__ = "scenario_loans"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), unique=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
     creditor: Mapped[str | None] = mapped_column(String(120), nullable=True)
     monthly_rate: Mapped[float | None] = mapped_column(Rate, nullable=True)
     installment: Mapped[float] = mapped_column(Money)
     first_month: Mapped[date] = mapped_column(Date)
     last_month: Mapped[date] = mapped_column(Date)
+    payoff_month: Mapped[date | None] = mapped_column(Date, nullable=True)  # quitação antecipada
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-
-class LoanPayoff(Base):
-    __tablename__ = "loan_payoffs"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"), index=True)
-    contract_id: Mapped[int] = mapped_column(ForeignKey("loan_contracts.id", ondelete="CASCADE"))
-    payoff_month: Mapped[date] = mapped_column(Date)
-
-    __table_args__ = (UniqueConstraint("scenario_id", "contract_id", name="uq_payoff"),)
+    __table_args__ = (UniqueConstraint("scenario_id", "name", name="uq_scenario_loan_name"),)
 
 
 class Arrear(Base):
-    """Conta em atraso (aluguel, cartão, condomínio...). Compartilhada entre cenários;
-    o plano de pagamento de cada cenário fica em ArrearPlan."""
+    """Conta em atraso (aluguel, cartão, condomínio...) de um cenário, com o plano de pagamento."""
 
-    __tablename__ = "arrears"
+    __tablename__ = "scenario_arrears"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"), index=True)
     description: Mapped[str] = mapped_column(String(160))
     creditor: Mapped[str | None] = mapped_column(String(120), nullable=True)
     owner: Mapped[str | None] = mapped_column(String(80), nullable=True)  # responsável
@@ -216,19 +213,9 @@ class Arrear(Base):
     negotiated_amount: Mapped[float | None] = mapped_column(Money, nullable=True)  # acordo fechado
     status: Mapped[str] = mapped_column(String(20), default="aberto")
     paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    plan_start: Mapped[date | None] = mapped_column(Date, nullable=True)  # início do pagamento
+    plan_installments: Mapped[int] = mapped_column(Integer, default=1)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-
-class ArrearPlan(Base):
-    __tablename__ = "arrear_plans"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"), index=True)
-    arrear_id: Mapped[int] = mapped_column(ForeignKey("arrears.id", ondelete="CASCADE"))
-    start_month: Mapped[date] = mapped_column(Date)
-    installments: Mapped[int] = mapped_column(Integer, default=1)
-
-    __table_args__ = (UniqueConstraint("scenario_id", "arrear_id", name="uq_arrear_plan"),)
 
 
 class Account(Base):

@@ -5,10 +5,9 @@ Uso:  python -m app.check_db
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import make_url
 
-from . import models  # noqa: F401  (registra as tabelas)
 from .config import DATABASE_URL
-from .db import Base, SessionLocal, engine
-from .services import seed_categories
+from .db import engine
+from .migrations import init_db
 
 
 def main() -> None:
@@ -16,9 +15,8 @@ def main() -> None:
     query = "select 'SQLite ' || sqlite_version()" if engine.dialect.name == "sqlite" else "select version()"
     with engine.connect() as conn:
         print("Conectado:", conn.execute(text(query)).scalar())
-    Base.metadata.create_all(engine)
-    with SessionLocal() as db:
-        seed_categories(db)
+    for line in init_db():
+        print("Migração:", line)
     print("Tabelas:", ", ".join(sorted(inspect(engine).get_table_names())))
 
 

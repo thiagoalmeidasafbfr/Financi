@@ -56,27 +56,46 @@ def test_only_one_baseline(client):
     assert flags == {a["id"]: False, b["id"]: True}
 
 
+def add_contract(client, sc, **kw):
+    body = {"name": "PAN 1", "monthly_rate": 0.0439, "installment": 364.89,
+            "first_month": "2026-10-15", "last_month": "2027-08-01", **kw}
+    r = client.post(f"/api/scenarios/{sc['id']}/contracts", json=body)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
 def test_loans_and_payoffs_per_scenario(client):
     sc1 = make_scenario(client, "Quita")
-    sc2 = make_scenario(client, "Não quita")
-    loan = client.post("/api/loans", json={"name": "PAN 1", "monthly_rate": 0.0439, "installment": 364.89,
-                                           "first_month": "2026-10-15", "last_month": "2027-08-01"}).json()
+    loan = add_contract(client, sc1)
     assert loan["first_month"] == "2026-10-01"
     client.put(f"/api/scenarios/{sc1['id']}/payoffs", json=[{"contract_id": loan["id"], "payoff_month": "2027-02-01"}])
 
     t1 = client.get(f"/api/scenarios/{sc1['id']}/loans").json()
-    t2 = client.get(f"/api/scenarios/{sc2['id']}/loans").json()
     assert round(t1["contracts"][0]["payoff_value"], 2) == 2158.87
-    assert t2["totals"]["desembolso_quitacoes"] == 0
-
     p1 = client.get(f"/api/scenarios/{sc1['id']}/projection").json()
     assert round(p1["series"]["dividas"][3], 2) == 2158.87  # fev/27: quitação
 
+    # cópia independente: desmarcar a quitação e excluir o contrato na cópia não muda o original
+    sc2 = client.post(f"/api/scenarios/{sc1['id']}/duplicate", params={"name": "Não quita"}).json()
+    c2 = client.get(f"/api/scenarios/{sc2['id']}/contracts").json()
+    assert [(c["name"], c["payoff_month"]) for c in c2] == [("PAN 1", "2027-02-01")]
+    assert c2[0]["id"] != loan["id"]
+    client.put(f"/api/scenarios/{sc2['id']}/payoffs", json=[{"contract_id": c2[0]["id"], "payoff_month": None}])
+    assert client.get(f"/api/scenarios/{sc2['id']}/loans").json()["totals"]["desembolso_quitacoes"] == 0
+    assert client.delete(f"/api/scenarios/{sc2['id']}/contracts/{c2[0]['id']}").status_code == 204
+    assert client.get(f"/api/scenarios/{sc2['id']}/contracts").json() == []
+    assert len(client.get(f"/api/scenarios/{sc1['id']}/contracts").json()) == 1
+    assert client.get(f"/api/scenarios/{sc1['id']}/payoffs").json()[0]["payoff_month"] == "2027-02-01"
+
+    # um cenário não mexe nos contratos do outro
+    assert client.put(f"/api/scenarios/{sc2['id']}/payoffs",
+                      json=[{"contract_id": loan["id"], "payoff_month": None}]).status_code == 400
+    assert client.delete(f"/api/scenarios/{sc2['id']}/contracts/{loan['id']}").status_code == 404
+    assert client.post(f"/api/scenarios/{sc1['id']}/contracts", json={**{k: loan[k] for k in (
+        "name", "installment", "first_month", "last_month")}}).status_code == 409
+
     cmp = client.get("/api/reports/loans-compare").json()
     assert {s["name"] for s in cmp["scenarios"]} == {"Quita", "Não quita"}
-
-    client.put(f"/api/scenarios/{sc1['id']}/payoffs", json=[{"contract_id": loan["id"], "payoff_month": None}])
-    assert client.get(f"/api/scenarios/{sc1['id']}/payoffs").json() == []
 
 
 def test_transactions_and_budget_vs_actual(client):
@@ -100,8 +119,8 @@ def test_transactions_and_budget_vs_actual(client):
 
 def test_payoff_planner_endpoint(client):
     sc = make_scenario(client)
-    loan = client.post("/api/loans", json={"name": "PAN 2", "monthly_rate": 0.03, "installment": 500,
-                                           "first_month": "2026-10-01", "last_month": "2027-12-01"}).json()
+    loan = add_contract(client, sc, name="PAN 2", monthly_rate=0.03, installment=500,
+                        first_month="2026-10-01", last_month="2027-12-01")
     pl = client.get(f"/api/scenarios/{sc['id']}/payoff-planner").json()
     assert len(pl["months"]) == 12 and len(pl["contracts"][0]["cells"]) == 12
     first = pl["contracts"][0]["cells"][0]
@@ -114,8 +133,8 @@ def test_payoff_planner_endpoint(client):
 
 def test_payoff_suggestion_endpoint(client):
     sc = make_scenario(client)
-    a = client.post("/api/loans", json={"name": "A", "monthly_rate": 0.03, "installment": 400,
-                                        "first_month": "2026-01-01", "last_month": "2028-12-01"}).json()
+    a = add_contract(client, sc, name="A", monthly_rate=0.03, installment=400,
+                     first_month="2026-01-01", last_month="2028-12-01")
     r = client.get(f"/api/scenarios/{sc['id']}/payoff-suggestion", params={"month": "2026-11-01"}).json()
     assert r["available"] == 600 and r["selected"] == []  # saldo inicial (1.000) − parcela de nov (400) não cobre
     r = client.get(f"/api/scenarios/{sc['id']}/payoff-suggestion",

@@ -603,7 +603,10 @@ def loans_timeline(loans: list[LoanIn]) -> dict:
     limitar ao horizonte do cenário): parcelas sem e com quitação, desembolso
     das quitações e economia acumulada líquida (parcelas evitadas − desembolso)."""
     if not loans:
-        return {"months": [], "contracts": [], "totals": {}}
+        zero = {k: 0.0 for k in ("parcelas_sem_quitacao", "parcelas_com_quitacao", "desembolso_quitacoes",
+                                 "parcelas_evitadas", "economia_liquida", "parcela_mensal_liberada")}
+        return {"months": [], "contracts": [], "installments_without_payoff": [], "installments_with_payoff": [],
+                "payoff_disbursement": [], "cumulative_net_saving": [], "totals": {**zero, "mes_payback": None}}
     first = min(month_start(l.first_month) for l in loans)
     last = max(month_start(l.last_month) for l in loans)
     for l in loans:

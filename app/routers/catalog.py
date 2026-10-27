@@ -1,13 +1,12 @@
-"""Cadastros compartilhados: categorias, contratos de empréstimo e contas."""
+"""Cadastros compartilhados entre cenários: categorias (nomes das linhas) e contas."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from .. import engine as eng
 from .. import schemas
 from ..db import get_session
-from ..models import KINDS, Account, Category, LoanContract
+from ..models import KINDS, Account, Category
 
 router = APIRouter(prefix="/api", tags=["cadastros"])
 
@@ -57,13 +56,6 @@ def _check_category(d: dict) -> dict:
     return d
 
 
-def _normalize_loan(d: dict) -> dict:
-    d["first_month"] = eng.month_start(d["first_month"])
-    d["last_month"] = eng.month_start(d["last_month"])
-    return d
-
-
 _crud("categories", Category, schemas.CategoryIn, schemas.CategoryOut,
       (Category.group, Category.sort_order, Category.id), _check_category)
-_crud("loans", LoanContract, schemas.LoanIn, schemas.LoanOut, (LoanContract.id,), _normalize_loan)
 _crud("accounts", Account, schemas.AccountIn, schemas.AccountOut, (Account.name,))

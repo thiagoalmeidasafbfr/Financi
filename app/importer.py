@@ -30,7 +30,6 @@ from .models import (
     Category,
     InflationRate,
     LoanContract,
-    LoanPayoff,
     MonthSetting,
     PlanEntry,
     SalaryChange,
@@ -121,8 +120,9 @@ class Sheet:
 # --------------------------------------------------------------------------- consignados
 
 def import_loans(db: Session, wb_v, wb_f, report: list[str]) -> dict:
-    """Retorna {'contracts': {nome: LoanContract}, 'payoffs': {cenário_quitações: {nome: mês}},
-    'sections': [(linha, cenário_quitações)]}."""
+    """Lê os contratos (CLT1/CLT2) e os meses de quitação (Quitações). Retorna
+    {'contracts': {nome: campos}, 'payoffs': {cenário_quitações: {nome: mês}}, 'sections': [(linha, cenário)]}.
+    Os contratos são criados depois, dentro de cada cenário que usa consignados."""
     out = {"contracts": {}, "payoffs": {}, "sections": []}
     if "CLT1" not in wb_v.sheetnames:
         report.append("Aba CLT1 não encontrada: nenhum consignado importado.")
@@ -144,17 +144,11 @@ def import_loans(db: Session, wb_v, wb_f, report: list[str]) -> dict:
             break
         rate, inst, last = _num(clt1.cell(r, 2).value), _num(clt1.cell(r, 3).value), _month(clt1.cell(r, 4).value)
         if inst and last:
-            first = first_by_name.get(name) or last
-            c = db.scalar(select(LoanContract).where(LoanContract.name == name))
-            if c is None:
-                c = LoanContract(name=name)
-                db.add(c)
-            c.creditor = name.split()[0]
-            c.monthly_rate, c.installment, c.first_month, c.last_month = rate, inst, first, last
-            out["contracts"][name] = c
+            out["contracts"][name] = {"name": name, "creditor": name.split()[0], "monthly_rate": rate,
+                                      "installment": inst, "first_month": first_by_name.get(name) or last,
+                                      "last_month": last}
         r += 1
-    db.flush()
-    report.append(f"{len(out['contracts'])} contratos de consignado importados.")
+    report.append(f"{len(out['contracts'])} contratos de consignado encontrados.")
 
     if "Quitações" in wb_v.sheetnames:
         q = wb_v["Quitações"]
@@ -340,7 +334,7 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
     # linhas de detalhamento
     cache = {(c.name.lower(), c.group): c for c in db.scalars(select(Category))}
     section, imported_rows, arrears_imported = None, 0, 0
-    payoff_key = None
+    payoff_key, uses_contracts = None, False
     for r in range(sh.row("DETALHAMENTO") or 1, sh.v.max_row + 1):
         label = _norm(sh.v.cell(r, 2).value)
         if label.upper() in SECTIONS:
@@ -365,9 +359,9 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
         if arrear_col:
             overdue = _num(sh.v.cell(r, arrear_col).value)
             if overdue:
-                _upsert_arrear(db, description=name, creditor=None, owner=None, amount=overdue,
-                               category_id=cat.id, due_date=eng.add_months(cols[0][1], -1),
-                               notes=f"Importado da coluna 'Em atraso' da aba '{sheet_name}'")
+                db.add(Arrear(scenario_id=sc.id, description=name, amount=overdue, category_id=cat.id,
+                              due_date=eng.add_months(cols[0][1], -1),
+                              notes=f"Importado da coluna 'Em atraso' da aba '{sheet_name}'"))
                 arrears_imported += 1
 
         # a linha automática pode ser calculada pelo motor?
@@ -380,6 +374,7 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
             formula = str(sh.f.cell(r, cols[0][0]).value or "")
             key = _payoff_key_for(formula, loans)
             computable = key is not None or (not loans["sections"] and "Quitações" not in formula)
+            uses_contracts = uses_contracts or computable
             if key is not None:
                 payoff_key = key
 
@@ -397,11 +392,10 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
                 db.add(PlanEntry(scenario_id=sc.id, category_id=cat.id, month=m, amount=value))
         imported_rows += 1
 
-    if payoff_key:
-        for name, month in loans["payoffs"].get(payoff_key, {}).items():
-            contract = loans["contracts"].get(name)
-            if contract:
-                db.add(LoanPayoff(scenario_id=sc.id, contract_id=contract.id, payoff_month=month))
+    if uses_contracts:
+        payoffs = loans["payoffs"].get(payoff_key, {}) if payoff_key else {}
+        for name, spec in loans["contracts"].items():
+            db.add(LoanContract(scenario_id=sc.id, payoff_month=payoffs.get(name), **spec))
 
     db.flush()
     report.append(f"Cenário '{scenario_name}' ({sheet_name}): {len(cols)} meses a partir de "
@@ -412,26 +406,12 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
     return sc
 
 
-def _upsert_arrear(db: Session, description: str, creditor: str | None, owner: str | None, **fields) -> Arrear:
-    """Reimportar atualiza o mesmo atraso em vez de duplicar (status e pagamento são preservados)."""
-    a = db.scalar(select(Arrear).where(Arrear.description == description,
-                                       Arrear.creditor.is_(None) if creditor is None else Arrear.creditor == creditor,
-                                       Arrear.owner.is_(None) if owner is None else Arrear.owner == owner))
-    if a is None:
-        a = Arrear(description=description, creditor=creditor, owner=owner, status="aberto")
-        db.add(a)
-    for k, v in fields.items():
-        setattr(a, k, v)
-    db.flush()
-    return a
-
-
-def import_debts_sheet(db: Session, wb_v, report: list[str]) -> None:
+def read_debts_sheet(wb_v) -> list[dict]:
     """Aba "Dívidas": linhas no formato  Dívidas <responsável> | credor | valor."""
     if "Dívidas" not in wb_v.sheetnames:
-        return
-    ws, count, total = wb_v["Dívidas"], 0, 0.0
-    for row in ws.iter_rows():
+        return []
+    out = []
+    for row in wb_v["Dívidas"].iter_rows():
         cells = [c for c in row if c.value not in (None, "")]
         for i, c in enumerate(cells[:-2]):
             m = re.match(r"D[íi]vidas?\s+(.+)", _norm(c.value), re.I)
@@ -439,12 +419,10 @@ def import_debts_sheet(db: Session, wb_v, report: list[str]) -> None:
                 continue
             creditor, amount = _norm(cells[i + 1].value), _num(cells[i + 2].value)
             if creditor and amount:
-                _upsert_arrear(db, description=creditor, creditor=creditor, owner=m.group(1).strip(),
-                               amount=amount, notes="Importado da aba 'Dívidas'")
-                count, total = count + 1, total + amount
+                out.append({"description": creditor, "creditor": creditor, "owner": m.group(1).strip(),
+                            "amount": amount, "notes": "Importado da aba 'Dívidas'"})
             break
-    if count:
-        report.append(f"{count} dívidas em atraso importadas da aba 'Dívidas' (R$ {total:,.2f}).")
+    return out
 
 
 def validate(db: Session, sc: Scenario) -> str:
@@ -480,7 +458,7 @@ def import_workbook(db: Session, path, only: list[str] | None = None) -> list[st
     wb_v = openpyxl.load_workbook(path, data_only=True)
     report: list[str] = []
     loans = import_loans(db, wb_v, wb_f, report)
-    import_debts_sheet(db, wb_v, report)
+    debts = read_debts_sheet(wb_v)
     names = _scenario_names(wb_f)
     imported = []
     for sheet, name in names.items():
@@ -490,6 +468,13 @@ def import_workbook(db: Session, path, only: list[str] | None = None) -> list[st
             imported.append(import_scenario(db, sheet, name, wb_f, wb_v, loans, report))
         except ValueError as exc:
             report.append(f"Aba '{sheet}' ignorada: {exc}")
+    if debts and imported:
+        # a aba Dívidas não pertence a um cenário: cada cenário importado recebe a sua cópia
+        for sc in imported:
+            for d in debts:
+                db.add(Arrear(scenario_id=sc.id, **d))
+        report.append(f"{len(debts)} dívidas da aba 'Dívidas' (R$ {sum(d['amount'] for d in debts):,.2f}) "
+                      f"adicionadas aos atrasos de cada cenário importado.")
     if imported and not db.scalar(select(Scenario.id).where(Scenario.is_baseline.is_(True))):
         base = next((s for s in imported if s.name == "BR"), imported[0])
         base.is_baseline = True
@@ -500,16 +485,15 @@ def import_workbook(db: Session, path, only: list[str] | None = None) -> list[st
 
 
 def main() -> None:
-    from .db import Base, SessionLocal, engine
-    from .services import seed_categories
+    from .db import SessionLocal
+    from .migrations import init_db
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("xlsx")
     ap.add_argument("--only", nargs="*", help="importar apenas estes cenários/abas")
     args = ap.parse_args()
-    Base.metadata.create_all(engine)
+    init_db()
     with SessionLocal() as db:
-        seed_categories(db)
         for line in import_workbook(db, args.xlsx, args.only):
             print(line)
 

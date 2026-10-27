@@ -48,17 +48,15 @@ def compare(ids: str | None = Query(None, description="ids separados por vírgul
 def loans_compare(ids: str | None = None, db: Session = Depends(get_session)):
     """Quitação de cada consignado por cenário: mês, desembolso, parcelas evitadas e economia."""
     scenarios = _scenarios(db, ids)
-    base = eng.loans_timeline(loans_for(db, None))
     per = []
     for sc in scenarios:
         t = eng.loans_timeline(loans_for(db, sc.id))
         per.append({"id": sc.id, "name": sc.name, "totals": t["totals"], "contracts": t["contracts"],
                     "months": t["months"], "installments_with_payoff": t["installments_with_payoff"],
+                    "installments_without_payoff": t["installments_without_payoff"],
                     "payoff_disbursement": t["payoff_disbursement"],
                     "cumulative_net_saving": t["cumulative_net_saving"]})
-    return {"baseline": {"months": base["months"], "installments": base["installments_without_payoff"],
-                         "totals": base["totals"]},
-            "scenarios": per}
+    return {"scenarios": per}
 
 
 @router.get("/budget-vs-actual")

@@ -95,6 +95,7 @@ class LoanIn(BaseModel):
     installment: float
     first_month: date
     last_month: date
+    payoff_month: date | None = None
     notes: str | None = None
 
 
@@ -142,14 +143,10 @@ class ArrearIn(BaseModel):
     negotiated_amount: float | None = None
     status: str = Field("aberto", pattern="^(aberto|negociado|pago)$")
     paid_date: date | None = None
+    plan_start: date | None = None  # mês em que começa o pagamento (None = sem plano)
+    plan_installments: int = Field(1, ge=1, le=120)
     notes: str | None = None
 
 
 class ArrearOut(ArrearIn, ORM):
     id: int
-
-
-class ArrearPlanIn(BaseModel):
-    arrear_id: int
-    start_month: date | None  # None = sem plano de pagamento neste cenário
-    installments: int = Field(1, ge=1, le=120)
