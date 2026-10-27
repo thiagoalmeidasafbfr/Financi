@@ -9,15 +9,17 @@ class Base(DeclarativeBase):
 
 
 def make_engine(url: str):
-    kwargs = {}
     if url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
-    engine = create_engine(url, **kwargs)
-    if url.startswith("sqlite"):
+        engine = create_engine(url, connect_args={"check_same_thread": False})
+
         @event.listens_for(engine, "connect")
         def _fk_on(dbapi_conn, _):
             dbapi_conn.execute("PRAGMA foreign_keys=ON")
-    return engine
+
+        return engine
+    # Bancos serverless (Neon) suspendem a compute por inatividade e derrubam as
+    # conexões abertas: testa a conexão antes de usar e recicla as antigas.
+    return create_engine(url, pool_pre_ping=True, pool_recycle=300)
 
 
 engine = make_engine(DATABASE_URL)
@@ -30,3 +32,4 @@ def get_session():
         yield session
     finally:
         session.close()
+

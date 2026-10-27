@@ -50,7 +50,33 @@ Configurado por `DATABASE_URL` (variável de ambiente ou arquivo `.env`, veja `.
 | PostgreSQL | `postgresql+psycopg://usuario:senha@host:5432/financi` |
 | Supabase / Neon | a connection string do provedor, com o prefixo `postgresql+psycopg://` |
 
-As tabelas são criadas automaticamente na primeira execução. Com Docker:
+As tabelas são criadas automaticamente na primeira execução. Para conferir a conexão:
+
+```bash
+python -m app.check_db      # mostra o banco (sem a senha), a versão e cria as tabelas
+```
+
+### Neon
+
+1. No painel do projeto, clique em **Connect**, escolha o branch `production`, o banco `neondb`
+   e copie a connection string (aba `.env`). Ela começa com `postgresql://` e termina com
+   `?sslmode=require&channel_binding=require`. Pode colar como está: o app converte para o driver psycopg
+   e aceita as aspas.
+2. Crie o arquivo `.env` na raiz do projeto (ele está no `.gitignore`):
+   ```
+   DATABASE_URL='postgresql://neondb_owner:SENHA@ep-xxxx.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
+   ```
+3. `python -m app.check_db`, depois `python -m app.importer Fluxo_de_Caixa_Pessoal.xlsx` para carregar os cenários
+   e `uvicorn app.main:app` para abrir o app.
+
+O plano gratuito do Neon suspende a compute após alguns minutos sem uso. O app testa a conexão antes de
+usar (`pool_pre_ping`), então a primeira requisição depois de uma pausa só demora um pouco mais.
+Para testar mudanças sem mexer nos dados reais, crie um branch filho no Neon (**Create child branch**)
+e aponte o `.env` para ele.
+
+### Docker
+
+
 
 ```bash
 docker compose up --build    # app + PostgreSQL 16 em http://localhost:8000
