@@ -15,6 +15,7 @@
     <button data-tab="fluxo">Fluxo mensal</button>
     <button data-tab="premissas">Premissas</button>
     <button data-tab="consignados">Consignados</button>
+    <button data-tab="atrasos">Em atraso</button>
     <button data-tab="comparar">Comparar cenários</button>
     <button data-tab="lancamentos">Lançamentos</button>
     <button data-tab="orcado">Orçado × realizado</button>
@@ -150,6 +151,25 @@
       <p class="eyebrow">Contratos</p>
       <div class="table-wrap"><table id="contracts-table"></table></div>
       <div class="row"><button id="btn-add-contract">Adicionar contrato</button></div>
+    </div>
+  </section>
+
+  <!-- EM ATRASO -->
+  <section class="tab" id="tab-atrasos">
+    <div class="page-title"><div class="crumb">Dívidas / <span data-scn></span></div><h1>Contas em atraso</h1></div>
+    <div class="tiles" id="arrear-tiles"></div>
+    <div class="card">
+      <div class="card-head">
+        <p class="eyebrow">Atrasos e plano de pagamento · cenário selecionado</p>
+        <button class="primary" id="btn-add-arrear">Adicionar atraso</button>
+      </div>
+      <p class="hint">Valor atualizado = original + multa + juros de mora simples desde o vencimento (ou o valor do acordo, se negociado).
+        O plano de pagamento vale só para o cenário selecionado e entra no fluxo como “Pagamento de atrasos”.</p>
+      <div class="table-wrap"><table id="arrear-table"></table></div>
+    </div>
+    <div class="grid2">
+      <div class="card"><p class="eyebrow">Valor atualizado por atraso · original e encargos</p><div id="chart-arrear-items" class="chart"></div></div>
+      <div class="card"><p class="eyebrow">Pagamentos planejados por mês</p><div id="chart-arrear-plan" class="chart"></div></div>
     </div>
   </section>
 

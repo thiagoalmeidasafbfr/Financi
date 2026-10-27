@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .db import Base, SessionLocal, engine, get_session
 from .importer import import_workbook
-from .routers import catalog, reports, scenarios, transactions
+from .routers import arrears, catalog, reports, scenarios, transactions
 from .services import seed_categories
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -73,6 +73,7 @@ app.include_router(scenarios.router)
 app.include_router(catalog.router)
 app.include_router(transactions.router)
 app.include_router(reports.router)
+app.include_router(arrears.router)
 
 
 @app.post("/api/import/xlsx", tags=["importação"])

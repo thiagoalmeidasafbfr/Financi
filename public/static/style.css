@@ -225,3 +225,9 @@ table.flow .rowtools button { height: 20px; padding: 0 6px; font-size: 11px; }
 .two-part { font-size: var(--text-h2-size); line-height: var(--text-h2-line); letter-spacing: var(--text-h2-tracking); margin: 0 0 var(--space-3); }
 .two-part span { display: block; font-weight: var(--font-weight-regular); }
 .two-part b { display: block; font-weight: var(--font-weight-semibold); }
+tr.group .newline { height: 20px; padding: 0 6px; margin-left: 8px; font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--text-secondary); }
+tr.group .newline:hover { color: var(--text-primary); }
+.banner[hidden], [hidden] { display: none !important; }
+#arrear-table td:first-child, #arrear-table th:first-child { position: sticky; left: 0; background: var(--surface-card); z-index: 1; }
+#arrear-table thead th:first-child { z-index: 3; }
+#arrear-table td { padding-left: 6px; padding-right: 6px; }

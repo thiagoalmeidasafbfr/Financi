@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session
 
 from . import engine as eng
 from .models import (
+    Arrear,
+    ArrearPlan,
     Category,
     InflationRate,
     LoanContract,
@@ -37,6 +39,7 @@ DEFAULT_CATEGORIES = [
     ("Academia", "despesa_fixa", "manual", None),
     ("Consignados em folha", "divida", "consignados", None),
     ("Quitação antecipada de consignados", "divida", "quitacao", None),
+    ("Pagamento de atrasos", "divida", "atrasos", None),
     ("Supermercado", "despesa_variavel", "manual", None),
     ("Feira / padaria", "despesa_variavel", "manual", None),
     ("Combustível", "despesa_variavel", "manual", None),
@@ -57,10 +60,16 @@ DEFAULT_CATEGORIES = [
 
 
 def seed_categories(db: Session) -> None:
-    if db.scalar(select(Category.id).limit(1)) is not None:
+    if db.scalar(select(Category.id).limit(1)) is None:
+        for i, (name, group, kind, tag) in enumerate(DEFAULT_CATEGORIES):
+            db.add(Category(name=name, group=group, kind=kind, tag=tag, sort_order=i * 10))
+        db.commit()
         return
+    # bancos criados por versões anteriores: garante as linhas calculadas que surgiram depois
+    kinds = set(db.scalars(select(Category.kind)))
     for i, (name, group, kind, tag) in enumerate(DEFAULT_CATEGORIES):
-        db.add(Category(name=name, group=group, kind=kind, tag=tag, sort_order=i * 10))
+        if kind != "manual" and kind not in kinds:
+            db.add(Category(name=name, group=group, kind=kind, tag=tag, sort_order=i * 10))
     db.commit()
 
 
@@ -84,6 +93,21 @@ def loans_for(db: Session, scenario_id: int | None) -> list[eng.LoanIn]:
     ]
 
 
+def arrears_for(db: Session, scenario_id: int | None) -> list[eng.ArrearIn]:
+    plans = {}
+    if scenario_id is not None:
+        plans = {p.arrear_id: p for p in
+                 db.scalars(select(ArrearPlan).where(ArrearPlan.scenario_id == scenario_id))}
+    out = []
+    for a in db.scalars(select(Arrear).order_by(Arrear.id)):
+        p = plans.get(a.id)
+        out.append(eng.ArrearIn(
+            id=a.id, description=a.description, amount=a.amount, due_month=a.due_date, fine_pct=a.fine_pct or 0.0,
+            interest_monthly=a.interest_monthly or 0.0, negotiated_amount=a.negotiated_amount, status=a.status,
+            creditor=a.creditor, plan_start=p.start_month if p else None, plan_installments=p.installments if p else 1))
+    return out
+
+
 def scenario_input(db: Session, sc: Scenario) -> eng.ScenarioIn:
     cats = db.scalars(select(Category)).all()
     # categorias inativas só aparecem se ainda tiverem valores neste cenário
@@ -98,6 +122,7 @@ def scenario_input(db: Session, sc: Scenario) -> eng.ScenarioIn:
         month_settings=[eng.MonthSettingIn(m.month, m.invest_pct, m.min_balance, m.invest_return,
                                            m.gross_salary, m.manual_redemption) for m in sc.month_settings],
         loans=loans_for(db, sc.id),
+        arrears=arrears_for(db, sc.id),
     )
 
 
@@ -119,6 +144,8 @@ def duplicate_scenario(db: Session, sc: Scenario, new_name: str) -> Scenario:
                                          invest_return=m.invest_return, gross_salary=m.gross_salary,
                                          manual_redemption=m.manual_redemption) for m in sc.month_settings]
     clone.payoffs = [LoanPayoff(contract_id=p.contract_id, payoff_month=p.payoff_month) for p in sc.payoffs]
+    clone.arrear_plans = [ArrearPlan(arrear_id=p.arrear_id, start_month=p.start_month, installments=p.installments)
+                          for p in sc.arrear_plans]
     db.add(clone)
     db.commit()
     return clone

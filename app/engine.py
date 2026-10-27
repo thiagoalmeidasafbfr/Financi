@@ -88,6 +88,21 @@ class LoanIn:
 
 
 @dataclass
+class ArrearIn:
+    id: int
+    description: str
+    amount: float
+    due_month: date | None = None
+    fine_pct: float = 0.0
+    interest_monthly: float = 0.0
+    negotiated_amount: float | None = None
+    status: str = "aberto"
+    creditor: str | None = None
+    plan_start: date | None = None
+    plan_installments: int = 1
+
+
+@dataclass
 class ScenarioIn:
     start_month: date
     months: int = 26
@@ -120,6 +135,7 @@ class ScenarioIn:
     inflation: list[InflationIn] = field(default_factory=list)
     month_settings: list[MonthSettingIn] = field(default_factory=list)
     loans: list[LoanIn] = field(default_factory=list)
+    arrears: list[ArrearIn] = field(default_factory=list)
 
 
 # --------------------------------------------------------------------------- empréstimos
@@ -149,6 +165,57 @@ def loan_payoff_analysis(loan: LoanIn) -> dict:
         "payoff_value": value,
         "interest_saved": loan.installment * n - value,
         "months_equivalent": (value / loan.installment) if n and loan.installment else None,
+    }
+
+
+# --------------------------------------------------------------------------- atrasos
+
+def arrear_months_late(a: ArrearIn, at: date) -> int:
+    if a.due_month is None:
+        return 0
+    return max(0, months_between(month_start(a.due_month), month_start(at)))
+
+
+def arrear_value(a: ArrearIn, at: date) -> float:
+    """Valor a pagar em `at`: acordo negociado, ou original + multa + juros simples de mora."""
+    if a.status == "pago":
+        return 0.0
+    if a.negotiated_amount is not None:
+        return a.negotiated_amount
+    return a.amount * (1 + a.fine_pct) + a.amount * a.interest_monthly * arrear_months_late(a, at)
+
+
+def arrear_schedule(a: ArrearIn) -> dict[date, float]:
+    """Parcelas do plano de pagamento: valor na data de início dividido em parcelas iguais."""
+    if a.plan_start is None or a.status == "pago":
+        return {}
+    n = max(1, a.plan_installments)
+    start = month_start(a.plan_start)
+    each = arrear_value(a, start) / n
+    return {add_months(start, i): each for i in range(n)}
+
+
+def arrears_summary(arrears: list[ArrearIn], today: date) -> dict:
+    items, open_items = [], [a for a in arrears if a.status != "pago"]
+    for a in arrears:
+        sched = arrear_schedule(a)
+        items.append({
+            "id": a.id, "months_late": arrear_months_late(a, today), "updated_value": arrear_value(a, today),
+            "charges": arrear_value(a, today) - a.amount if a.status != "pago" and a.negotiated_amount is None else 0.0,
+            "plan_total": sum(sched.values()), "plan_installment": next(iter(sched.values()), 0.0),
+            "plan_end": max(sched).isoformat() if sched else None,
+        })
+    late = [arrear_months_late(a, today) for a in open_items if a.due_month]
+    return {
+        "items": items,
+        "totals": {
+            "em_aberto": len(open_items),
+            "valor_original": sum(a.amount for a in open_items),
+            "valor_atualizado": sum(arrear_value(a, today) for a in open_items),
+            "planejado": sum(i["plan_total"] for i in items),
+            "sem_plano": sum(arrear_value(a, today) for a in open_items if a.plan_start is None),
+            "mais_antigo_meses": max(late) if late else 0,
+        },
     }
 
 
@@ -228,6 +295,13 @@ def project(sc: ScenarioIn) -> dict:
         loan_rows.append({"id": loan.id, "name": loan.name, "installments": values, "payoff": pay, **analysis,
                           "payoff_month": loan.payoff_month.isoformat() if loan.payoff_month else None})
 
+    # pagamentos de contas em atraso (planos do cenário)
+    arrear_payments = [0.0] * n
+    for a in sc.arrears:
+        for m, v in arrear_schedule(a).items():
+            if m in months:
+                arrear_payments[months.index(m)] += v
+
     def auto_value(c: CategoryIn, i: int, m: date) -> float:
         s = salary[i]
         if c.kind == "salario":
@@ -247,6 +321,8 @@ def project(sc: ScenarioIn) -> dict:
             return installments[i]
         if c.kind == "quitacao":
             return payoffs[i]
+        if c.kind == "atrasos":
+            return arrear_payments[i]
         return 0.0
 
     rows = []
@@ -368,7 +444,8 @@ def compute_kpis(months: list[date], rows: list[dict], s: dict, sc: ScenarioIn) 
     def tag_total(tag: str) -> float:
         return sum(r["total"] for r in rows if r["tag"] == tag)
 
-    parcelas = sum(r["total"] for r in rows if r["group"] == "divida" and r["kind"] != "quitacao")
+    parcelas = sum(r["total"] for r in rows if r["group"] == "divida" and r["kind"] not in ("quitacao", "atrasos"))
+    atrasos = sum(r["total"] for r in rows if r["kind"] == "atrasos")
     quitacoes = sum(r["total"] for r in rows if r["kind"] == "quitacao")
     last_debt = None
     for m, v in zip(months, s["dividas"]):
@@ -401,6 +478,7 @@ def compute_kpis(months: list[date], rows: list[dict], s: dict, sc: ScenarioIn) 
         "taxa_poupanca": sum(s["saldo_livre"]) / rec_total if rec_total else 0.0,
         "total_parcelas": parcelas,
         "total_quitacoes": quitacoes,
+        "total_atrasos_pagos": atrasos,
         "total_dividas": sum(s["dividas"]),
         "pct_renda_dividas": sum(s["dividas"]) / rec_total if rec_total else 0.0,
         "ultimo_mes_com_parcela": last_debt,

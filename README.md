@@ -9,9 +9,10 @@ de forma que cada cenário fica guardado no banco e pode ser editado, duplicado 
 | Tela | O que faz |
 | --- | --- |
 | **Painel** | Patrimônio final, KPIs, **Sankey de para onde vai o dinheiro** (período inteiro ou um mês), saldos e receitas × despesas |
-| **Fluxo mensal** | Grade editável mês a mês: receitas, despesas fixas, dívidas, variáveis, investimentos e visão consolidada |
+| **Fluxo mensal** | Grade editável mês a mês: receitas, despesas fixas, dívidas, variáveis, investimentos e visão consolidada. **+ Nova linha** em cada grupo; renomear e remover linhas |
 | **Premissas** | Parâmetros do cenário, reajustes de salário, inflação, % a investir / saldo mínimo / rentabilidade mês a mês |
 | **Consignados** | Quitação de cada contrato por cenário: valor de quitação (VP), **desembolso de caixa**, parcelas evitadas, juros evitados, payback e **comparação de economia entre cenários** |
+| **Em atraso** | Contas vencidas (aluguel, cartão, condomínio...): valor atualizado com multa e juros de mora, acordo negociado, situação, e **plano de pagamento por cenário** que entra no fluxo como "Pagamento de atrasos" |
 | **Comparar cenários** | KPIs lado a lado com o melhor destacado, saldos no tempo, totais por grupo e **um Sankey por cenário** |
 | **Lançamentos** | Realizado do dia a dia (manual ou importação CSV) |
 | **Orçado × realizado** | Planejado do cenário base contra os lançamentos do mês, por categoria |
@@ -109,9 +110,11 @@ Scenario ─┬─ PlanEntry       valor planejado por categoria × mês (ou aju
           ├─ SalaryChange    reajustes do salário líquido
           ├─ InflationRate   inflação anual das despesas
           ├─ MonthSetting    % a investir, saldo mínimo, rentabilidade, salário bruto, resgate manual
-          └─ LoanPayoff      mês de quitação de cada consignado neste cenário
+          ├─ LoanPayoff      mês de quitação de cada consignado neste cenário
+          └─ ArrearPlan      início e nº de parcelas para pagar cada atraso neste cenário
 Category       linhas do fluxo (grupo + tipo: manual ou calculada)
 LoanContract   consignados (parcela, taxa, 1º e último desconto)
+Arrear         contas em atraso (valor, vencimento, multa, juros, acordo, situação)
 Account ─ Transaction   realizado
 ```
 
@@ -127,6 +130,9 @@ Account ─ Transaction   realizado
   As abas antigas usam "% da sobra do mês", disponível como regra alternativa do cenário.
 - **FGTS** (referência, fora do saldo): depósito = alíquota × salário bruto; rendimento mensal = (1 + taxa a.a.)^(1/12) − 1.
 - **Inflação** (opcional): fator acumulado aplicado às despesas fixas/variáveis no mês do reajuste.
+- **Atrasos**: valor atualizado = original × (1 + multa) + original × juros a.m. × meses desde o vencimento
+  (ou o valor do acordo). O plano divide o valor do mês de início em parcelas iguais; atrasos pagos saem do fluxo.
+  A importação traz a coluna "Em atraso" das abas de fluxo e a aba "Dívidas".
 
 ### Conferência com a planilha
 

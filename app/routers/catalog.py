@@ -1,6 +1,7 @@
 """Cadastros compartilhados: categorias, contratos de empréstimo e contas."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import engine as eng
@@ -20,7 +21,7 @@ def _crud(path: str, model, schema_in, schema_out, order, prepare=lambda d: d):
     def create_item(data: schema_in, db: Session = Depends(get_session)):
         obj = model(**prepare(data.model_dump()))
         db.add(obj)
-        db.commit()
+        _commit(db)
         return obj
 
     @router.put(f"/{path}/{{item_id}}", response_model=schema_out, name=f"update_{path}")
@@ -30,7 +31,7 @@ def _crud(path: str, model, schema_in, schema_out, order, prepare=lambda d: d):
             raise HTTPException(404, "Registro não encontrado")
         for k, v in prepare(data.model_dump()).items():
             setattr(obj, k, v)
-        db.commit()
+        _commit(db)
         return obj
 
     @router.delete(f"/{path}/{{item_id}}", status_code=204, name=f"delete_{path}")
@@ -40,6 +41,14 @@ def _crud(path: str, model, schema_in, schema_out, order, prepare=lambda d: d):
             raise HTTPException(404, "Registro não encontrado")
         db.delete(obj)
         db.commit()
+
+
+def _commit(db: Session) -> None:
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "Já existe um registro com esse nome") from None
 
 
 def _check_category(d: dict) -> dict:

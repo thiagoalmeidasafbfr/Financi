@@ -128,3 +128,28 @@ class TransactionIn(BaseModel):
 
 class TransactionOut(TransactionIn, ORM):
     id: int
+
+
+class ArrearIn(BaseModel):
+    description: str
+    creditor: str | None = None
+    owner: str | None = None
+    category_id: int | None = None
+    due_date: date | None = None
+    amount: float = Field(ge=0)
+    fine_pct: float = 0
+    interest_monthly: float = 0
+    negotiated_amount: float | None = None
+    status: str = Field("aberto", pattern="^(aberto|negociado|pago)$")
+    paid_date: date | None = None
+    notes: str | None = None
+
+
+class ArrearOut(ArrearIn, ORM):
+    id: int
+
+
+class ArrearPlanIn(BaseModel):
+    arrear_id: int
+    start_month: date | None  # None = sem plano de pagamento neste cenário
+    installments: int = Field(1, ge=1, le=120)

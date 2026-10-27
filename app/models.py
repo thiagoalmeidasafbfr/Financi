@@ -48,7 +48,10 @@ KINDS = (
     "bonus",
     "consignados",
     "quitacao",
+    "atrasos",
 )
+
+ARREAR_STATUS = ("aberto", "negociado", "pago")
 
 
 class Category(Base):
@@ -116,6 +119,7 @@ class Scenario(Base):
     inflation_rates: Mapped[list["InflationRate"]] = relationship(cascade="all, delete-orphan", order_by="InflationRate.year")
     month_settings: Mapped[list["MonthSetting"]] = relationship(cascade="all, delete-orphan", order_by="MonthSetting.month")
     payoffs: Mapped[list["LoanPayoff"]] = relationship(cascade="all, delete-orphan")
+    arrear_plans: Mapped[list["ArrearPlan"]] = relationship(cascade="all, delete-orphan")
 
 
 class PlanEntry(Base):
@@ -192,6 +196,39 @@ class LoanPayoff(Base):
     payoff_month: Mapped[date] = mapped_column(Date)
 
     __table_args__ = (UniqueConstraint("scenario_id", "contract_id", name="uq_payoff"),)
+
+
+class Arrear(Base):
+    """Conta em atraso (aluguel, cartão, condomínio...). Compartilhada entre cenários;
+    o plano de pagamento de cada cenário fica em ArrearPlan."""
+
+    __tablename__ = "arrears"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    description: Mapped[str] = mapped_column(String(160))
+    creditor: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    owner: Mapped[str | None] = mapped_column(String(80), nullable=True)  # responsável
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)  # vencimento original
+    amount: Mapped[float] = mapped_column(Money)  # valor original em atraso
+    fine_pct: Mapped[float] = mapped_column(Rate, default=0)  # multa (uma vez)
+    interest_monthly: Mapped[float] = mapped_column(Rate, default=0)  # juros de mora simples, % a.m.
+    negotiated_amount: Mapped[float | None] = mapped_column(Money, nullable=True)  # acordo fechado
+    status: Mapped[str] = mapped_column(String(20), default="aberto")
+    paid_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ArrearPlan(Base):
+    __tablename__ = "arrear_plans"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"), index=True)
+    arrear_id: Mapped[int] = mapped_column(ForeignKey("arrears.id", ondelete="CASCADE"))
+    start_month: Mapped[date] = mapped_column(Date)
+    installments: Mapped[int] = mapped_column(Integer, default=1)
+
+    __table_args__ = (UniqueConstraint("scenario_id", "arrear_id", name="uq_arrear_plan"),)
 
 
 class Account(Base):

@@ -147,7 +147,7 @@ function renderSankey(id, data, compact = false) {
 // ------------------------------------------------------------------ estado
 const state = {
   scenarios: [], categories: [], accounts: [], loans: [],
-  current: null, projection: null, tab: "painel",
+  current: null, projection: null, tab: "painel", arrears: [], newLines: new Set(),
   sankeyMonth: null, compareIds: null,
 };
 const GROUPS = {
@@ -157,6 +157,7 @@ const GROUPS = {
 const KINDS = {
   manual: "Manual", salario: "Salário (reajustes)", decimo_terceiro: "13º salário", ferias: "1/3 de férias",
   restituicao_ir: "Restituição IR", bonus: "Bônus", consignados: "Consignados", quitacao: "Quitação de consignados",
+  atrasos: "Pagamento de atrasos",
 };
 
 async function loadBase() {
@@ -204,6 +205,7 @@ const KPI_LABELS = [
   ["saldo_livre_medio", "Saldo livre médio"], ["taxa_poupanca", "Taxa de poupança", "p"],
   ["DÍVIDAS", null],
   ["total_parcelas", "Total pago em parcelas"], ["total_quitacoes", "Total em quitações antecipadas"],
+  ["total_atrasos_pagos", "Total pago em atrasos"],
   ["total_dividas", "Total de dívidas pagas"], ["pct_renda_dividas", "% da renda com dívidas", "p"],
   ["ultimo_mes_com_parcela", "Último mês com parcela", "m"], ["meses_acima_limite_dividas", "Meses acima do limite", "n"],
   ["INVESTIMENTOS", null],
@@ -299,12 +301,13 @@ function renderFluxo() {
   let h = `<thead><tr><th>R$</th>${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}<th>Total</th><th>Média</th></tr></thead><tbody>`;
   for (const [g, label] of Object.entries(GROUPS)) {
     const showEmpty = $("#flow-empty").checked;
-    const rows = p.rows.filter((r) => r.group === g && (showEmpty || r.kind !== "manual" || r.values.some((v) => v)));
-    h += `<tr class="group"><td>${label}</td>${months.map(() => "<td></td>").join("")}<td></td><td></td></tr>`;
+    const rows = p.rows.filter((r) => r.group === g &&
+      (showEmpty || r.kind !== "manual" || state.newLines.has(r.category_id) || r.values.some((v) => v)));
+    h += `<tr class="group"><td>${label} <button class="ghost sm newline" data-newline="${g}">+ Nova linha</button></td>${months.map(() => "<td></td>").join("")}<td></td><td></td></tr>`;
     for (const r of rows) {
       const auto = r.kind !== "manual";
       h += `<tr data-cat="${r.category_id}"><td>${esc(r.name)}${auto ? ' <span class="badge">auto</span>' : ""}
-        <span class="rowtools"><button class="ghost sm" data-fill="${r.category_id}" title="Repetir um valor em vários meses">Repetir</button></span></td>`;
+        <span class="rowtools"><button class="ghost sm" data-fill="${r.category_id}" title="Repetir um valor em vários meses">Repetir</button>${auto ? "" : `<button class="ghost sm" data-rename="${r.category_id}" title="Renomear a linha (vale para todos os cenários)">Renomear</button><button class="ghost sm danger" data-clear="${r.category_id}" title="Apagar os valores desta linha neste cenário">Remover</button>`}</span></td>`;
       r.values.forEach((v, i) => {
         const cls = ["cell", auto ? "auto" : "", r.overridden[i] ? "override" : ""].join(" ");
         h += `<td class="${cls}" data-i="${i}">${num(v)}</td>`;
@@ -333,6 +336,10 @@ $("#flow-empty").addEventListener("change", renderFluxo);
 $("#flow-table").addEventListener("click", async (ev) => {
   const fillBtn = ev.target.closest("[data-fill]");
   if (fillBtn) return fillRow(+fillBtn.dataset.fill);
+  const t = ev.target.closest("[data-newline],[data-rename],[data-clear]");
+  if (t?.dataset.newline) return newLine(t.dataset.newline);
+  if (t?.dataset.rename) return renameLine(+t.dataset.rename);
+  if (t?.dataset.clear) return clearLine(+t.dataset.clear);
   const td = ev.target.closest("td.cell");
   if (!td || td.querySelector("input")) return;
   const catId = +td.parentElement.dataset.cat, i = +td.dataset.i;
@@ -359,6 +366,41 @@ $("#flow-table").addEventListener("click", async (ev) => {
   });
   input.addEventListener("blur", () => commit(true));
 });
+
+async function newLine(group) {
+  const name = (prompt(`Nome da nova linha em "${GROUPS[group]}":`) || "").trim();
+  if (!name) return;
+  // linha que já existe (oculta por estar vazia neste cenário ou desativada) é reaproveitada
+  let cat = state.categories.find((c) => c.group === group && c.name.toLowerCase() === name.toLowerCase());
+  if (cat && !cat.active) await api("PUT", `/api/categories/${cat.id}`, { ...cat, active: true });
+  if (!cat) {
+    const order = Math.max(0, ...state.categories.filter((c) => c.group === group).map((c) => c.sort_order)) + 10;
+    cat = await api("POST", "/api/categories", { name, group, kind: "manual", sort_order: order });
+  }
+  state.newLines.add(cat.id);
+  await loadBase();
+  await refresh();
+  toast(`Linha “${name}” criada: clique nas células para lançar valores`);
+}
+
+async function renameLine(catId) {
+  const cat = state.categories.find((c) => c.id === catId);
+  const name = (prompt("Novo nome (vale para todos os cenários):", cat.name) || "").trim();
+  if (!name || name === cat.name) return;
+  await api("PUT", `/api/categories/${catId}`, { ...cat, name });
+  await loadBase();
+  await refresh();
+}
+
+async function clearLine(catId) {
+  const row = state.projection.rows.find((r) => r.category_id === catId);
+  if (!confirm(`Apagar todos os valores de "${row.name}" neste cenário? A linha some do fluxo (continua disponível nos outros cenários).`)) return;
+  const m = state.projection.months;
+  await api("POST", `/api/scenarios/${state.current}/entries/fill`,
+    { category_id: catId, from_month: m[0], to_month: m[m.length - 1], amount: null });
+  state.newLines.delete(catId);
+  await refresh();
+}
 
 async function fillRow(catId) {
   const row = state.projection.rows.find((r) => r.category_id === catId);
@@ -689,6 +731,117 @@ $("#btn-add-contract").onclick = () => {
   renderContracts();
 };
 
+// ------------------------------------------------------------------ EM ATRASO
+const ARREAR_STATUS = { aberto: "Em aberto", negociado: "Negociado", pago: "Pago" };
+
+async function renderAtrasos() {
+  const data = await api("GET", `/api/arrears${state.current ? `?scenario_id=${state.current}` : ""}`);
+  state.arrears = data.items;
+  const T = data.totals;
+  $("#arrear-tiles").innerHTML = [
+    ["Em aberto", String(T.em_aberto), `mais antigo: ${T.mais_antigo_meses} ${T.mais_antigo_meses === 1 ? "mês" : "meses"}`],
+    ["Valor original", fmt(T.valor_original), "soma dos valores vencidos"],
+    ["Valor atualizado hoje", fmt(T.valor_atualizado), `encargos: ${fmt(T.valor_atualizado - T.valor_original)}`, true],
+    ["Planejado no cenário", fmt(T.planejado), "entra no fluxo como Pagamento de atrasos"],
+    ["Sem plano de pagamento", fmt(T.sem_plano), T.sem_plano > 0 ? "defina início e parcelas abaixo" : "tudo planejado"],
+  ].map(([l, v, s, inv]) => `<div class="tile${inv ? " inverse" : ""}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+  renderArrearTable();
+
+  const open = data.items.filter((a) => a.status !== "pago").sort((a, b) => b.updated_value - a.updated_value);
+  const label = (a) => a.creditor && a.creditor !== a.description ? `${a.description} · ${a.creditor}` : a.description;
+  const pal = SERIES();
+  chart("chart-arrear-items").setOption({
+    ...baseOption(),
+    grid: { left: 8, right: 24, top: 36, bottom: 8, containLabel: true },
+    tooltip: { ...baseOption().tooltip, axisPointer: { type: "shadow" } },
+    xAxis: { type: "value", splitLine: { lineStyle: { color: css("--chart-grid") } }, axisLabel: { color: css("--text-muted"), formatter: short } },
+    yAxis: { type: "category", inverse: true, data: open.map(label), axisTick: { show: false },
+      axisLine: { lineStyle: { color: css("--border-default") } }, axisLabel: { color: css("--text-secondary"), width: 170, overflow: "truncate" } },
+    series: [
+      { name: "Original / acordo", type: "bar", stack: "a", color: css("--ink-900"), barMaxWidth: 18,
+        data: open.map((a) => (a.negotiated_amount != null ? a.updated_value : a.amount)) },
+      { name: "Multa e juros", type: "bar", stack: "a", color: pal[0], barMaxWidth: 18, itemStyle: { borderRadius: [0, 4, 4, 0] },
+        data: open.map((a) => a.charges) },
+    ],
+  }, true);
+
+  const p = state.projection;
+  const row = p?.rows.find((r) => r.kind === "atrasos");
+  chart("chart-arrear-plan").setOption({
+    ...baseOption(),
+    xAxis: { ...baseOption().xAxis, data: (p?.months || []).map(mlabel) },
+    series: [{ name: "Pagamento de atrasos", type: "bar", color: pal[0], itemStyle: { borderRadius: [4, 4, 0, 0] }, data: row ? row.values : [] }],
+  }, true);
+}
+
+function renderArrearTable() {
+  const cats = '<option value="">–</option>' + state.categories.filter((c) => c.kind === "manual").map((c) =>
+    `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  const h = `<thead><tr><th>Descrição</th><th>Credor</th><th>Responsável</th><th>Categoria</th><th>Vencimento</th><th>Valor original</th>
+    <th>Multa %</th><th>Juros % a.m.</th><th>Acordo (R$)</th><th>Situação</th><th>Atraso</th><th>Valor atualizado</th>
+    <th>Pagar a partir de</th><th>Parcelas</th><th>Parcela</th><th></th></tr></thead><tbody>` +
+    state.arrears.map((a) => `<tr data-id="${a.id}" class="${a.status === "pago" ? "muted" : ""}">
+      <td><input data-k="description" value="${esc(a.description)}" style="width:190px"></td>
+      <td><input data-k="creditor" value="${esc(a.creditor || "")}" style="width:120px"></td>
+      <td><input data-k="owner" value="${esc(a.owner || "")}" style="width:100px"></td>
+      <td><select data-k="category_id" style="width:140px">${cats.replace(`value="${a.category_id}"`, `value="${a.category_id}" selected`)}</select></td>
+      <td><input data-k="due_date" type="date" value="${a.due_date || ""}"></td>
+      <td><input data-k="amount" type="number" step="0.01" style="width:100px" value="${a.amount ?? ""}"></td>
+      <td><input data-k="fine_pct" type="number" step="any" style="width:64px" value="${a.fine_pct ? +(a.fine_pct * 100).toFixed(4) : ""}"></td>
+      <td><input data-k="interest_monthly" type="number" step="any" style="width:64px" value="${a.interest_monthly ? +(a.interest_monthly * 100).toFixed(4) : ""}"></td>
+      <td><input data-k="negotiated_amount" type="number" step="0.01" style="width:100px" value="${a.negotiated_amount ?? ""}"></td>
+      <td><select data-k="status">${Object.entries(ARREAR_STATUS).map(([k, l]) => `<option value="${k}" ${k === a.status ? "selected" : ""}>${l}</option>`).join("")}</select></td>
+      <td>${a.id ? (a.due_date ? `${a.months_late} ${a.months_late === 1 ? "mês" : "meses"}` : "–") : ""}</td>
+      <td>${a.id ? fmt2(a.updated_value) : ""}</td>
+      <td><input data-k="plan_start" type="month" value="${toMonthInput(a.plan_start)}" ${a.status === "pago" ? "disabled" : ""}></td>
+      <td><input data-k="plan_installments" type="number" min="1" step="1" style="width:60px" value="${a.plan_installments ?? 1}" ${a.status === "pago" ? "disabled" : ""}></td>
+      <td>${a.plan_installment ? fmt2(a.plan_installment) : "–"}</td>
+      <td><button class="sm" data-save>Salvar</button> <button class="ghost sm danger" data-del>Excluir</button></td></tr>`).join("") +
+    `<tr class="total"><td colspan="5">Total em aberto</td><td>${fmt2(state.arrears.filter((a) => a.status !== "pago").reduce((s, a) => s + (a.amount || 0), 0))}</td>
+      <td colspan="5"></td><td>${fmt2(state.arrears.filter((a) => a.status !== "pago").reduce((s, a) => s + (a.updated_value || 0), 0))}</td><td colspan="4"></td></tr></tbody>`;
+  $("#arrear-table").innerHTML = h;
+}
+
+$("#arrear-table").addEventListener("click", async (e) => {
+  const tr = e.target.closest("tr[data-id]");
+  if (!tr) return;
+  const id = tr.dataset.id;
+  if (e.target.matches("[data-del]")) {
+    if (!id) {
+      state.arrears = state.arrears.filter((a) => a.id !== "");
+      return renderArrearTable();
+    }
+    if (!confirm("Excluir este atraso? O plano de pagamento dele some de todos os cenários.")) return;
+    await api("DELETE", `/api/arrears/${id}`);
+  } else if (e.target.matches("[data-save]")) {
+    const v = (k) => rowVal(tr, k);
+    const numOrNull = (k, scale = 1) => (v(k) === "" ? null : Number(v(k)) / scale);
+    if (!v("description") || v("amount") === "") return toast("Informe descrição e valor original");
+    const body = {
+      description: v("description"), creditor: v("creditor") || null, owner: v("owner") || null,
+      category_id: v("category_id") ? +v("category_id") : null, due_date: v("due_date") || null,
+      amount: Number(v("amount")), fine_pct: numOrNull("fine_pct", 100) || 0, interest_monthly: numOrNull("interest_monthly", 100) || 0,
+      negotiated_amount: numOrNull("negotiated_amount"), status: v("status"),
+    };
+    const saved = await api(id ? "PUT" : "POST", id ? `/api/arrears/${id}` : "/api/arrears", body);
+    if (state.current) {
+      await api("PUT", `/api/scenarios/${state.current}/arrear-plans`, [{
+        arrear_id: saved.id, start_month: body.status === "pago" ? null : fromMonthInput(v("plan_start")),
+        installments: Math.max(1, parseInt(v("plan_installments") || "1", 10)),
+      }]);
+    }
+    toast("Atraso salvo");
+  } else return;
+  await refresh();
+});
+
+$("#btn-add-arrear").onclick = () => {
+  state.arrears.unshift({ id: "", description: "", creditor: "", owner: "", category_id: null, due_date: null, amount: null,
+    fine_pct: 0.02, interest_monthly: 0.01, negotiated_amount: null, status: "aberto", plan_start: null, plan_installments: 1 });
+  renderArrearTable();
+  $("#arrear-table tbody input").focus();
+};
+
 // ------------------------------------------------------------------ COMPARAR
 async function renderComparar() {
   if (state.compareIds === null) state.compareIds = state.scenarios.map((s) => s.id);
@@ -899,7 +1052,7 @@ $("#btn-empty-new").onclick = () => $("#btn-new-scenario").click();
 
 // ------------------------------------------------------------------ navegação
 const RENDER = {
-  painel: renderPainel, fluxo: renderFluxo, premissas: renderPremissas, consignados: renderConsignados,
+  painel: renderPainel, fluxo: renderFluxo, premissas: renderPremissas, consignados: renderConsignados, atrasos: renderAtrasos,
   comparar: renderComparar, lancamentos: renderLancamentos, orcado: renderOrcado, cadastros: renderCadastros,
 };
 

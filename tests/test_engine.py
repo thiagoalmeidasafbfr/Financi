@@ -141,3 +141,29 @@ def test_inflation_applied_only_when_enabled():
     assert rent(off)[m.index("2027-07-01")] == 1000
     assert rent(on)[m.index("2027-05-01")] == 1000
     assert rent(on)[m.index("2027-06-01")] == pytest.approx(1050)
+
+
+def test_arrear_value_with_fine_interest_and_agreement():
+    a = eng.ArrearIn(1, "Aluguel", 1300, due_month=date(2026, 8, 1), fine_pct=0.02, interest_monthly=0.01)
+    assert eng.arrear_months_late(a, date(2026, 11, 15)) == 3
+    assert eng.arrear_value(a, date(2026, 11, 1)) == pytest.approx(1300 * 1.02 + 1300 * 0.01 * 3)
+    a.negotiated_amount = 1200
+    assert eng.arrear_value(a, date(2027, 6, 1)) == 1200
+    a.status = "pago"
+    assert eng.arrear_value(a, date(2027, 6, 1)) == 0
+
+
+def test_arrear_plan_enters_cash_flow():
+    cats = CATS + [eng.CategoryIn(10, "Atrasos", "divida", "atrasos")]
+    a = eng.ArrearIn(1, "Aluguel", 1200, due_month=date(2026, 10, 1), interest_monthly=0.01,
+                     plan_start=date(2026, 12, 1), plan_installments=3)
+    p = eng.project(scenario(categories=cats, arrears=[a]))
+    row = next(r for r in p["rows"] if r["kind"] == "atrasos")
+    each = (1200 + 1200 * 0.01 * 2) / 3  # juros até o início do plano (2 meses)
+    assert row["values"][:5] == pytest.approx([0, each, each, each, 0])
+    assert p["kpis"]["total_atrasos_pagos"] == pytest.approx(each * 3)
+    assert p["kpis"]["total_parcelas"] == 0  # atrasos não contam como parcela de empréstimo
+    s = eng.arrears_summary([a, eng.ArrearIn(2, "IPTU", 72)], date(2026, 11, 1))
+    assert s["totals"]["em_aberto"] == 2
+    assert s["totals"]["sem_plano"] == 72
+    assert s["totals"]["planejado"] == pytest.approx(each * 3)

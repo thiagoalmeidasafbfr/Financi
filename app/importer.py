@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 
 from . import engine as eng
 from .models import (
+    Arrear,
     Category,
     InflationRate,
     LoanContract,
@@ -242,6 +243,9 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
         cols.append((c, m))
     if not cols:
         raise ValueError(f"{sheet_name}: nenhum mês encontrado")
+    # coluna "Em atraso" antes do primeiro mês (valores já vencidos no início do cenário)
+    arrear_col = next((c for c in range(3, cols[0][0])
+                       if _norm(sh.v.cell(hdr, c).value).lower() == "em atraso"), None)
 
     old = db.scalar(select(Scenario).where(Scenario.name == scenario_name))
     if old:
@@ -335,7 +339,7 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
 
     # linhas de detalhamento
     cache = {(c.name.lower(), c.group): c for c in db.scalars(select(Category))}
-    section, imported_rows = None, 0
+    section, imported_rows, arrears_imported = None, 0, 0
     payoff_key = None
     for r in range(sh.row("DETALHAMENTO") or 1, sh.v.max_row + 1):
         label = _norm(sh.v.cell(r, 2).value)
@@ -358,6 +362,13 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
             existing = next((c for c in cache.values() if c.kind == kind), None)
             name = existing.name if existing else name
         cat = _category(db, cache, name, section, kind, 1000 + r)
+        if arrear_col:
+            overdue = _num(sh.v.cell(r, arrear_col).value)
+            if overdue:
+                _upsert_arrear(db, description=name, creditor=None, owner=None, amount=overdue,
+                               category_id=cat.id, due_date=eng.add_months(cols[0][1], -1),
+                               notes=f"Importado da coluna 'Em atraso' da aba '{sheet_name}'")
+                arrears_imported += 1
 
         # a linha automática pode ser calculada pelo motor?
         computable = False
@@ -395,9 +406,45 @@ def import_scenario(db: Session, sheet_name: str, scenario_name: str, wb_f, wb_v
     db.flush()
     report.append(f"Cenário '{scenario_name}' ({sheet_name}): {len(cols)} meses a partir de "
                   f"{cols[0][1]:%m/%Y}, {imported_rows} linhas"
-                  + (f", quitações do cenário '{payoff_key}' da aba Quitações" if payoff_key else ""))
+                  + (f", quitações do cenário '{payoff_key}' da aba Quitações" if payoff_key else "")
+                  + (f", {arrears_imported} valores em atraso" if arrears_imported else ""))
     sc._validation = (sh, cols)  # usado por validate()
     return sc
+
+
+def _upsert_arrear(db: Session, description: str, creditor: str | None, owner: str | None, **fields) -> Arrear:
+    """Reimportar atualiza o mesmo atraso em vez de duplicar (status e pagamento são preservados)."""
+    a = db.scalar(select(Arrear).where(Arrear.description == description,
+                                       Arrear.creditor.is_(None) if creditor is None else Arrear.creditor == creditor,
+                                       Arrear.owner.is_(None) if owner is None else Arrear.owner == owner))
+    if a is None:
+        a = Arrear(description=description, creditor=creditor, owner=owner, status="aberto")
+        db.add(a)
+    for k, v in fields.items():
+        setattr(a, k, v)
+    db.flush()
+    return a
+
+
+def import_debts_sheet(db: Session, wb_v, report: list[str]) -> None:
+    """Aba "Dívidas": linhas no formato  Dívidas <responsável> | credor | valor."""
+    if "Dívidas" not in wb_v.sheetnames:
+        return
+    ws, count, total = wb_v["Dívidas"], 0, 0.0
+    for row in ws.iter_rows():
+        cells = [c for c in row if c.value not in (None, "")]
+        for i, c in enumerate(cells[:-2]):
+            m = re.match(r"D[íi]vidas?\s+(.+)", _norm(c.value), re.I)
+            if not m:
+                continue
+            creditor, amount = _norm(cells[i + 1].value), _num(cells[i + 2].value)
+            if creditor and amount:
+                _upsert_arrear(db, description=creditor, creditor=creditor, owner=m.group(1).strip(),
+                               amount=amount, notes="Importado da aba 'Dívidas'")
+                count, total = count + 1, total + amount
+            break
+    if count:
+        report.append(f"{count} dívidas em atraso importadas da aba 'Dívidas' (R$ {total:,.2f}).")
 
 
 def validate(db: Session, sc: Scenario) -> str:
@@ -433,6 +480,7 @@ def import_workbook(db: Session, path, only: list[str] | None = None) -> list[st
     wb_v = openpyxl.load_workbook(path, data_only=True)
     report: list[str] = []
     loans = import_loans(db, wb_v, wb_f, report)
+    import_debts_sheet(db, wb_v, report)
     names = _scenario_names(wb_f)
     imported = []
     for sheet, name in names.items():
