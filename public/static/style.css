@@ -637,6 +637,14 @@ html[data-theme="light"] .home-top { padding: var(--space-8); border-radius: 24p
   #tx-list .tx-row .az-well { width: 36px; height: 36px; }
 }
 
+/* ---------------------------------------------------------------- planilha de planejamento */
+.dropzone--sm { min-height: 72px; flex-direction: row; padding: var(--space-4); }
+a.link-btn { color: var(--link); font-size: 13px; line-height: 18px; text-decoration: none; display: inline-flex; align-items: center; min-height: 32px; }
+a.link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+.warnings { margin: var(--space-2) 0; font-size: 12px; line-height: 16px; color: var(--ink-muted); }
+.warnings summary { cursor: pointer; color: var(--link); }
+.warnings ul { margin: var(--space-2) 0 0; padding-left: 18px; }
+
 /* ---------------------------------------------------------------- Previstos */
 .plan-views { margin: 0 0 var(--space-4); }
 .pl-head { justify-content: space-between; margin: 0 0 var(--space-4); }

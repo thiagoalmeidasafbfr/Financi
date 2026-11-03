@@ -1,17 +1,18 @@
 """Lançamentos e importação de extratos OFX."""
 import uuid
+from dataclasses import asdict
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import schemas
+from .. import planilha, schemas
 from ..categorize import apply_ai, learn
 from ..db import get_session
 from ..finance import add_months, month_start
 from ..importing import import_ofx
-from ..models import Account, Category, ImportBatch, Transaction
+from ..models import Account, Category, ImportBatch, Person, Transaction
 from ..ofx import OFXError
 from ..services import accounts_for
 from ..text import merchant_key, parse_installment
@@ -171,3 +172,30 @@ def undo_import(iid: int, db: Session = Depends(get_session)):
         db.delete(t)
     db.delete(b)
     db.commit()
+
+
+# ---------------------------------------------------------------- planilha de planejamento (modelo .xlsx)
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/imports/modelo")
+def download_template(db: Session = Depends(get_session)):
+    """Modelo .xlsx com as abas Previstos, Atrasos, Dívidas e Orçamento (listas com as categorias e pessoas do app)."""
+    cats = db.scalars(select(Category).order_by(Category.type, Category.sort_order, Category.name)).all()
+    people = db.scalars(select(Person).order_by(Person.name)).all()
+    return Response(planilha.build_template(list(cats), list(people)), media_type=XLSX,
+                    headers={"Content-Disposition": 'attachment; filename="modelo-financi.xlsx"'})
+
+
+@router.post("/imports/planilha")
+async def upload_planilha(file: UploadFile = File(...), replace: bool = Form(True), db: Session = Depends(get_session)):
+    """Importa a planilha do modelo. Com replace, o que veio de uma planilha anterior é substituído."""
+    content = await file.read()
+    if len(content) > MAX_UPLOAD:
+        raise HTTPException(413, "Arquivo maior que 4 MB")
+    try:
+        res = planilha.import_workbook(db, content, replace=replace)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(400, str(exc)) from None
+    return asdict(res)

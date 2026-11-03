@@ -96,3 +96,10 @@ def test_projection_uses_planned(client):
     assert p[1]["despesas"] == 1300 and "previsto" in p[1]["fonte_despesas"]  # o previsto substitui o orçamento
     assert p[2]["receitas"] == 2000 and "previsto" in p[2]["fonte_receitas"]
     assert p[0]["saldo"] == round(10000 - 1000 - 500, 2)
+
+
+def test_commitment_uses_planned_income_without_statements(client):
+    client.post("/api/debts", json={"name": "Acordo", "kind": "acordo", "installment": 500, "balance": 3000})
+    assert client.get("/api/debts/overview").json()["totals"]["comprometimento"] is None
+    new(client, name="Salário", kind="receita", amount=5000, start_month=m(0))
+    assert client.get("/api/debts/overview").json()["totals"]["comprometimento"] == 0.1

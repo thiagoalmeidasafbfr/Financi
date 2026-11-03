@@ -198,6 +198,10 @@ def debts_summary(db: Session, person: str | None, today: date) -> dict:
     debts = [debt_overview(db, d, today) for d in db.scalars(q.order_by(Debt.id))]
     month_installments = sum(d["installment"] for d in debts if d["remaining"] > 0)
     income = avg_income(db, accs, today)
+    if not income:  # sem extratos com receita: usa as receitas previstas do mês
+        m = fin.month_start(today)
+        income = sum(o.amount for o in planned_mod.occurrences(db, today, m, m, person, [a.id for a in accs])
+                     if o.kind == "receita" and o.status != "pulado")
     open_debts = [d for d in debts if d["balance"] > 0]
     return {
         "cards": cards, "debts": debts,

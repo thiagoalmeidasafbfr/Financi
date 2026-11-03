@@ -525,6 +525,36 @@ async function importFiles(files) {
   await loadBase();
   await renderImportar();
 }
+// planilha de planejamento (modelo .xlsx): previstos, atrasos, dívidas e orçamento
+$("#xlsx-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const out = $("#xlsx-result");
+  out.innerHTML = `<p class="hint" style="margin:var(--space-3) 0 0">Importando ${esc(file.name)}…</p>`;
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("replace", $("#xlsx-replace").checked ? "true" : "false");
+  try {
+    const r = await api("POST", "/api/imports/planilha", fd);
+    out.innerHTML = `<div class="tiles" style="margin-top:var(--space-4)">${[["Previstos", r.previstos], ["Atrasos", r.atrasos], ["Dívidas", r.dividas], ["Orçamento", r.orcamento]]
+      .map(([l, v]) => tile(l, v)).join("")}</div>
+      ${r.substituidos ? `<p class="hint">${r.substituidos} itens da planilha anterior foram substituídos.</p>` : ""}
+      ${r.pessoas_criadas.length ? `<p class="hint">Pessoas criadas: ${esc(r.pessoas_criadas.join(", "))}.</p>` : ""}
+      ${r.avisos.length ? `<details class="warnings"><summary>${r.avisos.length} ${r.avisos.length === 1 ? "aviso" : "avisos"}</summary><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></details>` : ""}
+      <div class="row"><button class="secondary" data-goto-plan="previstos">Ver previstos</button><button data-goto="dividas">Ver dívidas</button></div>`;
+    await loadBase();
+    toast("Planilha importada");
+  } catch (err) {
+    out.innerHTML = `<p class="hint" style="margin:var(--space-3) 0 0">Não foi possível importar: ${esc(err.message)}</p>`;
+  }
+});
+$("#xlsx-result").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-goto-plan]");
+  if (!b) return;
+  state.plan.view = b.dataset.gotoPlan;
+  goTab("planejamento");
+});
 $("#ofx-files").addEventListener("change", (e) => { importFiles([...e.target.files]); e.target.value = ""; });
 const dz = $("#dropzone");
 ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
