@@ -14,6 +14,7 @@ from ..services import (
     accounts_for,
     balances,
     debts_summary,
+    month_plan,
     month_view,
     projection,
     suggest_budgets,
@@ -55,6 +56,12 @@ def put_budgets(items: list[schemas.BudgetIn], db: Session = Depends(get_session
 def list_budgets(db: Session = Depends(get_session)):
     return [{"category_id": b.category_id, "month": b.month.isoformat() if b.month else None, "amount": b.amount}
             for b in db.scalars(select(Budget))]
+
+
+@router.get("/plan")
+def get_month_plan(month: date | None = None, person: str | None = None, db: Session = Depends(get_session)):
+    """Plano do mês: entradas, contas fixas, dívidas e gastos variáveis, com previsto, realizado e sobra."""
+    return month_plan(db, person, month or _today(), _today())
 
 
 @router.get("/budget/suggest")

@@ -447,3 +447,117 @@ def _groupings(db: Session, table: dict) -> list[dict]:
                     "now": round(sum(r["now"] for r in rows), 2),
                     "values": [round(sum(r["values"][i] for r in rows), 2) for i in range(n)]})
     return out
+
+
+# ---------------------------------------------------------------- plano do mês (visão Mês do Planejamento)
+
+def month_plan(db: Session, person: str | None, month: date, today: date) -> dict:
+    """Plano de um mês num modelo só (como Monarch/Simplifi):
+
+    Entradas − Contas fixas − Dívidas e parcelas − Gastos variáveis = Sobra prevista.
+    Entradas e contas fixas vêm dos previstos; dívidas, das parcelas (dívidas, cartão e previstos do grupo Dívidas);
+    gastos variáveis, do orçamento das categorias sem previsto no mês (e das que tiveram gasto). Cada linha traz
+    o realizado: previsto pago, gasto do extrato na categoria. Agrupamentos entram só como informação."""
+    m = fin.month_start(month)
+    current = fin.month_start(today)
+    accs = accounts_for(db, person)
+    acc_ids = [a.id for a in accs]
+    cats = {c.id: c for c in db.scalars(select(Category))}
+    occ = planned_mod.occurrences(db, today, m, m, person, acc_ids)
+    actual = _category_totals(db, acc_ids, m, fin.add_months(m, 1))
+    budgets = budget_map(db, m)
+    month_specific = {b.category_id for b in db.scalars(select(Budget).where(Budget.month == m))}
+
+    def is_debt_cat(cid):
+        return cid in cats and cats[cid].group == "Dívidas"
+
+    entradas, fixas, dividas, variaveis = [], [], [], []
+    planned_cats = {o.category_id for o in occ if o.category_id is not None and o.status != "pulado"}
+    for o in occ:
+        row = {"type": "previsto", **o.as_dict(), "category": cats[o.category_id].name if o.category_id in cats else None,
+               "actual": o.amount if o.status == "pago" else 0.0}
+        if o.kind == "receita":
+            entradas.append(row)
+        elif is_debt_cat(o.category_id):
+            dividas.append(row)
+        else:
+            fixas.append(row)
+
+    # parcelas de dívidas e de cartão que caem no mês
+    debt_q = select(Debt).where(Debt.active.is_(True))
+    if person == "conjunto":
+        debt_q = debt_q.where(Debt.owner_id.is_(None))
+    elif person and person != "all":
+        debt_q = debt_q.where(Debt.owner_id == int(person))
+    for d in db.scalars(debt_q.order_by(Debt.id)):
+        v = fin.loan_schedule(d.installment, d.first_due, d.total_installments, today=today,
+                              rate=d.monthly_rate, balance=d.balance).get(m)
+        if v:
+            n = fin.months_between(fin.month_start(d.first_due), m) + 1 if d.first_due else None
+            due = fin.day_in_month(m, d.first_due.day).isoformat() if d.first_due else None
+            dividas.append({"type": "divida", "debt_id": d.id, "name": d.name, "amount": round(v, 2), "due": due,
+                            "installment_n": n, "installment_total": d.total_installments, "actual": 0.0,
+                            "status": "pago" if due and due < today.isoformat() else "pendente"})
+    for a in accs:
+        if a.kind == "cartao":
+            v = fin.future_installments(_card_txs(db, a), a.closing_day or 1).get(m)
+            if v:
+                dividas.append({"type": "cartao", "account_id": a.id, "name": f"Parcelas no cartão · {a.name}",
+                                "amount": round(v, 2), "due": None, "actual": 0.0, "status": "pendente"})
+
+    # orçamento: receitas sem previsto somam às entradas; despesas viram gastos variáveis
+    shown = set()
+    for cid, amount in budgets.items():
+        cat = cats.get(cid)
+        if cat is None or cat.type == "transferencia" or is_debt_cat(cid) or cid in planned_cats:
+            continue
+        spent = _actual(cat, actual.get(cid, 0.0))
+        row = {"type": "orcamento", "category_id": cid, "name": cat.name, "group": cat.group, "amount": round(amount, 2),
+               "actual": round(spent, 2), "scope": "mes" if cid in month_specific else "padrao"}
+        (entradas if cat.type == "receita" else variaveis).append(row)
+        shown.add(cid)
+    for cid, signed in actual.items():  # gasto sem orçamento também aparece (onde o dinheiro foi)
+        cat = cats.get(cid)
+        if cid in shown or cid in planned_cats or (cat and (cat.type != "despesa" or is_debt_cat(cid))):
+            continue
+        spent = _actual(cat, signed)
+        if spent > 0.005:
+            variaveis.append({"type": "orcamento", "category_id": cid, "name": cat.name if cat else "Sem categoria",
+                              "group": cat.group if cat else "Outros", "amount": 0.0, "actual": round(spent, 2), "scope": None})
+    variaveis.sort(key=lambda r: (-max(r["amount"], r["actual"]), r["name"]))
+
+    def live(rows):
+        return [r for r in rows if r.get("status") != "pulado"]
+
+    def total(rows, key="amount"):
+        return round(sum(r[key] for r in live(rows)), 2)
+
+    received = round(sum(_actual(cats.get(cid), v) for cid, v in actual.items() if cid in cats and cats[cid].type == "receita"), 2)
+    sec = {
+        "entradas": {"planned": total(entradas), "actual": max(received, total(entradas, "actual")), "items": entradas},
+        "fixas": {"planned": total(fixas), "actual": total(fixas, "actual"), "items": fixas},
+        "dividas": {"planned": total(dividas), "actual": total(dividas, "actual"), "items": dividas},
+        "variaveis": {"planned": total(variaveis), "actual": total(variaveis, "actual"), "items": variaveis},
+    }
+    saidas = sec["fixas"]["planned"] + sec["dividas"]["planned"] + sec["variaveis"]["planned"]
+    late = [o.as_dict() for o in planned_mod.overdue(db, today, person, acc_ids) if o.month < m.isoformat()] if m == current else []
+
+    # agrupamentos (informativos): soma com sinal das linhas do mês
+    refs: dict[str, float] = defaultdict(float)
+    for r in live(entradas):
+        refs[f"plan:{r['name']}" if r["type"] == "previsto" else f"cat:{r['category_id']}"] += r["amount"]
+    for r in live(fixas) + live(dividas) + variaveis:
+        key = {"previsto": lambda r: f"plan:{r['name']}", "divida": lambda r: f"debt:{r['debt_id']}",
+               "cartao": lambda r: f"card:{r['account_id']}", "orcamento": lambda r: f"cat:{r['category_id']}"}[r["type"]](r)
+        refs[key] -= r["amount"]
+    groupings = [{"id": g.id, "name": g.name, "value": round(sum(refs.get(mm.ref, 0.0) for mm in g.members), 2)}
+                 for g in db.scalars(select(Grouping).order_by(Grouping.sort_order, Grouping.id))]
+
+    return {
+        "month": m.isoformat(), "is_current": m == current, "is_past": m < current,
+        "sections": sec,
+        "entradas": sec["entradas"]["planned"], "saidas": round(saidas, 2),
+        "sobra": round(sec["entradas"]["planned"] - saidas, 2),
+        "atrasos": late, "atrasos_total": round(sum(o["amount"] for o in late if o["kind"] == "despesa"), 2),
+        "groupings": groupings,
+    }

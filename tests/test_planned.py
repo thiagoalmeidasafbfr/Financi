@@ -187,3 +187,32 @@ def test_debt_installment_due_later_this_month_is_pending(client):
     assert p["months"][0]["pendentes"] == expected
     lines = {r["label"]: r for s in p["table"]["sections"] for g in s["groups"] for r in g["rows"]}
     assert lines["Dia 28"]["now"] == expected
+
+
+def test_month_plan_sections_and_leftover(client):
+    import pytest
+    acc = client.post("/api/accounts", json={"name": "Conta", "opening_balance": 0}).json()["id"]
+    aluguel, mercado, saude = cat_id(client, "Aluguel"), cat_id(client, "Supermercado"), cat_id(client, "Plano de saúde")
+    client.put("/api/budgets", json=[{"category_id": aluguel, "amount": 999}, {"category_id": mercado, "amount": 1000}])
+    new(client, name="Salário", kind="receita", amount=8167, start_month=m(1))
+    new(client, name="Aluguel", amount=1300, category_id=aluguel, start_month=m(1), due_day=10)    # substitui o orçamento
+    new(client, name="Plano de saúde", amount=912, category_id=saude, start_month=m(1))
+    new(client, name="Carrefour", amount=447.23, category_id=cat_id(client, "Parcela de empréstimo"), start_month=m(1))
+    debt = client.post("/api/debts", json={"name": "PAN", "kind": "consignado", "installment": 364.89,
+                                           "first_due": f"{m(1)[:7]}-05", "total_installments": 3}).json()
+    client.post("/api/groupings", json={"name": "Salário líquido", "refs": ["plan:Salário", "plan:Plano de saúde", f"debt:{debt['id']}"]})
+    p = client.get("/api/plan", params={"month": m(1)}).json()
+    s = p["sections"]
+    assert s["entradas"]["planned"] == 8167
+    assert sorted(r["name"] for r in s["fixas"]["items"]) == ["Aluguel", "Plano de saúde"] and s["fixas"]["planned"] == 2212
+    assert {r["name"] for r in s["dividas"]["items"]} == {"Carrefour", "PAN"}
+    assert s["dividas"]["planned"] == pytest.approx(447.23 + 364.89)
+    assert [r["name"] for r in s["variaveis"]["items"]] == ["Supermercado"]  # Aluguel orçado não conta em dobro
+    assert p["sobra"] == pytest.approx(8167 - 2212 - (447.23 + 364.89) - 1000)
+    assert p["groupings"] == [{"id": 1, "name": "Salário líquido", "value": pytest.approx(8167 - 912 - 364.89)}]
+    # gasto sem orçamento aparece nos variáveis com o realizado (mês atual)
+    client.post("/api/transactions", json={"account_id": acc, "date": date.today().isoformat(), "amount": -80,  # noqa: DTZ011
+                                           "description": "Padaria", "category_id": cat_id(client, "Padaria e café")})
+    now = client.get("/api/plan").json()
+    pad = next(r for r in now["sections"]["variaveis"]["items"] if r["name"] == "Padaria e café")
+    assert pad["amount"] == 0 and pad["actual"] == 80 and now["is_current"]

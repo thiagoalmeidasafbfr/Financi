@@ -16,18 +16,20 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
      viram regras; as pouco confiantes ficam na fila **Para revisar**.
 - **Lançamentos**: extrato por mês, busca, filtro por conta, fila de revisão, categorização em massa e
   lançamento manual.
-- **Planejamento**: orçamento por categoria (valendo todo mês ou só um mês), sugestão pela média dos últimos
-  meses, orçado × realizado e **projeção de caixa** dos próximos 6 meses (orçamento ou média, menos parcelas
-  das dívidas e parcelas de cartão já compradas).
-- **Mês a mês** (em Planejamento): tabela no formato de planilha, com uma linha por previsto, categoria orçada,
-  dívida e parcelas de cartão, colunas "Agora" (atrasos e o que ainda vence no mês) e os próximos 6, 12 ou 24 meses,
-  totais de entradas e saídas, saldo do mês e saldo acumulado. Usa os mesmos números da projeção.
-  **Agrupamentos** juntam linhas com sinal para ver o líquido (ex.: Folha = salário − plano de saúde − consignados,
-  o que de fato cai na conta). São só uma visão: não mudam totais nem a projeção.
-- **Previstos** (em Planejamento): despesas e receitas futuras **todo mês** (a partir de um mês, com fim opcional)
-  ou **uma vez**. Dá para mover uma ocorrência para outro mês, mudar o valor só de um mês, pular um mês ou marcar
-  como pago. O que venceu e não foi pago aparece **em atraso** (no Início e em Previstos); o pagamento é reconhecido
-  pelo extrato quando a previsão tem um "texto no extrato".
+- **Planejamento**, em duas visões (no modelo de Monarch, Quicken Simplifi e Copilot):
+  - **Mês**: o plano de um mês num modelo só — Entradas − Contas fixas − Dívidas e parcelas − Gastos variáveis =
+    **Sobra prevista** (ou o que falta), com barra de para onde vai a renda, previsto × realizado por seção, contas
+    em atraso com "Pago", e gastos variáveis por categoria com barra de consumo (toque para mudar o orçamento,
+    todo mês ou só naquele mês; sugestão pela média dos extratos).
+  - **Fluxo**: linha do saldo projetado e a tabela no formato de planilha (uma linha por previsto, categoria
+    orçada, dívida e parcelas de cartão; colunas "Agora" — atrasos e o que ainda vence no mês — e 6, 12 ou 24 meses;
+    totais, saldo do mês e saldo acumulado). Tocar num mês abre o plano daquele mês.
+  - **Agrupamentos** (ex.: Salário líquido = salário − plano de saúde − consignados) aparecem como linha
+    **informativa**, à parte do planejamento, no resumo do mês e no fim da tabela. Não mudam totais nem a projeção.
+- **Previstos**: despesas e receitas futuras **todo mês** (a partir de um mês, com fim opcional) ou **uma vez**,
+  cadastradas pelas seções do plano do mês. Dá para mover uma ocorrência para outro mês, mudar o valor só de um
+  mês, pular um mês ou marcar como pago. O que venceu e não foi pago aparece **em atraso** (no Início e no plano do
+  mês); o pagamento é reconhecido pelo extrato quando a previsão tem um "texto no extrato".
 - **Planilha de planejamento**: em Importar, **Baixar modelo** gera um .xlsx com as abas Previstos, Atrasos,
   Dívidas e Orçamento (com listas das categorias e pessoas do app). Preencha no Excel ou Google Planilhas e envie:
   tudo é criado de uma vez. Importar de novo substitui o que veio da planilha anterior (itens editados no app

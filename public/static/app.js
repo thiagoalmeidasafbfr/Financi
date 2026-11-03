@@ -163,7 +163,7 @@ const sheetVal = (id) => $(`#${id}`)?.value ?? "";
 const state = {
   people: [], accounts: [], categories: [], person: "all", tab: "inicio", status: null,
   tx: { month: thisMonth(), account: "", status: "", q: "", selected: new Set(), rows: [] },
-  plan: { month: thisMonth(), scope: "padrao", suggestions: null },
+  plan: { month: thisMonth(), view: "mes", horizon: 12 },
   ruleSource: "",
 };
 const KIND_LABEL = { corrente: "Conta corrente", poupanca: "Poupança", cartao: "Cartão de crédito", investimento: "Investimentos", dinheiro: "Dinheiro" };
@@ -230,7 +230,7 @@ async function renderInicio() {
   if (!state.monthSynced) {
     // na primeira visita com dados, Lançamentos e Planejamento abrem no mesmo mês que o Início mostra
     state.monthSynced = true;
-    state.tx.month = state.plan.month = d.month;
+    state.tx.month = d.month;
   }
   if (state.tab === "inicio") screenHead("inicio");
   const T = d.month_totals, DT = d.debts_totals;
@@ -593,7 +593,7 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-goto-plan], [data-big]");
   if (!b) return;
   const target = b.dataset.gotoPlan || b.dataset.big;
-  if (["orcamento", "previstos", "tabela", "projecao"].includes(target)) {
+  if (["orcamento", "previstos", "mes", "tabela", "projecao", "fluxo"].includes(target)) {
     state.plan.view = target;
     return goTab("planejamento");
   }
@@ -614,20 +614,23 @@ $("#imp-history").addEventListener("click", async (e) => {
   await renderImportar();
 });
 
-// ------------------------------------------------------------------ PLANEJAMENTO
-const srcTag = (src) => (src === "orçamento" ? "" : ` <span class="muted">(${src})</span>`);
-// Planejamento: três visões (Orçamento, Previstos, Projeção)
+// ------------------------------------------------------------------ PLANEJAMENTO (Mês | Fluxo)
+// Modelo como nos apps de referência (Monarch, Simplifi, Copilot): o plano de um mês é
+// Entradas − Contas fixas − Dívidas e parcelas − Gastos variáveis = Sobra prevista.
+// O Fluxo mostra os próximos meses: linha do saldo e a tabela no formato de planilha.
+const SECTION_INFO = {
+  entradas: { title: "Entradas", add: "Nova entrada" },
+  fixas: { title: "Contas fixas", add: "Nova conta fixa" },
+  dividas: { title: "Dívidas e parcelas", add: "Ver dívidas" },
+  variaveis: { title: "Gastos variáveis", add: "Orçar categoria" },
+};
 async function renderPlanejamento() {
-  const view = state.plan.view || "orcamento";
+  const view = ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
+  state.plan.view = view;
   $$("#plan-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
-  ["orcamento", "previstos", "tabela", "projecao"].forEach((x) => { $(`#pv-${x}`).hidden = x !== view; });
-  if (view === "previstos") return renderPrevistos();
-  if (view === "tabela") return renderTabela();
-  if (view === "projecao") {
-    await renderProjecao();
-    return chart("chart-proj")?.resize();
-  }
-  return renderOrcamento();
+  $("#pv-mes").hidden = view !== "mes";
+  $("#pv-fluxo").hidden = view !== "fluxo";
+  return view === "fluxo" ? renderFluxo() : renderMes();
 }
 $("#plan-view").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
@@ -636,115 +639,6 @@ $("#plan-view").addEventListener("click", (e) => {
   renderPlanejamento();
 });
 
-// ------------------------------------------------------------------ MÊS A MÊS (tabela linhas × meses)
-const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
-const num = (v) => (Math.round(v) ? NUM.format(Math.round(v)) : "");
-const snum = (v) => `${v < 0 ? "−" : ""}${NUM.format(Math.abs(Math.round(v)))}`;
-const SECTION_TITLE = { entradas: "Entradas", saidas: "Saídas", dividas: "Dívidas e parcelas" };
-
-async function renderTabela() {
-  const h = state.plan.horizon || 12;
-  $$("#tb-horizon button").forEach((b) => b.classList.toggle("active", +b.dataset.h === h));
-  const p = await api("GET", withPerson(`/api/projection?months=${h}&detail=true`));
-  const t = p.table;
-  $("#tb-hint").innerHTML = `Começa com <b>${fmt(t.saldo_inicial)}</b> (contas menos faturas). “Agora” = atrasos e o que ainda vence
-    neste mês. Valores em cinza vêm da média dos extratos.`;
-  const cells = (now, values, cls = "", sources) => `<td class="now ${cls}">${num(now)}</td>` +
-    values.map((v, i) => `<td class="${cls} ${sources && sources[i] === "média" ? "avg" : ""}">${num(v)}</td>`).join("");
-  const signed = (now, values, cls) => `<td class="now ${cls}">${snum(now)}</td>` +
-    values.map((v) => `<td class="${cls} ${v < 0 ? "neg" : ""}">${snum(v)}</td>`).join("");
-  const signedOrBlank = (now, values) => `<td class="now">${Math.round(now) ? snum(now) : ""}</td>` +
-    values.map((v) => `<td>${Math.round(v) ? snum(v) : ""}</td>`).join("");
-  state.table = t;
-  let body = "";
-  // agrupamentos do usuário no topo: linhas com sinal e o líquido (ex.: Folha = o que cai na conta)
-  for (const g of t.groupings || []) {
-    body += `<tr class="sec grouping" data-grouping="${g.id}"><td class="lbl">${esc(g.name)} <span class="tb-tag">líquido</span></td>${signed(g.now, g.values, "")}</tr>`;
-    for (const r of g.rows) body += `<tr class="grouping-row"><td class="lbl sub" title="${esc(r.label)}">${esc(r.label)}</td>${signedOrBlank(r.now, r.values)}</tr>`;
-    if (!g.rows.length) body += `<tr class="grouping-row"><td class="lbl sub muted">sem linhas no período</td>${signedOrBlank(0, t.months.map(() => 0))}</tr>`;
-  }
-  for (const s of t.sections) {
-    if (!s.groups.length) continue;
-    body += `<tr class="sec"><td class="lbl">${SECTION_TITLE[s.key]}</td>${cells(s.now, s.values)}</tr>`;
-    const showGroups = s.groups.length > 1;
-    for (const g of s.groups) {
-      if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g.now, g.values)}</tr>`;
-      for (const r of g.rows) {
-        body += `<tr><td class="lbl ${showGroups ? "sub" : ""}" title="${esc(r.label)}">${esc(r.label)}</td>${cells(r.now, r.values, "", r.sources)}</tr>`;
-      }
-    }
-  }
-  const T = t.totais;
-  body += `<tr class="total first"><td class="lbl">Total de entradas</td>${cells(T.entradas.now, T.entradas.values)}</tr>
-    <tr class="total"><td class="lbl">Total de saídas</td>${cells(T.saidas.now, T.saidas.values)}</tr>
-    <tr class="total"><td class="lbl">Saldo do mês</td>${signed(T.saldo_mes.now, T.saldo_mes.values, "")}</tr>
-    <tr class="acc"><td class="lbl">Saldo acumulado</td>${signed(T.acumulado.now, T.acumulado.values, "")}</tr>`;
-  $("#tb-table").innerHTML = `<thead><tr><th class="lbl">R$</th><th class="now" title="Atrasos e o que ainda vence neste mês">Agora</th>
-    ${t.months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
-}
-// agrupamentos: lista, criação e edição (escolhendo linhas da tabela)
-$("#tb-groups").onclick = () => openGroupingsSheet();
-$("#tb-table").addEventListener("click", (e) => {
-  const row = e.target.closest("[data-grouping]");
-  if (row) openGroupingEditor((state.table.groupings || []).find((g) => g.id === +row.dataset.grouping));
-});
-function openGroupingsSheet() {
-  const gs = (state.table && state.table.groupings) || [];
-  openSheet(`<p class="overline">Mês a mês</p><h2>Agrupamentos</h2>
-    <p class="hint">Junte linhas para ver o líquido. Ex.: <b>Folha</b> = Salário − Plano de saúde − consignados: o que de fato cai na conta.
-      É só uma visão: não muda totais nem a projeção.</p>
-    <div class="list">${gs.map((g) => `<div class="az-insight"><div class="az-insight__text"><div class="az-insight__title">${esc(g.name)}</div>
-      <div class="az-insight__desc">${g.refs.length} ${g.refs.length === 1 ? "linha" : "linhas"}</div></div>
-      <button class="sm" data-edit-grouping="${g.id}">Editar</button></div>`).join("") || '<p class="hint">Nenhum agrupamento ainda.</p>'}</div>
-    <div class="row"><button class="primary" id="gp-new">Novo agrupamento</button></div>`);
-  $("#gp-new").onclick = () => openGroupingEditor(null);
-  $("#sheet-body").querySelectorAll("[data-edit-grouping]").forEach((b) => {
-    b.onclick = () => openGroupingEditor(gs.find((g) => g.id === +b.dataset.editGrouping));
-  });
-}
-function openGroupingEditor(g) {
-  const t = state.table;
-  const chosen = new Set(g ? g.refs : []);
-  const seen = new Set();
-  let list = "";
-  for (const s of t.sections) {
-    const rows = s.groups.flatMap((gr) => gr.rows).filter((r) => (seen.has(r.ref) ? false : seen.add(r.ref)));
-    if (!rows.length) continue;
-    const sign = s.key === "entradas" ? "+" : "−";
-    list += `<p class="overline chk-sec">${SECTION_TITLE[s.key]} <span class="muted">(${sign})</span></p>` +
-      rows.map((r) => `<label class="chk-row"><input type="checkbox" value="${esc(r.ref)}" ${chosen.has(r.ref) ? "checked" : ""}>
-        <span>${esc(r.label)}</span></label>`).join("");
-  }
-  openSheet(`<p class="overline">${g ? "Editar agrupamento" : "Novo agrupamento"}</p><h2>${g ? esc(g.name) : "Agrupamento"}</h2>
-    <label class="field">Nome<input id="gp-name" value="${esc(g ? g.name : "")}" placeholder="Ex.: Folha"></label>
-    <p class="hint" style="margin-top:var(--space-3)">Marque as linhas. Entradas somam, saídas e dívidas subtraem.</p>
-    <div class="chk-list">${list || '<p class="hint">A tabela ainda não tem linhas neste período.</p>'}</div>
-    <div class="row"><button class="primary" id="gp-save">Salvar</button>${g ? '<button class="danger" id="gp-del">Excluir</button>' : ""}</div>`);
-  $("#gp-save").onclick = async () => {
-    const name = sheetVal("gp-name").trim();
-    if (!name) return toast("Dê um nome ao agrupamento");
-    const refs = $$("#sheet .chk-list input:checked").map((i) => i.value);
-    await api(g ? "PUT" : "POST", g ? `/api/groupings/${g.id}` : "/api/groupings", { name, refs });
-    closeSheet();
-    toast(g ? "Agrupamento atualizado" : "Agrupamento criado");
-    await renderTabela();
-  };
-  if (g) $("#gp-del").onclick = async () => {
-    if (!confirm(`Excluir o agrupamento "${g.name}"?`)) return;
-    await api("DELETE", `/api/groupings/${g.id}`);
-    closeSheet();
-    await renderTabela();
-  };
-}
-
-$("#tb-horizon").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-h]");
-  if (!b) return;
-  state.plan.horizon = +b.dataset.h;
-  renderTabela();
-});
-
-// ------------------------------------------------------------------ PREVISTOS (fluxo futuro e atrasos)
 const STATUS_BADGE = { pago: '<span class="badge tint">pago</span>', atrasado: '<span class="badge strong">em atraso</span>',
   pulado: '<span class="badge">pulado</span>', pendente: "" };
 const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
@@ -761,41 +655,199 @@ function occRow(o, { late = false } = {}) {
       ${late ? `<button class="sm secondary" data-pay="${occKey(o)}">Pago</button>` : ""}</div></div>`;
 }
 
-async function renderPrevistos() {
-  const f = await api("GET", withPerson("/api/planned/flow?months=12"));
-  state.flow = f;
-  state.occ = Object.fromEntries([...f.overdue, ...f.months.flatMap((m) => m.items)].map((o) => [occKey(o), o]));
-  $("#pl-late-card").hidden = !f.overdue.length;
-  $("#pl-late-total").innerHTML = money(-f.overdue_total);
-  $("#pl-late").innerHTML = f.overdue.map((o) => occRow(o, { late: true })).join("");
-  const any = f.overdue.length || f.months.some((m) => m.items.length);
-  if (!any) {
-    $("#pl-months").innerHTML = `<div class="card"><h3>Nada previsto ainda</h3>
-      <p class="hint">Cadastre o que vai acontecer: “Escola R$ 900 todo mês de fev a dez”, “IPVA R$ 2.400 em janeiro”,
-        “Salário R$ 8.000 todo mês”. Para registrar algo que já venceu e não foi pago, use “uma vez” com o mês do vencimento.</p>
-      <button class="primary" data-pl-new>Novo previsto</button></div>`;
-    return;
-  }
-  $("#pl-months").innerHTML = f.months.map((mo) => !mo.items.length ? `<div class="pl-empty">${capFirst(mlong(mo.month))} · nada previsto</div>` : `<div class="card pl-month"><div class="card-head"><h3>${capFirst(mlong(mo.month))}</h3>
-      <span class="pl-sum">${mo.entradas ? `<span class="in">+${fmt(mo.entradas)}</span> · ` : ""}${mo.saidas ? `−${fmt(mo.saidas)}` : mo.entradas ? "" : "–"}</span></div>
-      <div class="list">${mo.items.length ? mo.items.map((o) => occRow(o)).join("") : '<p class="hint" style="margin:0">Nada previsto.</p>'}</div></div>`).join("");
+
+// ------------------------------------------------------------------ MÊS: plano de um mês
+async function renderMes() {
+  const month = state.plan.month || thisMonth();
+  state.plan.month = month;
+  $("#pm-month").textContent = capFirst(mlong(month));
+  $("#pm-month").classList.toggle("is-current", month === thisMonth());
+  const p = await api("GET", withPerson(`/api/plan?month=${month}`));
+  state.planMonth = p;
+  state.occ = {};
+  const S = p.sections;
+  const monthName = MESES_LONGOS[+month.slice(5, 7) - 1];
+
+  // resumo: sobra prevista e para onde vai a renda
+  $("#pm-sobra-label").textContent = p.sobra >= 0 ? `Sobra prevista em ${monthName}` : `Faltam em ${monthName}`;
+  $("#pm-sobra").innerHTML = money(Math.abs(p.sobra));
+  $("#pm-sobra").classList.toggle("short", p.sobra < 0);
+  $("#pm-sub").textContent = `Entradas ${fmt(p.entradas)} − saídas previstas ${fmt(p.saidas)}`;
+  const base = Math.max(p.entradas, p.saidas, 1);
+  const parts = [["fixas", S.fixas.planned], ["dividas", S.dividas.planned], ["variaveis", S.variaveis.planned], ["sobra", Math.max(0, p.sobra)]];
+  $("#pm-bar").innerHTML = parts.filter(([, v]) => v > 0).map(([k, v]) => `<i class="seg-${k}" style="width:${(v / base) * 100}%"></i>`).join("");
+  const done = (k) => (S[k].actual ? `${fmt(S[k].actual)} ${k === "variaveis" ? "gasto" : "pago"}` : "");
+  $("#pm-legend").innerHTML = [["fixas", "Contas fixas"], ["dividas", "Dívidas e parcelas"], ["variaveis", "Gastos variáveis"]]
+    .map(([k, l]) => `<div class="pm-leg"><span class="dot seg-${k}"></span><span class="pm-leg__l">${l}</span>
+      <span class="pm-leg__a">${done(k)}</span><b>${fmt(S[k].planned)}</b></div>`).join("") +
+    `<div class="pm-leg"><span class="dot seg-sobra"></span><span class="pm-leg__l">${p.sobra >= 0 ? "Sobra" : "Falta"}</span><span class="pm-leg__a"></span><b>${fmt(Math.abs(p.sobra))}</b></div>`;
+  // agrupamentos: só informativos, numa linha à parte (não entram na conta)
+  $("#pm-info").hidden = !p.groupings.length;
+  $("#pm-info").innerHTML = p.groupings.map((g) => `<div class="pm-info-row"><span>${esc(g.name)} <span class="tb-tag">informativo</span></span>
+    <b>${money(g.value)}</b></div>`).join("");
+
+  // em atraso (meses anteriores; os do próprio mês aparecem nas seções)
+  $("#pm-late-card").hidden = !p.atrasos.length;
+  $("#pm-late-total").innerHTML = money(-p.atrasos_total);
+  $("#pm-late").innerHTML = p.atrasos.map((o) => { state.occ[occKey(o)] = o; return occRow(o, { late: true }); }).join("");
+
+  $("#pm-sections").innerHTML = ["entradas", "fixas", "dividas", "variaveis"].map((k) => planSection(k, S[k], p)).join("");
 }
 
-$("#pv-previstos").addEventListener("click", async (e) => {
+function planSection(k, sec, p) {
+  const info = SECTION_INFO[k];
+  // seções longas mostram 5 linhas e "Ver todas" (no celular, 14 parcelas ocupam a tela inteira)
+  const open = (state.plan.open || {})[k];
+  const many = sec.items.length > 6 && !open;
+  const rows = (many ? sec.items.slice(0, 5) : sec.items).map((r) => planRow(k, r)).join("") +
+    (many ? `<button class="link pm-more" data-plan-more="${k}">Ver todas (${sec.items.length})</button>` : "");
+  const sub = {
+    entradas: sec.actual ? `${fmt(sec.actual)} recebido` : `${sec.items.length} ${sec.items.length === 1 ? "item" : "itens"}`,
+    fixas: sec.actual ? `${fmt(sec.actual)} pago de ${fmt(sec.planned)}` : `${sec.items.length} ${sec.items.length === 1 ? "conta" : "contas"}`,
+    dividas: `${sec.items.length} ${sec.items.length === 1 ? "parcela" : "parcelas"}`,
+    variaveis: sec.actual ? `${fmt(sec.actual)} gasto de ${fmt(sec.planned)}` : "orçamento por categoria",
+  }[k];
+  const empty = {
+    entradas: "Cadastre salário e outras entradas previstas.",
+    fixas: "Aluguel, condomínio, escola, planos… com vencimento.",
+    dividas: "Nenhuma parcela neste mês.",
+    variaveis: "Defina quanto pretende gastar por categoria (mercado, transporte…).",
+  }[k];
+  const meter = k === "variaveis" && sec.planned ? `<div class="meter ${sec.actual > sec.planned ? "over" : ""}"><i style="width:${Math.min(100, (sec.actual / sec.planned) * 100)}%"></i></div>` : "";
+  return `<div class="card pm-sec pm-sec--${k}">
+    <div class="pm-sec__head"><div><h3>${info.title}</h3><p class="pm-sec__sub">${sub}</p></div><b class="pm-sec__total">${fmt(sec.planned)}</b></div>
+    ${meter}
+    <div class="list">${rows || `<p class="hint pm-empty">${empty}</p>`}</div>
+    <div class="pm-sec__foot"><button class="link" data-plan-add="${k}">+ ${info.add}</button>
+      ${k === "variaveis" ? '<button class="link" data-plan-suggest>Sugerir pela média</button>' : ""}</div>
+  </div>`;
+}
+
+function planRow(k, r) {
+  if (r.type === "previsto") {
+    state.occ[occKey(r)] = r;
+    const freq = r.recurrence === "pontual" ? "uma vez" : r.end_month ? `até ${mlabel(r.end_month)}` : "todo mês";
+    const value = r.kind === "receita" ? r.amount : -r.amount;
+    const status = { pago: r.kind === "receita" ? "recebido" : "pago", atrasado: "em atraso", pulado: "pulado", pendente: "" }[r.status];
+    return `<div class="az-insight occ ${r.status}" data-occ="${occKey(r)}">${well(esc(initials(r.name)))}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(r.name)}</div>
+        <div class="az-insight__desc">${r.kind === "receita" ? "cai" : "vence"} ${dlabel(r.due)} · ${freq}${r.moved ? ` · movido de ${mlabel(r.original)}` : ""}</div></div>
+      <div class="tx-right"><span class="amount ${r.kind === "receita" ? "in" : ""}">${money(value, { plus: true })}</span>
+        ${status ? `<span class="tx-date st-${r.status}">${status}</span>` : ""}</div></div>`;
+  }
+  if (r.type === "divida" || r.type === "cartao") {
+    const desc = r.type === "divida" ? `${r.installment_n && r.installment_total ? `parcela ${r.installment_n} de ${r.installment_total}` : "parcela"}${r.due ? ` · dia ${r.due.slice(8, 10)}` : ""}` : "parcelas de compras";
+    return `<div class="az-insight pm-debt" data-goto="dividas">${well(r.type === "cartao" ? ICON.card : esc(initials(r.name)))}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(r.name)}</div><div class="az-insight__desc">${desc}</div></div>
+      <div class="tx-right"><span class="amount">${money(-r.amount)}</span></div></div>`;
+  }
+  // orçamento (gasto variável ou entrada orçada)
+  const over = r.amount && r.actual > r.amount;
+  const left = r.amount - r.actual;
+  const desc = !r.amount ? `sem orçamento · ${fmt(r.actual)} gasto`
+    : r.actual ? (over ? `${fmt(r.actual)} de ${fmt(r.amount)} · ${fmt(-left)} acima` : `${fmt(r.actual)} de ${fmt(r.amount)} · restam ${fmt(left)}`)
+      : `${r.scope === "mes" ? "só neste mês" : "todo mês"} · nada gasto ainda`;
+  return `<div class="az-insight pm-bud" data-bud="${r.category_id ?? ""}">${well(esc(initials(r.name)))}
+    <div class="az-insight__text"><div class="az-insight__title">${esc(r.name)}</div><div class="az-insight__desc">${desc}</div>
+      ${r.amount ? `<div class="meter ${over ? "over" : ""}"><i style="width:${Math.min(100, (r.actual / r.amount) * 100)}%"></i></div>` : ""}</div>
+    <div class="tx-right"><span class="amount">${r.amount ? fmt2(r.amount) : "–"}</span></div></div>`;
+}
+
+$("#pm-prev").onclick = () => { state.plan.month = addMonths(state.plan.month || thisMonth(), -1); renderMes(); };
+$("#pm-next").onclick = () => { state.plan.month = addMonths(state.plan.month || thisMonth(), 1); renderMes(); };
+$("#pm-month").onclick = () => { state.plan.month = thisMonth(); renderMes(); };
+
+$("#pv-mes").addEventListener("click", async (e) => {
   const pay = e.target.closest("[data-pay]");
   if (pay) {
     const o = state.occ[pay.dataset.pay];
     await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, paid: true });
     toast(`${o.name}: marcado como pago`, { label: "Desfazer", run: async () => {
       await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, paid: null });
-      await renderPrevistos();
+      await renderMes();
     } });
-    return renderPrevistos();
+    return renderMes();
   }
-  if (e.target.closest("#pl-add, [data-pl-new]")) return openPlannedSheet(null);
-  const row = e.target.closest("[data-occ]");
-  if (row) openOccSheet(state.occ[row.dataset.occ]);
+  const add = e.target.closest("[data-plan-add]");
+  if (add) {
+    const k = add.dataset.planAdd;
+    if (k === "dividas") return goTab("dividas");
+    if (k === "variaveis") return openAddBudgetSheet();
+    return openPlannedSheet(null, { kind: k === "entradas" ? "receita" : "despesa", start_month: state.plan.month });
+  }
+  if (e.target.closest("[data-plan-suggest]")) return openSuggestSheet();
+  const more = e.target.closest("[data-plan-more]");
+  if (more) {
+    state.plan.open = { ...(state.plan.open || {}), [more.dataset.planMore]: true };
+    return renderMes();
+  }
+  const occ = e.target.closest("[data-occ]");
+  if (occ) return openOccSheet(state.occ[occ.dataset.occ]);
+  const bud = e.target.closest("[data-bud]");
+  if (bud) {
+    const row = state.planMonth.sections.variaveis.items.concat(state.planMonth.sections.entradas.items)
+      .find((r) => r.type === "orcamento" && String(r.category_id ?? "") === bud.dataset.bud);
+    if (row && row.category_id != null) openBudgetSheet(row);
+  }
 });
+
+// orçamento de uma categoria: quanto pretende gastar (todo mês ou só neste mês)
+function openBudgetSheet(row, isNew = false) {
+  const m = state.plan.month;
+  let scope = row.scope || "padrao";
+  openSheet(`<p class="overline">Gastos variáveis · ${capFirst(mlong(m))}</p><h2>${esc(row.name)}</h2>
+    <p class="hint">${row.actual ? `Gasto neste mês: ${fmt2(row.actual)}.` : "Nada gasto ainda neste mês."}</p>
+    <label class="field">Quanto pretende gastar (R$)<input id="bg-amount" inputmode="decimal" value="${row.amount ? String(row.amount).replace(".", ",") : ""}" placeholder="0,00"></label>
+    <div class="row" style="margin-top:var(--space-3)"><div class="segmented" id="bg-scope"><button data-s="padrao">Todo mês</button><button data-s="mes">Só em ${mlabel(m)}</button></div></div>
+    <div class="row"><button class="primary" id="bg-save">Salvar</button>${row.amount && !isNew ? '<button class="danger" id="bg-del">Remover</button>' : ""}</div>`);
+  const sync = () => $$("#bg-scope button").forEach((b) => b.classList.toggle("active", b.dataset.s === scope));
+  sync();
+  $("#bg-scope").onclick = (e) => { const b = e.target.closest("[data-s]"); if (b) { scope = b.dataset.s; sync(); } };
+  const put = async (amount) => {
+    await api("PUT", "/api/budgets", [{ category_id: row.category_id, month: scope === "mes" ? m : null, amount }]);
+    closeSheet();
+    await renderMes();
+  };
+  $("#bg-save").onclick = async () => {
+    const amount = parseNum(sheetVal("bg-amount"));
+    if (amount === undefined) return toast("Valor inválido");
+    await put(amount ?? null);
+    toast(amount ? `${row.name}: ${fmt(amount)} ${scope === "mes" ? `em ${mlabel(m)}` : "por mês"}` : "Orçamento removido");
+  };
+  $("#bg-del")?.addEventListener("click", async () => { await put(null); toast("Orçamento removido"); });
+}
+function openAddBudgetSheet() {
+  const used = new Set(state.planMonth.sections.variaveis.items.filter((r) => r.amount).map((r) => r.category_id));
+  const opts = state.categories.filter((c) => c.type === "despesa" && c.active && c.group !== "Dívidas" && !used.has(c.id));
+  const groups = {};
+  opts.forEach((c) => (groups[c.group] ||= []).push(c));
+  openSheet(`<p class="overline">Gastos variáveis</p><h2>Orçar categoria</h2>
+    <label class="field">Categoria<select id="ab-cat">${Object.entries(groups).map(([g, cs]) => `<optgroup label="${esc(g)}">${cs.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</optgroup>`).join("")}</select></label>
+    <div class="row"><button class="primary" id="ab-next">Continuar</button></div>`);
+  $("#ab-next").onclick = () => {
+    const c = catById(+sheetVal("ab-cat"));
+    const row = state.planMonth.sections.variaveis.items.find((r) => r.category_id === c.id);
+    openBudgetSheet({ category_id: c.id, name: c.name, amount: 0, actual: row ? row.actual : 0, scope: "padrao" }, true);
+  };
+}
+async function openSuggestSheet() {
+  const sug = (await api("GET", withPerson(`/api/budget/suggest?month=${state.plan.month}`))).filter((x) => x.type === "despesa" && catById(x.category_id)?.group !== "Dívidas");
+  const have = new Map(state.planMonth.sections.variaveis.items.filter((r) => r.amount).map((r) => [r.category_id, r.amount]));
+  openSheet(`<p class="overline">Gastos variáveis</p><h2>Sugestão pela média</h2>
+    <p class="hint">Média dos últimos meses com extrato. Marque o que quer usar como orçamento de todo mês.</p>
+    <div class="chk-list">${sug.length ? sug.map((x) => `<label class="chk-row"><input type="checkbox" value="${x.category_id}" data-amount="${x.amount}" ${have.has(x.category_id) ? "" : "checked"}>
+      <span>${esc(x.name)}</span><b class="chk-val">${fmt(x.amount)}${have.has(x.category_id) ? ` <small>(hoje ${fmt(have.get(x.category_id))})</small>` : ""}</b></label>`).join("")
+      : '<p class="hint">Ainda não há extratos suficientes para sugerir. Importe o extrato em Importações.</p>'}</div>
+    <div class="row"><button class="primary" id="sg-apply" ${sug.length ? "" : "disabled"}>Aplicar</button></div>`);
+  $("#sg-apply").onclick = async () => {
+    const items = $$("#sheet .chk-list input:checked").map((i) => ({ category_id: +i.value, month: null, amount: +i.dataset.amount }));
+    if (!items.length) return closeSheet();
+    await api("PUT", "/api/budgets", items);
+    closeSheet();
+    toast(`${items.length} ${items.length === 1 ? "categoria orçada" : "categorias orçadas"}`);
+    await renderMes();
+  };
+}
 
 function monthInput(id, iso) {
   return `<div class="month-nav sheet-month"><button class="ghost icon" type="button" data-step="-1" data-for="${id}" aria-label="Mês anterior">‹</button>
@@ -832,7 +884,7 @@ function openOccSheet(o) {
     await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, ...body });
     closeSheet();
     if (msg) toast(msg);
-    await renderPrevistos();
+    await renderPlanejamento();
   };
   $("#oc-save").onclick = async () => {
     const body = {};
@@ -855,8 +907,8 @@ function openOccSheet(o) {
 }
 
 // previsão (série): todo mês de um mês até outro, ou uma vez só
-function openPlannedSheet(p) {
-  const v = p || { kind: "despesa", recurrence: "mensal", start_month: addMonths(thisMonth(), 1) };
+function openPlannedSheet(p, preset = {}) {
+  const v = p || { kind: "despesa", recurrence: "mensal", start_month: addMonths(thisMonth(), 1), ...preset };
   openSheet(`<p class="overline">${p ? "Editar previsto" : "Novo previsto"}</p><h2>${p ? esc(p.name) : "Previsto"}</h2>
     <div class="row"><div class="segmented" id="pp-kind"><button data-k="despesa">Despesa</button><button data-k="receita">Receita</button></div></div>
     <div class="row"><div class="segmented" id="pp-rec"><button data-r="mensal">Todo mês</button><button data-r="pontual">Uma vez</button></div></div>
@@ -896,144 +948,134 @@ function openPlannedSheet(p) {
     await api(p ? "PUT" : "POST", p ? `/api/planned/${p.id}` : "/api/planned", body);
     closeSheet();
     toast(p ? "Previsto atualizado" : "Previsto criado");
-    state.plan.view = "previstos";
     await renderPlanejamento();
   };
   if (p) $("#pp-del").onclick = async () => {
     if (!confirm(`Excluir "${p.name}" e todos os meses dele?`)) return;
     await api("DELETE", `/api/planned/${p.id}`);
     closeSheet();
-    await renderPrevistos();
+    await renderPlanejamento();
   };
 }
 
-async function renderOrcamento() {
-  const p = state.plan;
-  $("#bud-month").value = p.month.slice(0, 7);
-  $$("#bud-scope button").forEach((b) => b.classList.toggle("active", b.dataset.scope === p.scope));
-  const v = await api("GET", withPerson(`/api/budget?month=${p.month}`));
-  const T = v.totals;
-  $("#bud-tiles").innerHTML = [
-    ["Receitas", fmt(T.receitas), T.receitas_previstas ? `previstas ${fmt(T.receitas_previstas)}` : "sem previsão"],
-    ["Despesas", fmt(T.despesas), T.despesas_orcadas ? `orçadas ${fmt(T.despesas_orcadas)}` : "sem orçamento"],
-    ["Sobra do mês", `${T.receitas < T.despesas ? "−" : ""}${fmt(Math.abs(T.receitas - T.despesas))}`, T.receitas_previstas ? `prevista ${fmt(T.receitas_previstas - T.despesas_orcadas)}` : ""],
-    ["Sem categoria", fmt(T.sem_categoria), T.sem_categoria ? "categorize em Lançamentos" : "tudo categorizado"],
-  ].map(([l, val, sub]) => tile(l, val, sub)).join("");
 
-  const byCat = Object.fromEntries(v.rows.map((r) => [r.category_id, r]));
-  const sug = p.suggestions ? Object.fromEntries(p.suggestions.map((s) => [s.category_id, s.amount])) : {};
-  let h = `<thead><tr><th>Categoria</th><th>Orçado</th><th>Realizado</th><th>Restante</th><th class="bar-col"></th></tr></thead><tbody>`;
-  for (const type of ["despesa", "receita"]) {
-    const groups = {};
-    state.categories.filter((c) => c.type === type && c.active).forEach((c) => (groups[c.group] ||= []).push(c));
-    h += `<tr class="group"><td colspan="5">${TYPE_LABEL[type]}</td></tr>`;
-    for (const [g, cs] of Object.entries(groups)) {
-      const sumP = cs.reduce((s, c) => s + (byCat[c.id]?.planned || 0), 0), sumA = cs.reduce((s, c) => s + (byCat[c.id]?.actual || 0), 0);
-      if (type === "despesa") h += `<tr class="subgroup"><td>${esc(g)}</td><td>${fmt(sumP)}</td><td>${fmt(sumA)}</td><td>${sumP ? fmt(sumP - sumA) : ""}</td><td></td></tr>`;
-      for (const c of cs) {
-        const r = byCat[c.id] || { planned: 0, actual: 0 };
-        const value = c.id in sug ? sug[c.id] : r.planned || "";
-        const ratio = r.planned ? r.actual / r.planned : 0;
-        const over = r.planned && r.actual > r.planned;
-        h += `<tr><td class="cat-name">${esc(c.name)}</td>
-          <td><input class="bud-in ${c.id in sug ? "suggested" : ""}" data-cat="${c.id}" inputmode="decimal" value="${value}" placeholder="–"></td>
-          <td>${r.actual ? fmt2(r.actual) : ""}</td><td>${r.planned ? `${over ? "−" : ""}${fmt(Math.abs(r.planned - r.actual))}${over ? " acima" : ""}` : ""}</td>
-          <td class="bar-col">${r.planned ? `<div class="meter ${over ? "over" : ""}"><i style="width:${Math.min(100, ratio * 100)}%"></i></div>` : ""}</td></tr>`;
-      }
-    }
-  }
-  const unc = byCat["null"] || v.rows.find((r) => r.category_id === null);
-  if (unc) h += `<tr><td class="cat-name muted">Sem categoria</td><td></td><td>${fmt2(unc.actual)}</td><td></td><td></td></tr>`;
-  const mobile = isMobile();
-  $("#bud-table").innerHTML = mobile ? "" : h + "</tbody>";
-  $("#bud-list").innerHTML = mobile ? budgetList(byCat, sug, unc) : "";
-  $("#bud-savebar").hidden = true;
-}
+// ------------------------------------------------------------------ FLUXO: saldo projetado e tabela mês a mês
+const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const num = (v) => (Math.round(v) ? NUM.format(Math.round(v)) : "");
+const snum = (v) => `${v < 0 ? "−" : ""}${NUM.format(Math.abs(Math.round(v)))}`;
+const SECTION_TITLE = { entradas: "Entradas", saidas: "Saídas", dividas: "Dívidas e parcelas" };
 
-async function renderProjecao() {
-  const proj = await api("GET", withPerson(`/api/projection?months=6`));
-  $("#proj-hint").innerHTML = `Começa no próximo mês com <b>${fmt(proj.saldo_inicial)}</b> (saldo em contas ${fmt(proj.saldo_atual)}
-    menos faturas abertas ${fmt(proj.faturas_abertas)}). Cada categoria usa o orçamento (ou a média dos últimos meses); onde há
-    previsto, vale o previsto. Somam-se dívidas, parcelas de cartão e, no primeiro mês, o que está em atraso ou ainda vence neste mês.`;
-  const ms = proj.months;
-  chart("chart-proj").setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: ms.map((m) => mlabel(m.month)) },
-    series: [
-      { name: "Saldo projetado", type: "line", data: ms.map((m) => m.saldo), color: LIT(), symbol: "circle", symbolSize: 7, lineStyle: { width: 2.5 },
-        areaStyle: { color: DIM(), opacity: 0.5 },
-        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--line-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
-      { name: "Dívidas + parcelas de cartão", type: "bar", data: ms.map((m) => m.dividas + m.parcelas_cartao), color: css("--chart-mid"), barMaxWidth: 22, itemStyle: { borderRadius: [4, 4, 0, 0] } },
-    ],
+async function renderFluxo() {
+  const h = state.plan.horizon || 12;
+  $$("#tb-horizon button").forEach((b) => b.classList.toggle("active", +b.dataset.h === h));
+  const p = await api("GET", withPerson(`/api/projection?months=${h}&detail=true`));
+  const t = p.table;
+  state.table = t;
+  const acc = t.totais.acumulado.values;
+  const low = acc.reduce((a, v, i) => (v < a.v ? { v, i } : a), { v: Infinity, i: -1 });
+  $("#fx-end").innerHTML = acc.length ? `${money(acc[acc.length - 1])} <small>em ${mlabel(t.months[t.months.length - 1])}</small>` : "";
+  $("#tb-hint").innerHTML = `Começa com ${fmt(t.saldo_inicial)} (contas menos faturas)${low.i >= 0 ? ` · menor saldo ${fmt(low.v)} em ${mlabel(t.months[low.i])}` : ""}.`;
+  chart("chart-fluxo").setOption({
+    ...baseOption(), grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true }, legend: { show: false },
+    xAxis: { ...baseOption().xAxis, data: t.months.map(mlabel) },
+    series: [{ name: "Saldo acumulado", type: "line", data: acc, smooth: true, symbol: "circle", symbolSize: 6, color: LIT(),
+      lineStyle: { width: 2.5 }, areaStyle: { color: DIM(), opacity: 0.45 },
+      markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--line-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } }],
   }, true);
-  if (isMobile()) {
-    // celular: só o que cabe (saídas = despesas + dívidas + parcelas de cartão)
-    $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr></thead><tbody>` +
-      ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${short(m.receitas)}</td><td>${short(m.despesas + m.dividas + m.parcelas_cartao + (m.pendentes || 0))}</td>
-        <td><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
-    return;
-  }
-  $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Dívidas</th><th>Parcelas cartão</th><th>Atrasos e pendentes</th><th>Saldo</th></tr></thead><tbody>` +
-    ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${fmt(m.receitas)}${srcTag(m.fonte_receitas)}</td>
-      <td>${fmt(m.despesas)}${srcTag(m.fonte_despesas)}</td><td>${fmt(m.dividas)}</td><td>${fmt(m.parcelas_cartao)}</td><td>${m.pendentes ? fmt(m.pendentes) : ""}</td>
-      <td class="${m.saldo < 0 ? "neg" : ""}"><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
-}
+  chart("chart-fluxo").resize();
 
-// orçamento no celular: uma linha por categoria com o valor editável e a barra de consumo
-function budgetList(byCat, sug, unc) {
-  let h = "";
-  for (const type of ["despesa", "receita"]) {
-    const groups = {};
-    state.categories.filter((c) => c.type === type && c.active).forEach((c) => (groups[c.group] ||= []).push(c));
-    h += `<p class="overline bl-type">${type === "despesa" ? "Despesas" : "Receitas"}</p>`;
-    for (const [g, cs] of Object.entries(groups)) {
-      const sumP = cs.reduce((s, c) => s + (byCat[c.id]?.planned || 0), 0), sumA = cs.reduce((s, c) => s + (byCat[c.id]?.actual || 0), 0);
-      h += `<div class="bl-group"><div class="bl-group__head"><b>${esc(type === "despesa" ? g : "Receitas")}</b>
-        <span>${sumP ? `${fmt(sumA)} de ${fmt(sumP)}` : sumA ? fmt(sumA) : ""}</span></div>`;
-      for (const c of cs) {
-        const r = byCat[c.id] || { planned: 0, actual: 0 };
-        const value = c.id in sug ? sug[c.id] : r.planned || "";
-        const over = r.planned && r.actual > r.planned;
-        const left = r.planned - r.actual;
-        const info = r.planned ? (over ? `${fmt(-left)} acima` : `restam ${fmt(left)}`) : r.actual ? "sem orçamento" : "";
-        h += `<div class="bl-row"><div class="bl-row__text"><div class="bl-row__name">${esc(c.name)}</div>
-            <div class="bl-row__meta">${r.actual ? `${fmt2(r.actual)} realizado` : "nada realizado"}${info ? ` · ${info}` : ""}</div>
-            ${r.planned ? `<div class="meter ${over ? "over" : ""}"><i style="width:${Math.min(100, (r.actual / r.planned) * 100)}%"></i></div>` : ""}</div>
-          <input class="bud-in ${c.id in sug ? "suggested" : ""}" data-cat="${c.id}" inputmode="decimal" value="${value}" placeholder="R$" aria-label="Orçado para ${esc(c.name)}"></div>`;
-      }
-      h += "</div>";
+  const cells = (now, values, cls = "", sources) => `<td class="now ${cls}">${num(now)}</td>` +
+    values.map((v, i) => `<td class="${cls} ${sources && sources[i] === "média" ? "avg" : ""}">${num(v)}</td>`).join("");
+  const signed = (now, values) => `<td class="now">${snum(now)}</td>` + values.map((v) => `<td>${snum(v)}</td>`).join("");
+  let body = "";
+  for (const s of t.sections) {
+    if (!s.groups.length) continue;
+    body += `<tr class="sec"><td class="lbl">${SECTION_TITLE[s.key]}</td>${cells(s.now, s.values)}</tr>`;
+    const showGroups = s.groups.length > 1;
+    for (const g of s.groups) {
+      if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g.now, g.values)}</tr>`;
+      for (const r of g.rows) body += `<tr><td class="lbl ${showGroups ? "sub" : ""}" title="${esc(r.label)}">${esc(r.label)}</td>${cells(r.now, r.values, "", r.sources)}</tr>`;
     }
   }
-  if (unc) h += `<div class="bl-group"><div class="bl-group__head"><b>Sem categoria</b><span>${fmt2(unc.actual)}</span></div></div>`;
-  return h;
+  const T = t.totais;
+  body += `<tr class="total first"><td class="lbl">Total de entradas</td>${cells(T.entradas.now, T.entradas.values)}</tr>
+    <tr class="total"><td class="lbl">Total de saídas</td>${cells(T.saidas.now, T.saidas.values)}</tr>
+    <tr class="total"><td class="lbl">Saldo do mês</td>${signed(T.saldo_mes.now, T.saldo_mes.values)}</tr>
+    <tr class="acc"><td class="lbl">Saldo acumulado</td>${signed(T.acumulado.now, T.acumulado.values)}</tr>`;
+  // agrupamentos: linhas informativas, à parte da modelagem (não somam em nada)
+  if ((t.groupings || []).length) {
+    body += `<tr class="info-sep"><td class="lbl">Informativo</td><td colspan="${t.months.length + 1}"></td></tr>` +
+      t.groupings.map((g) => `<tr class="info" data-grouping="${g.id}"><td class="lbl" title="${esc(g.name)}">${esc(g.name)}</td>${signed(g.now, g.values)}</tr>`).join("");
+  }
+  $("#tb-table").innerHTML = `<thead><tr><th class="lbl">R$</th><th class="now" title="Atrasos e o que ainda vence neste mês">Agora</th>
+    ${t.months.map((m) => `<th><button class="th-month" data-open-month="${m}">${mlabel(m)}</button></th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
 }
-$("#bud-card").addEventListener("input", (e) => { if (e.target.matches(".bud-in") && isMobile()) $("#bud-savebar").hidden = false; });
-
-$("#bud-month").addEventListener("change", (e) => { if (e.target.value) { state.plan.month = e.target.value + "-01"; state.plan.suggestions = null; renderPlanejamento(); } });
-$("#bud-prev").onclick = () => { state.plan.month = addMonths(state.plan.month, -1); state.plan.suggestions = null; renderPlanejamento(); };
-$("#bud-next").onclick = () => { state.plan.month = addMonths(state.plan.month, 1); state.plan.suggestions = null; renderPlanejamento(); };
-$("#bud-scope").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-scope]");
-  if (!b) return;
-  state.plan.scope = b.dataset.scope;
-  $$("#bud-scope button").forEach((x) => x.classList.toggle("active", x === b));
+$("#tb-table").addEventListener("click", (e) => {
+  const mo = e.target.closest("[data-open-month]");
+  if (mo) {
+    state.plan.month = mo.dataset.openMonth;
+    state.plan.view = "mes";
+    return renderPlanejamento();
+  }
+  const row = e.target.closest("[data-grouping]");
+  if (row) openGroupingEditor((state.table.groupings || []).find((g) => g.id === +row.dataset.grouping));
 });
-$("#bud-suggest").onclick = async () => {
-  state.plan.suggestions = await api("GET", withPerson(`/api/budget/suggest?month=${state.plan.month}`));
-  await renderPlanejamento();
-  toast(state.plan.suggestions.length ? "Sugestões preenchidas (em destaque). Ajuste e salve." : "Sem histórico suficiente para sugerir");
-};
-async function saveBudget() {
-  const month = state.plan.scope === "mes" ? state.plan.month : null;
-  const items = $$("#bud-card .bud-in").map((i) => ({ category_id: +i.dataset.cat, month, amount: parseNum(i.value) ?? null }))
-    .filter((it) => it.amount !== undefined);
-  await api("PUT", "/api/budgets", items);
-  state.plan.suggestions = null;
-  toast(month ? `Orçamento de ${mlabel(month)} salvo` : "Orçamento padrão salvo (vale para todo mês)");
-  await renderPlanejamento();
+$("#tb-horizon").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-h]");
+  if (!b) return;
+  state.plan.horizon = +b.dataset.h;
+  renderFluxo();
+});
+$("#tb-groups").onclick = () => openGroupingsSheet();
+function openGroupingsSheet() {
+  const gs = (state.table && state.table.groupings) || [];
+  openSheet(`<p class="overline">Mês a mês</p><h2>Agrupamentos</h2>
+    <p class="hint">Uma linha informativa, à parte do planejamento, com o líquido de algumas linhas. Ex.: <b>Salário líquido</b> =
+      Salário − Plano de saúde − consignados: o que de fato cai na conta. Não muda totais nem a projeção.</p>
+    <div class="list">${gs.map((g) => `<div class="az-insight"><div class="az-insight__text"><div class="az-insight__title">${esc(g.name)}</div>
+      <div class="az-insight__desc">${g.refs.length} ${g.refs.length === 1 ? "linha" : "linhas"}</div></div>
+      <button class="sm" data-edit-grouping="${g.id}">Editar</button></div>`).join("") || '<p class="hint">Nenhum agrupamento ainda.</p>'}</div>
+    <div class="row"><button class="primary" id="gp-new">Novo agrupamento</button></div>`);
+  $("#gp-new").onclick = () => openGroupingEditor(null);
+  $("#sheet-body").querySelectorAll("[data-edit-grouping]").forEach((b) => {
+    b.onclick = () => openGroupingEditor(gs.find((g) => g.id === +b.dataset.editGrouping));
+  });
 }
-$("#bud-save").onclick = saveBudget;
-$("#bud-save-m").onclick = saveBudget;
+function openGroupingEditor(g) {
+  const t = state.table;
+  const chosen = new Set(g ? g.refs : []);
+  const seen = new Set();
+  let list = "";
+  for (const s of t.sections) {
+    const rows = s.groups.flatMap((gr) => gr.rows).filter((r) => (seen.has(r.ref) ? false : seen.add(r.ref)));
+    if (!rows.length) continue;
+    const sign = s.key === "entradas" ? "+" : "−";
+    list += `<p class="overline chk-sec">${SECTION_TITLE[s.key]} <span class="muted">(${sign})</span></p>` +
+      rows.map((r) => `<label class="chk-row"><input type="checkbox" value="${esc(r.ref)}" ${chosen.has(r.ref) ? "checked" : ""}>
+        <span>${esc(r.label)}</span></label>`).join("");
+  }
+  openSheet(`<p class="overline">${g ? "Editar agrupamento" : "Novo agrupamento"}</p><h2>${g ? esc(g.name) : "Agrupamento"}</h2>
+    <label class="field">Nome<input id="gp-name" value="${esc(g ? g.name : "")}" placeholder="Ex.: Folha"></label>
+    <p class="hint" style="margin-top:var(--space-3)">Marque as linhas. Entradas somam, saídas e dívidas subtraem.</p>
+    <div class="chk-list">${list || '<p class="hint">A tabela ainda não tem linhas neste período.</p>'}</div>
+    <div class="row"><button class="primary" id="gp-save">Salvar</button>${g ? '<button class="danger" id="gp-del">Excluir</button>' : ""}</div>`);
+  $("#gp-save").onclick = async () => {
+    const name = sheetVal("gp-name").trim();
+    if (!name) return toast("Dê um nome ao agrupamento");
+    const refs = $$("#sheet .chk-list input:checked").map((i) => i.value);
+    await api(g ? "PUT" : "POST", g ? `/api/groupings/${g.id}` : "/api/groupings", { name, refs });
+    closeSheet();
+    toast(g ? "Agrupamento atualizado" : "Agrupamento criado");
+    await renderFluxo();
+  };
+  if (g) $("#gp-del").onclick = async () => {
+    if (!confirm(`Excluir o agrupamento "${g.name}"?`)) return;
+    await api("DELETE", `/api/groupings/${g.id}`);
+    closeSheet();
+    await renderFluxo();
+  };
+}
+
 
 // ------------------------------------------------------------------ DÍVIDAS
 async function renderDividas() {
@@ -1310,7 +1352,7 @@ const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar:
 const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importações", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
 const SUBTITLES = {
   inicio: "", lancamentos: "Busque e categorize gastos", importar: "Extratos e faturas em OFX",
-  planejamento: "Orçamento, previstos e projeção", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
+  planejamento: "Plano do mês e fluxo futuro", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
 };
 function screenHead(tab) {
   if (tab === "inicio") {
