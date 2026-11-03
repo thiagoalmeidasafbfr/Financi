@@ -154,3 +154,47 @@ def test_projection_and_sankey_for_period(client):
     sk = client.get(f"/api/scenarios/{sc['id']}/sankey", params={"start": "2027-01-01", "end": "2027-03-01"}).json()
     assert sum(l["value"] for l in sk["links"] if l["source"] == "Salário líquido") == 15000
     assert client.get(f"/api/scenarios/{sc['id']}/projection", params={"start": "2031-01-01"}).status_code == 400
+
+
+def test_move_entry_between_months_and_undo(client):
+    sc = make_scenario(client)
+    sid = sc["id"]
+    merc = cat_id(client, "Supermercado")
+    client.put(f"/api/scenarios/{sid}/entries", json=[{"category_id": merc, "month": "2026-11-01", "amount": 800},
+                                                      {"category_id": merc, "month": "2027-01-01", "amount": 300}])
+    r = client.post(f"/api/scenarios/{sid}/entries/move",
+                    json={"category_id": merc, "from_month": "2026-11-01", "to_month": "2027-01-01"}).json()
+    vals = lambda: next(x for x in client.get(f"/api/scenarios/{sid}/projection").json()["rows"]  # noqa: E731
+                        if x["category_id"] == merc)["values"]
+    assert vals()[:3] == [0, 0, 1100]  # somou ao destino
+    # desfazer = gravar o estado anterior devolvido
+    client.put(f"/api/scenarios/{sid}/entries", json=r["undo"])
+    assert vals()[:3] == [800, 0, 300]
+    # parcial e cópia
+    client.post(f"/api/scenarios/{sid}/entries/move",
+                json={"category_id": merc, "from_month": "2026-11-01", "to_month": "2026-12-01", "amount": 200})
+    assert vals()[:3] == [600, 200, 300]
+    client.post(f"/api/scenarios/{sid}/entries/move",
+                json={"category_id": merc, "from_month": "2026-11-01", "to_month": "2026-12-01", "mode": "copy"})
+    assert vals()[:3] == [600, 800, 300]
+    bad = client.post(f"/api/scenarios/{sid}/entries/move",
+                      json={"category_id": merc, "from_month": "2026-11-01", "to_month": "2026-12-01", "amount": 5000})
+    assert bad.status_code == 400
+
+
+def test_move_calculated_line_uses_overrides(client):
+    sc = make_scenario(client)
+    sid = sc["id"]
+    body = {**{k: v for k, v in sc.items() if k != "id"}, "bonus_salaries": 1, "bonus_month": 3}
+    client.put(f"/api/scenarios/{sid}", json=body)
+    client.put(f"/api/scenarios/{sid}/salary-changes", json=[{"start_month": "2026-11-01", "amount": 5000}])
+    bonus = cat_id(client, "Bônus / outras receitas")
+    client.post(f"/api/scenarios/{sid}/entries/move",
+                json={"category_id": bonus, "from_month": "2027-03-01", "to_month": "2027-04-01"})
+    row = next(x for x in client.get(f"/api/scenarios/{sid}/projection").json()["rows"] if x["category_id"] == bonus)
+    m = ["2026-11-01", "2026-12-01", "2027-01-01", "2027-02-01", "2027-03-01", "2027-04-01"]
+    assert row["values"][4] == 0 and row["values"][5] == 5000
+    assert row["overridden"][4] and row["overridden"][5]
+    consig = cat_id(client, "Consignados em folha")
+    assert client.post(f"/api/scenarios/{sid}/entries/move",
+                       json={"category_id": consig, "from_month": m[0], "to_month": m[1]}).status_code == 400

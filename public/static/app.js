@@ -32,13 +32,22 @@ const parseNum = (s) => {
 const toMonthInput = (iso) => (iso ? iso.slice(0, 7) : "");
 const fromMonthInput = (v) => (v ? `${v}-01` : null);
 
-function toast(msg) {
+function toast(msg, action) {
   const t = $("#toast");
-  t.textContent = msg;
+  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button class="toast-action">${esc(action.label)}</button>` : ""}`;
+  t.classList.toggle("has-action", !!action);
+  if (action) {
+    t.querySelector(".toast-action").onclick = async () => {
+      t.classList.remove("show");
+      await action.run();
+    };
+  }
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), 2600);
+  toast._t = setTimeout(() => t.classList.remove("show"), action ? 7000 : 2600);
 }
+
+const isMobile = () => window.matchMedia("(max-width: 700px)").matches;
 
 async function api(method, url, body) {
   const opts = { method, headers: {} };
@@ -349,7 +358,10 @@ async function renderPainel() {
 }
 
 function renderWaterfall(w, k) {
-  const cats = ["Saldo inicial", ...w.steps.map((x) => x.label), "Saldo final"];
+  const SHORT = { receitas: "Receitas", despesas_fixas: "Fixas", dividas: "Dívidas", despesas_variaveis: "Variáveis", rendimento: "Rend." };
+  const cats = isMobile()
+    ? ["Inicial", ...w.steps.map((x) => SHORT[x.key] || x.label), "Final"]
+    : ["Saldo inicial", ...w.steps.map((x) => x.label), "Saldo final"];
   const items = [];
   let run = w.start;
   items.push({ y0: 0, y1: w.start, v: w.start, kind: "total" });
@@ -404,7 +416,7 @@ async function drawPainelSankey() {
     state.sankeyMonth = sel.value;
     url = `/api/scenarios/${state.current}/sankey?month=${sel.value}`;
   }
-  renderSankey("chart-sankey", await api("GET", url));
+  renderSankey("chart-sankey", await api("GET", url), isMobile());
 }
 
 // ------------------------------------------------------------------ FLUXO
@@ -441,6 +453,14 @@ function investYieldRows(p) {
 }
 
 function renderFluxo() {
+  if (!state.flowView) state.flowView = isMobile() ? "mes" : "tabela";
+  $$("#flow-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === state.flowView));
+  $("#flow-table-view").hidden = state.flowView !== "tabela";
+  $("#flow-month-view").hidden = state.flowView !== "mes";
+  return state.flowView === "mes" ? renderFluxoMonths() : renderFluxoTable();
+}
+
+function renderFluxoTable() {
   const p = state.view;
   if (!p) return;
   const months = p.months;
@@ -455,9 +475,15 @@ function renderFluxo() {
       const auto = r.kind !== "manual";
       h += `<tr data-cat="${r.category_id}"><td>${esc(r.name)}${auto ? ' <span class="badge">auto</span>' : ""}
         <span class="rowtools"><button class="ghost sm" data-fill="${r.category_id}" title="Repetir um valor em vários meses">Repetir</button>${auto ? "" : `<button class="ghost sm" data-rename="${r.category_id}" title="Renomear a linha (vale para todos os cenários)">Renomear</button><button class="ghost sm danger" data-clear="${r.category_id}" title="Apagar os valores desta linha neste cenário">Remover</button>`}</span></td>`;
+      const movable = !LOCKED_KINDS.has(r.kind);
       r.values.forEach((v, i) => {
-        const cls = ["cell", auto ? "auto" : "", r.overridden[i] ? "override" : ""].join(" ");
-        h += `<td class="${cls}" data-i="${i}">${num(v)}</td>`;
+        const has = Math.abs(v) > 0.005;
+        const cls = ["cell", auto ? "auto" : "", r.overridden[i] ? "override" : "", movable && has ? "draggable" : ""].join(" ");
+        const dnd = movable
+          ? ` data-drop-month="${months[i]}" data-drop-cat="${r.category_id}"` +
+            (has ? ` data-drag data-cat="${r.category_id}" data-month="${months[i]}" data-value="${v}" data-label="${esc(r.name)}"` : "")
+          : "";
+        h += `<td class="${cls}" data-i="${i}"${dnd}>${num(v)}</td>`;
       });
       h += `<td>${num(r.total)}</td><td>${num(r.average)}</td></tr>`;
     }
@@ -1348,6 +1374,280 @@ $("#btn-import").onclick = () => importXlsx($("#xlsx-file"), $("#btn-import"), $
 $("#btn-empty-import").onclick = () => importXlsx($("#empty-xlsx"), $("#btn-empty-import"), $("#empty-report"));
 $("#btn-empty-new").onclick = () => $("#btn-new-scenario").click();
 
+// ------------------------------------------------------------------ MOVER VALORES ENTRE MESES
+// linhas que vêm de contratos/planos não se movem por aqui (abas Consignados e Em atraso)
+const LOCKED_KINDS = new Set(["consignados", "quitacao", "atrasos"]);
+const GRIP = '<svg viewBox="0 0 10 16" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/>' +
+  '<circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg>';
+
+async function moveValue({ cat, from, to, label, amount = null, mode = "move" }) {
+  const r = await api("POST", `/api/scenarios/${state.current}/entries/move`,
+    { category_id: cat, from_month: from, to_month: to, amount, mode });
+  const verb = mode === "copy" ? "Copiado" : "Movido";
+  toast(`${verb}: ${label} ${fmt(r.moved)} de ${mlabel(from)} para ${mlabel(to)}`, {
+    label: "Desfazer",
+    run: async () => {
+      await api("PUT", `/api/scenarios/${state.current}/entries`, r.undo);
+      toast("Desfeito");
+      await refresh();
+    },
+  });
+  await refresh();
+}
+
+// Arrastar com mouse (a partir de 6 px de movimento) ou toque (pela alça). Alvos: [data-drop-month];
+// na tabela o alvo precisa ser da mesma linha ([data-drop-cat]).
+const drag = { pending: null, active: null, target: null, suppressClick: false };
+
+document.addEventListener("pointerdown", (e) => {
+  const el = e.target.closest("[data-drag]");
+  if (!el || e.button > 0 || el.querySelector("input")) return;
+  const fromHandle = !!e.target.closest(".drag-handle");
+  if (e.pointerType !== "mouse" && !fromHandle) return; // no toque, só pela alça (o resto rola a tela)
+  drag.pending = { el, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse", cat: +el.dataset.cat, month: el.dataset.month,
+    value: +el.dataset.value, label: el.dataset.label };
+  if (fromHandle) {
+    e.preventDefault();
+    startDrag(e);
+  }
+});
+
+function startDrag(e) {
+  const p = drag.pending;
+  drag.active = p;
+  p.el.classList.add("drag-src");
+  document.body.classList.add("dragging");
+  const g = document.createElement("div");
+  g.className = "drag-ghost";
+  g.innerHTML = `<b>${fmt(p.value)}</b> ${esc(p.label)}<span>${mlabel(p.month)} → ?</span>`;
+  document.body.appendChild(g);
+  p.ghost = g;
+  moveGhost(e);
+}
+
+function moveGhost(e) {
+  const p = drag.active;
+  // etiqueta sempre dentro da tela; no toque fica acima do dedo para não ficar escondida
+  const gw = p.ghost.offsetWidth, gh = p.ghost.offsetHeight;
+  const gx = Math.min(Math.max(8, p.touch ? e.clientX - gw / 2 : e.clientX + 14), window.innerWidth - gw - 8);
+  const gy = Math.min(Math.max(8, p.touch ? e.clientY - gh - 28 : e.clientY + 14), window.innerHeight - gh - 8);
+  p.ghost.style.transform = `translate(${gx}px, ${gy}px)`;
+  const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-drop-month]");
+  const ok = hit && hit.dataset.dropMonth !== p.month && (!hit.dataset.dropCat || +hit.dataset.dropCat === p.cat);
+  if (drag.target && drag.target !== hit) drag.target.classList.remove("drop-ok");
+  drag.target = ok ? hit : null;
+  if (ok) hit.classList.add("drop-ok");
+  const copy = e.ctrlKey || e.altKey || e.metaKey;
+  p.ghost.querySelector("span").textContent = `${mlabel(p.month)} → ${ok ? mlabel(hit.dataset.dropMonth) : "?"}${copy && ok ? " (copiar)" : ""}`;
+  // rolagem automática perto das bordas (tabela, faixa de meses e página)
+  const box = p.el.closest(".table-wrap") || (hit && hit.closest(".month-strip")) || $("#month-strip");
+  if (box) {
+    const r = box.getBoundingClientRect();
+    if (e.clientY >= r.top - 40 && e.clientY <= r.bottom + 40) {
+      if (e.clientX > r.right - 48) box.scrollLeft += 16;
+      else if (e.clientX < r.left + 48) box.scrollLeft -= 16;
+    }
+  }
+  if (e.clientY < 70) window.scrollBy(0, -14);
+  else if (e.clientY > window.innerHeight - 90) window.scrollBy(0, 14);
+}
+
+function endDrag() {
+  const p = drag.active;
+  if (p) {
+    p.el.classList.remove("drag-src");
+    p.ghost.remove();
+    drag.suppressClick = true;
+    setTimeout(() => (drag.suppressClick = false), 50);
+  }
+  if (drag.target) drag.target.classList.remove("drop-ok");
+  document.body.classList.remove("dragging");
+  drag.pending = drag.active = drag.target = null;
+}
+
+document.addEventListener("pointermove", (e) => {
+  if (drag.pending && !drag.active && Math.hypot(e.clientX - drag.pending.x, e.clientY - drag.pending.y) > 6) startDrag(e);
+  if (drag.active) {
+    e.preventDefault();
+    moveGhost(e);
+  }
+}, { passive: false });
+
+document.addEventListener("pointerup", (e) => {
+  const p = drag.active, target = drag.target;
+  const copy = e.ctrlKey || e.altKey || e.metaKey;
+  endDrag();
+  if (p && target) moveValue({ cat: p.cat, from: p.month, to: target.dataset.dropMonth, label: p.label, mode: copy ? "copy" : "move" });
+});
+document.addEventListener("pointercancel", endDrag);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { endDrag(); closeSheet(); } });
+// depois de arrastar, o "click" do mesmo gesto não abre a edição
+document.addEventListener("click", (e) => {
+  if (drag.suppressClick) {
+    e.stopPropagation();
+    e.preventDefault();
+    drag.suppressClick = false;
+  }
+}, true);
+
+// ------------------------------------------------------------------ FOLHA (bottom sheet)
+function openSheet(html) {
+  $("#sheet-body").innerHTML = html;
+  $("#sheet").hidden = false;
+  $("#sheet-backdrop").hidden = false;
+  requestAnimationFrame(() => $("#sheet").classList.add("open"));
+}
+function closeSheet() {
+  const s = $("#sheet");
+  if (!s || s.hidden) return;
+  s.classList.remove("open");
+  $("#sheet-backdrop").hidden = true;
+  setTimeout(() => (s.hidden = true), 160);
+}
+$("#sheet-backdrop").addEventListener("click", closeSheet);
+
+// ------------------------------------------------------------------ FLUXO POR MÊS (celular)
+function renderFluxoMonths() {
+  const p = state.view;
+  if (!p) return;
+  const months = p.months, s = p.series;
+  if (!months.includes(state.flowMonth)) {
+    const today = new Date().toISOString().slice(0, 7) + "-01";
+    state.flowMonth = months.find((m) => m >= today) || months[0];
+  }
+  const i = months.indexOf(state.flowMonth);
+  $("#month-strip").innerHTML = months.map((m, j) => `<button class="mchip ${m === state.flowMonth ? "active" : ""}" data-pick-month="${m}" data-drop-month="${m}">
+      <span class="m">${mlabel(m)}</span><span class="v ${s.saldo_total[j] < -0.5 ? "neg" : ""}">${short(s.saldo_total[j])}</span></button>`).join("");
+  const active = $("#month-strip .mchip.active");
+  if (active && !drag.active) active.scrollIntoView({ block: "nearest", inline: "center" });
+
+  $("#month-summary").innerHTML = [
+    ["Receitas", fmt(s.receitas[i]), ""],
+    ["Despesas", fmt(s.total_despesas[i]), ""],
+    ["Sobra do mês", fmt(s.saldo_operacional[i]), s.saldo_operacional[i] < 0 ? "neg" : ""],
+    ["Conta + investido", fmt(s.saldo_total[i]), s.saldo_total[i] < 0 ? "neg" : ""],
+  ].map(([l, v, c]) => `<div class="tile"><div class="label">${l}</div><div class="value ${c}">${v}</div></div>`).join("");
+
+  let h = "";
+  for (const [g, label] of Object.entries(GROUPS)) {
+    const items = p.rows.filter((r) => r.group === g && Math.abs(r.values[i]) > 0.005);
+    const autoInv = g === "investimento" ? s.inv_automatico[i] : 0;
+    const total = g === "investimento" ? s.investimentos[i] : items.reduce((a, r) => a + r.values[i], 0);
+    h += `<div class="card mgroup"><div class="card-head"><p class="eyebrow">${label}</p><b>${fmt2(total)}</b></div>`;
+    for (const r of items) {
+      const v = r.values[i], movable = !LOCKED_KINDS.has(r.kind);
+      const dnd = movable ? ` data-drag data-cat="${r.category_id}" data-month="${state.flowMonth}" data-value="${v}" data-label="${esc(r.name)}"` : "";
+      h += `<div class="mitem" data-open="${r.category_id}"${dnd}>
+        <span class="drag-handle ${movable ? "" : "off"}" ${movable ? 'aria-label="Arrastar para outro mês"' : ""}>${movable ? GRIP : ""}</span>
+        <span class="name">${esc(r.name)}${r.kind !== "manual" ? ' <span class="badge">auto</span>' : ""}${r.overridden[i] ? ' <span class="badge accent">ajuste</span>' : ""}</span>
+        <span class="val">${fmt2(v)}</span></div>`;
+    }
+    if (autoInv) {
+      h += `<div class="mitem locked"><span class="drag-handle off"></span><span class="name">Investimento automático <span class="badge">auto</span></span>
+        <span class="val">${fmt2(autoInv)}</span></div>`;
+    }
+    if (!items.length && !autoInv) h += '<p class="hint" style="margin:0">Nada neste mês.</p>';
+    h += `<button class="ghost sm" data-add="${g}" style="margin-top:6px">+ Lançar valor</button></div>`;
+  }
+  $("#month-groups").innerHTML = h;
+}
+
+$("#flow-view").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (!b) return;
+  state.flowView = b.dataset.view;
+  renderFluxo();
+});
+$("#month-strip").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick-month]");
+  if (!b) return;
+  state.flowMonth = b.dataset.pickMonth;
+  renderFluxoMonths();
+});
+$("#month-groups").addEventListener("click", (e) => {
+  const add = e.target.closest("[data-add]");
+  if (add) return openAddSheet(add.dataset.add);
+  const item = e.target.closest("[data-open]");
+  if (item && !e.target.closest(".drag-handle")) openItemSheet(+item.dataset.open);
+});
+
+function openItemSheet(catId) {
+  const p = state.view, i = p.months.indexOf(state.flowMonth);
+  const r = p.rows.find((x) => x.category_id === catId);
+  const v = r.values[i], movable = !LOCKED_KINDS.has(r.kind), auto = r.kind !== "manual";
+  const others = state.projection.months.filter((m) => m !== state.flowMonth);
+  const next = others.find((m) => m > state.flowMonth) || others[0];
+  openSheet(`<p class="eyebrow">${esc(GROUPS[r.group])} · ${mlabel(state.flowMonth)}</p>
+    <h2 style="margin:0 0 12px">${esc(r.name)}</h2>
+    <label class="field">Valor em ${mlabel(state.flowMonth)}<input id="sh-value" type="number" step="0.01" inputmode="decimal" value="${+v.toFixed(2)}"></label>
+    <div class="row"><button class="primary" id="sh-save">Salvar</button>
+      <button id="sh-clear">${auto ? "Voltar ao cálculo" : "Apagar do mês"}</button></div>
+    ${movable ? `<hr class="sep"><p class="eyebrow">Levar para outro mês</p>
+    <div class="form">
+      <label class="field">Para<select id="sh-to">${others.map((m) => `<option value="${m}" ${m === next ? "selected" : ""}>${mlabel(m)}</option>`).join("")}</select></label>
+      <label class="field">Quanto<input id="sh-amount" type="number" step="0.01" inputmode="decimal" value="${+v.toFixed(2)}"></label>
+    </div>
+    <div class="row"><button class="primary" id="sh-move">Mover</button><button id="sh-copy">Copiar</button></div>`
+    : '<p class="hint">Esta linha vem dos contratos/planos: altere nas abas Consignados ou Em atraso.</p>'}`);
+  const put = async (amount) => {
+    await api("PUT", `/api/scenarios/${state.current}/entries`, [{ category_id: catId, month: state.flowMonth, amount }]);
+    closeSheet();
+    await refresh();
+  };
+  $("#sh-save").onclick = () => {
+    const n = parseNum($("#sh-value").value);
+    if (n === undefined) return toast("Valor inválido");
+    put(n === null ? 0 : n);
+  };
+  $("#sh-clear").onclick = () => put(null);
+  if (movable) {
+    const go = (mode) => {
+      const amount = parseNum($("#sh-amount").value);
+      if (!amount) return toast("Informe quanto mover");
+      closeSheet();
+      moveValue({ cat: catId, from: state.flowMonth, to: $("#sh-to").value, label: r.name, amount, mode });
+    };
+    $("#sh-move").onclick = () => go("move");
+    $("#sh-copy").onclick = () => go("copy");
+  }
+}
+
+function openAddSheet(group) {
+  const cats = state.categories.filter((c) => c.group === group && c.kind === "manual" && c.active);
+  openSheet(`<p class="eyebrow">${esc(GROUPS[group])} · ${mlabel(state.flowMonth)}</p>
+    <h2 style="margin:0 0 12px">Lançar valor</h2>
+    <div class="form">
+      <label class="field">Linha<select id="sh-cat">${cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}
+        <option value="new">+ Nova linha…</option></select></label>
+      <label class="field">Valor em ${mlabel(state.flowMonth)}<input id="sh-value" type="number" step="0.01" inputmode="decimal"></label>
+    </div>
+    <p class="hint" id="sh-current"></p>
+    <div class="row"><button class="primary" id="sh-save">Salvar</button></div>`);
+  const i = state.view.months.indexOf(state.flowMonth);
+  const showCurrent = () => {
+    const r = state.view.rows.find((x) => x.category_id === +$("#sh-cat").value);
+    $("#sh-current").textContent = r && Math.abs(r.values[i]) > 0.005 ? `Valor atual no mês: ${fmt2(r.values[i])} (será substituído)` : "";
+  };
+  $("#sh-cat").onchange = showCurrent;
+  showCurrent();
+  $("#sh-save").onclick = async () => {
+    const n = parseNum($("#sh-value").value);
+    if (n === undefined || n === null) return toast("Informe o valor");
+    let id = $("#sh-cat").value;
+    if (id === "new") {
+      const name = (prompt(`Nome da nova linha em "${GROUPS[group]}":`) || "").trim();
+      if (!name) return;
+      const order = Math.max(0, ...state.categories.filter((c) => c.group === group).map((c) => c.sort_order)) + 10;
+      id = (await api("POST", "/api/categories", { name, group, kind: "manual", sort_order: order })).id;
+      await loadBase();
+    }
+    await api("PUT", `/api/scenarios/${state.current}/entries`, [{ category_id: +id, month: state.flowMonth, amount: n }]);
+    closeSheet();
+    toast("Valor lançado");
+    await refresh();
+  };
+}
+
 // ------------------------------------------------------------------ navegação
 const RENDER = {
   painel: renderPainel, fluxo: renderFluxo, premissas: renderPremissas, consignados: renderConsignados, atrasos: renderAtrasos,
@@ -1356,17 +1656,45 @@ const RENDER = {
 
 function showTab(tab) {
   state.tab = tab;
-  $$("#nav button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+  $$("#nav button, #bottomnav button[data-tab]").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+  const inMore = !["painel", "fluxo", "consignados", "atrasos"].includes(tab);
+  $("#bottomnav [data-more]").classList.toggle("active", inMore);
   $$("section.tab").forEach((s) => s.classList.toggle("active", s.id === `tab-${tab}`));
   history.replaceState(null, "", `#${tab}`);
 }
 
-$("#nav").addEventListener("click", async (e) => {
-  const b = e.target.closest("button[data-tab]");
-  if (!b) return;
-  showTab(b.dataset.tab);
+async function goTab(tab) {
+  closeSheet();
+  showTab(tab);
+  window.scrollTo({ top: 0 });
   await RENDER[state.tab]();
   Object.values(charts).forEach((c) => c.resize());
+}
+
+$("#nav").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) goTab(b.dataset.tab);
+});
+$("#bottomnav").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.tab) return goTab(b.dataset.tab);
+  const more = [["premissas", "Premissas do cenário"], ["comparar", "Comparar cenários"], ["lancamentos", "Lançamentos realizados"],
+    ["orcado", "Orçado × realizado"], ["cadastros", "Cadastros e importação"]];
+  openSheet(`<p class="eyebrow">Mais</p><div class="sheet-list">${more.map(([t, l]) =>
+    `<button data-goto="${t}" class="${state.tab === t ? "active" : ""}">${l}</button>`).join("")}</div>`);
+});
+$("#sheet").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-goto]");
+  if (b) goTab(b.dataset.goto);
+});
+let lastWide = !isMobile();
+window.addEventListener("resize", () => {
+  // ao girar o celular / redimensionar entre celular e desktop, redesenha a tela atual
+  if (lastWide !== !isMobile()) {
+    lastWide = !isMobile();
+    (RENDER[state.tab] || (() => {}))();
+  }
 });
 $("#scenario").addEventListener("change", async (e) => {
   state.current = +e.target.value;

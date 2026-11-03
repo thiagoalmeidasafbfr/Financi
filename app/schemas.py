@@ -60,6 +60,14 @@ class EntryIn(BaseModel):
     amount: float | None  # None remove o valor (linha automática volta a ser calculada)
 
 
+class MoveIn(BaseModel):
+    category_id: int
+    from_month: date
+    to_month: date
+    amount: float | None = None  # None = o valor inteiro do mês de origem
+    mode: str = Field("move", pattern="^(move|copy)$")  # copy = mantém o valor na origem
+
+
 class FillIn(BaseModel):
     category_id: int
     from_month: date

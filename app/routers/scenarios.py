@@ -9,6 +9,7 @@ from .. import engine as eng
 from .. import schemas
 from ..db import get_session
 from ..models import (
+    Category,
     InflationRate,
     LoanContract,
     MonthSetting,
@@ -180,6 +181,58 @@ def fill_entries(scenario_id: int, data: schemas.FillIn, db: Session = Depends(g
         count += 1
     db.commit()
     return {"updated": count}
+
+
+# linhas que vêm de contratos/planos: mudam nas abas Consignados e Em atraso
+NOT_MOVABLE = {"consignados", "quitacao", "atrasos"}
+
+
+@router.post("/{scenario_id}/entries/move")
+def move_entry(scenario_id: int, data: schemas.MoveIn, db: Session = Depends(get_session)):
+    """Move (ou copia) o valor de uma linha de um mês para outro, somando ao que já houver no destino.
+
+    Linhas manuais movem o valor digitado; linhas calculadas (salário, 13º, bônus...) movem o valor
+    efetivo e viram ajuste nos dois meses. Devolve `undo` com o estado anterior dos dois meses."""
+    sc = _get(db, scenario_id)
+    cat = db.get(Category, data.category_id)
+    if cat is None:
+        raise HTTPException(404, "Linha não encontrada")
+    if cat.kind in NOT_MOVABLE:
+        raise HTTPException(400, "Consignados, quitações e atrasos mudam nas abas Consignados e Em atraso")
+    src, dst = eng.month_start(data.from_month), eng.month_start(data.to_month)
+    if src == dst:
+        raise HTTPException(400, "Origem e destino são o mesmo mês")
+    proj = project_scenario(db, sc)
+    months = proj["months"]
+    if src.isoformat() not in months or dst.isoformat() not in months:
+        raise HTTPException(400, "Mês fora do horizonte do cenário")
+    row = next(r for r in proj["rows"] if r["category_id"] == cat.id)
+
+    def raw(m: date) -> float | None:
+        e = db.scalar(select(PlanEntry).where(PlanEntry.scenario_id == scenario_id,
+                                              PlanEntry.category_id == cat.id, PlanEntry.month == m))
+        return e.amount if e else None
+
+    def effective(m: date) -> float:
+        # manual: o valor digitado (sem inflação); calculada: o valor que entra no fluxo
+        return (raw(m) or 0.0) if cat.kind == "manual" else row["values"][months.index(m.isoformat())]
+
+    undo = [{"category_id": cat.id, "month": m.isoformat(), "amount": raw(m)} for m in (src, dst)]
+    available = effective(src)
+    amount = available if data.amount is None else data.amount
+    if abs(available) < 0.005:
+        raise HTTPException(400, "Não há valor neste mês para mover")
+    if abs(amount) < 0.005 or amount * available < 0 or abs(amount) > abs(available) + 0.005:
+        raise HTTPException(400, "Valor maior que o disponível no mês de origem")
+
+    dst_value = effective(dst) + amount
+    if data.mode == "move":
+        rest = available - amount
+        # manual zerada some; calculada zerada fica como ajuste 0 (senão o cálculo voltaria)
+        _upsert(db, scenario_id, cat.id, src, None if cat.kind == "manual" and abs(rest) < 0.005 else rest)
+    _upsert(db, scenario_id, cat.id, dst, dst_value)
+    db.commit()
+    return {"moved": amount, "mode": data.mode, "undo": undo}
 
 
 # ----------------------------------------------------------------- premissas (listas)
