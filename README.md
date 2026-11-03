@@ -19,6 +19,10 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
 - **Planejamento**: orçamento por categoria (valendo todo mês ou só um mês), sugestão pela média dos últimos
   meses, orçado × realizado e **projeção de caixa** dos próximos 6 meses (orçamento ou média, menos parcelas
   das dívidas e parcelas de cartão já compradas).
+- **Previstos** (em Planejamento): despesas e receitas futuras **todo mês** (a partir de um mês, com fim opcional)
+  ou **uma vez**. Dá para mover uma ocorrência para outro mês, mudar o valor só de um mês, pular um mês ou marcar
+  como pago. O que venceu e não foi pago aparece **em atraso** (no Início e em Previstos); o pagamento é reconhecido
+  pelo extrato quando a previsão tem um "texto no extrato".
 - **Dívidas**: faturas por cartão (com dia de fechamento e vencimento), limite usado, parcelas futuras; empréstimos
   com parcelas pagas, saldo devedor, valor para quitar hoje e juros restantes; ordem sugerida para quitar
   (maior juro primeiro ou menor saldo primeiro).
@@ -109,8 +113,12 @@ docker compose up --build   # app + PostgreSQL 16 em http://localhost:8000
 - **Empréstimo**: com parcela, 1ª parcela e número de parcelas, o app conta as pagas pela data; o saldo
   devedor é o valor presente das parcelas restantes à taxa do contrato (é o valor para quitar hoje). Sem
   prazo (acordo, rotativo), usa o saldo informado e estima quantas parcelas faltam.
+- **Previstos**: cada previsão gera uma ocorrência por mês (ou uma só). Séries cadastradas com início no passado
+  não geram atraso dos meses anteriores ao cadastro; para registrar algo já vencido, cadastre "uma vez" no mês do
+  vencimento. Sem dia de vencimento, vence no fim do mês.
 - **Projeção**: começa no saldo das contas menos as faturas abertas. Cada categoria usa o orçamento; as sem
-  orçamento usam a média dos últimos meses com extrato (até 3). Transferências e pagamentos de fatura não
+  orçamento usam a média dos últimos meses com extrato (até 3); onde há previsto da categoria naquele mês, vale o
+  previsto, e previstos sem categoria somam. O que está em atraso ou ainda vence no mês atual sai no primeiro mês. Transferências e pagamentos de fatura não
   contam como gasto; o grupo Dívidas sai do orçamento porque as parcelas vêm do módulo de dívidas.
 
 ## Testes

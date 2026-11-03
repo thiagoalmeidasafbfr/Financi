@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from . import finance as fin
+from . import planned as planned_mod
 from .models import Account, Budget, Category, Debt, Transaction
 
 LIQUID = ("corrente", "poupanca", "dinheiro")
@@ -221,7 +222,9 @@ def projection(db: Session, person: str | None, today: date, months: int = 6) ->
     """Caixa dos próximos meses: saldo atual + receitas previstas − despesas orçadas − dívidas − parcelas de cartão.
 
     Cada categoria usa o orçamento do mês; categoria sem orçamento usa a média dos últimos meses com extrato
-    (até 3). O grupo Dívidas fica de fora porque as parcelas vêm do módulo de dívidas."""
+    (até 3). Lançamentos previstos da categoria naquele mês substituem orçamento e média; previstos sem categoria
+    somam. O que está em atraso ou ainda vence no mês atual sai no primeiro mês projetado. O grupo Dívidas fica
+    de fora porque as parcelas vêm do módulo de dívidas."""
     accs = accounts_for(db, person)
     acc_ids = [a.id for a in accs]
     bal = balances(db, accs)
@@ -264,15 +267,20 @@ def projection(db: Session, person: str | None, today: date, months: int = 6) ->
     # o que já foi gasto no cartão e ainda não foi pago sai do saldo de partida
     start_balance -= open_invoices
 
+    plan_by_month, pending = planned_mod.projection_inputs(db, today, months + 1, person, acc_ids)
+    order = ("orçamento", "média", "previsto")
+
     rows, running = [], start_balance
-    for k in range(months):
-        m = fin.add_months(first, k)
+    for i in range(months):
+        m = fin.add_months(first, i)
         b = budget_map(db, m)
+        pm = plan_by_month.get(m.isoformat(), {})
+        planned_cats = {cid for (_, cid) in pm if cid is not None}
         tot = {"receita": 0.0, "despesa": 0.0}
-        used = {"receita": set(), "despesa": set()}  # fontes usadas: orçamento e/ou média
+        used = {"receita": set(), "despesa": set()}  # fontes usadas: orçamento, média e/ou previsto
         for cid in set(b) | set(hist):
             k = kind(cid)
-            if k is None:
+            if k is None or cid in planned_cats:  # o previsto da categoria substitui orçamento e média no mês
                 continue
             if cid in b:
                 tot[k] += b[cid]
@@ -280,13 +288,16 @@ def projection(db: Session, person: str | None, today: date, months: int = 6) ->
             else:
                 tot[k] += hist[cid] if k == "receita" else -hist[cid]
                 used[k].add("média")
+        for (pk, _cid), v in pm.items():
+            tot[pk] += v
+            used[pk].add("previsto")
         inc, exp = max(0.0, tot["receita"]), max(0.0, tot["despesa"])
-        src = {k: ("orçamento + média" if len(v) == 2 else next(iter(v), "média")) for k, v in used.items()}
-        inc_src, exp_src = src["receita"], src["despesa"]
+        src = {k: " + ".join(x for x in order if x in v) or "média" for k, v in used.items()}
         debts, cards = debt_sched.get(m, 0.0), card_sched.get(m, 0.0)
-        running += inc - exp - debts - cards
+        pend = pending if i == 0 else 0.0  # atrasados e o que ainda vence neste mês (com sinal: entrada +, saída −)
+        running += inc - exp - debts - cards + pend
         rows.append({"month": m.isoformat(), "receitas": round(inc, 2), "despesas": round(exp, 2),
-                     "dividas": round(debts, 2), "parcelas_cartao": round(cards, 2),
-                     "saldo": round(running, 2), "fonte_receitas": inc_src, "fonte_despesas": exp_src})
+                     "dividas": round(debts, 2), "parcelas_cartao": round(cards, 2), "pendentes": round(-pend, 2),
+                     "saldo": round(running, 2), "fonte_receitas": src["receita"], "fonte_despesas": src["despesa"]})
     return {"saldo_atual": round(start_balance + open_invoices, 2), "faturas_abertas": round(open_invoices, 2),
             "saldo_inicial": round(start_balance, 2), "months": rows}

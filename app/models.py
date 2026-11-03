@@ -6,6 +6,7 @@
   Rule      texto do estabelecimento → categoria (aprendida com as correções)
   Budget    orçamento por categoria (padrão mensal ou de um mês específico)
   Debt      empréstimos, consignados, financiamentos... (cartões são contas)
+  Planned   lançamentos previstos (mensais com início/fim ou pontuais) e PlannedChange (ajuste de um mês)
 """
 from datetime import date, datetime
 
@@ -175,3 +176,45 @@ class Debt(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     owner: Mapped[Person | None] = relationship()
+
+
+class Planned(Base):
+    """Lançamento previsto: mensal (de um mês até outro, ou sem fim) ou pontual (um mês só).
+
+    Gera as ocorrências do fluxo futuro e entra na projeção; ocorrência vencida e não paga fica em atraso."""
+
+    __tablename__ = "fin_planned"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120))
+    kind: Mapped[str] = mapped_column(String(10), default="despesa")  # despesa | receita
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("fin_categories.id", ondelete="SET NULL"), nullable=True)
+    amount: Mapped[float] = mapped_column(Money)  # sempre positivo; o tipo diz se entra ou sai
+    recurrence: Mapped[str] = mapped_column(String(10), default="mensal")  # mensal | pontual
+    start_month: Mapped[date] = mapped_column(Date)
+    end_month: Mapped[date | None] = mapped_column(Date, nullable=True)  # vazio = sem fim
+    due_day: Mapped[int | None] = mapped_column(Integer, nullable=True)  # vazio = fim do mês
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("fin_people.id", ondelete="SET NULL"), nullable=True)
+    match_pattern: Mapped[str | None] = mapped_column(String(120), nullable=True)  # reconhece o pagamento no extrato
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    changes: Mapped[list["PlannedChange"]] = relationship(back_populates="planned", cascade="all, delete-orphan")
+
+
+class PlannedChange(Base):
+    """Ajuste de uma ocorrência (identificada pelo mês original): outro valor, outro mês, pulada ou paga."""
+
+    __tablename__ = "fin_planned_changes"
+    __table_args__ = (UniqueConstraint("planned_id", "month", name="uq_fin_planned_change"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    planned_id: Mapped[int] = mapped_column(ForeignKey("fin_planned.id", ondelete="CASCADE"), index=True)
+    month: Mapped[date] = mapped_column(Date)  # mês original da ocorrência
+    amount: Mapped[float | None] = mapped_column(Money, nullable=True)
+    moved_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False)
+    paid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # vazio = automático pelo extrato
+
+    planned: Mapped[Planned] = relationship(back_populates="changes")

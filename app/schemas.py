@@ -105,3 +105,32 @@ class DebtIn(BaseModel):
 
 class DebtOut(DebtIn, ORM):
     id: int
+
+
+class PlannedIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: str = Field("despesa", pattern="^(despesa|receita)$")
+    category_id: int | None = None
+    amount: float = Field(gt=0)
+    recurrence: str = Field("mensal", pattern="^(mensal|pontual)$")
+    start_month: date
+    end_month: date | None = None
+    due_day: int | None = Field(None, ge=1, le=31)
+    owner_id: int | None = None
+    match_pattern: str | None = None
+    notes: str | None = None
+    active: bool = True
+
+
+class PlannedOut(PlannedIn, ORM):
+    id: int
+
+
+class OccurrenceChange(BaseModel):
+    """Ajuste de uma ocorrência; `month` é o mês original. Campos omitidos não mudam; reset volta ao da série."""
+    month: date
+    amount: float | None = Field(None, gt=0)
+    moved_to: date | None = None
+    skipped: bool | None = None
+    paid: bool | None = None
+    reset: bool = False

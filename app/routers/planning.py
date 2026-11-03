@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from .. import ai, schemas
 from .. import finance as fin
+from .. import planned as planned_mod
 from ..db import get_session
 from ..models import Budget, Category, Debt, Transaction
 from ..services import (
@@ -141,6 +142,7 @@ def dashboard(person: str | None = None, month: date | None = None, db: Session 
         i = months.index(date(int(y), int(mo), 1).isoformat())
         groups.setdefault(g, [0.0] * 6)[i] += -float(total)
     top = sorted(groups.items(), key=lambda kv: -kv[1][-1])[:6]
+    late = planned_mod.overdue(db, today, person, acc_ids)
     uncategorized = db.scalar(select(func.count()).select_from(Transaction)
                               .where(Transaction.account_id.in_(acc_ids), Transaction.category_id.is_(None))) if acc_ids else 0
     return {
@@ -156,5 +158,7 @@ def dashboard(person: str | None = None, month: date | None = None, db: Session 
                    "configured": c["configured"]} for c in debts["cards"]],
         "debts_totals": debts["totals"],
         "uncategorized": uncategorized,
+        "overdue": {"count": len(late), "total": round(sum(o.amount for o in late if o.kind == "despesa"), 2),
+                    "items": [o.as_dict() for o in late[:5]]},
         "ai_enabled": ai.available(),
     }

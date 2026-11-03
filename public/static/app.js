@@ -47,6 +47,7 @@ const ICON = {
   up: svg('<path d="M7 17 17 7M8 7h9v9"/>'),
   down: svg('<path d="M7 7l10 10M17 8v9H8"/>'),
   card: svg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>'),
+  clock: svg('<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>'),
   debt: svg('<path d="M4 20h16M6 16V9M10 16V9M14 16V9M18 16V9M12 3l8 4H4z"/>'),
   sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', "i"),
   moon: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>', "i"),
@@ -60,11 +61,11 @@ const listRow = ({ icon, title, desc = "", amount = "", extra = "", cls = "" }) 
   `<div class="az-insight ${cls}">${well(icon)}<div class="az-insight__text"><div class="az-insight__title">${title}</div>` +
   `${desc ? `<div class="az-insight__desc">${desc}</div>` : ""}</div>${amount ? `<span class="amount">${amount}</span>` : ""}${extra}</div>`;
 const signed = (v) => `${v < 0 ? "−" : ""}${fmt2(Math.abs(v))}`;
-// valor com centavos discretos: "R$ 3.577" + ",36" menor (sinal opcional: "+" para entradas)
+// valor formatado com sinal (opcional: "+" para entradas), números tabulares
 const money = (v, { plus = false } = {}) => {
   const [whole, cents] = fmt2(Math.abs(v)).split(",");
   const sign = v < 0 ? "−" : plus && v > 0 ? "+" : "";
-  return `<span class="money">${sign}${whole}<small>,${cents}</small></span>`;
+  return `<span class="money">${sign}${whole},${cents}</span>`;
 };
 
 function toast(msg, action) {
@@ -242,6 +243,11 @@ async function renderInicio() {
 
   // destaques escritos como constatação + o que significa (InsightRow)
   const ins = [];
+  if (d.overdue && d.overdue.count) {
+    const names = d.overdue.items.map((o) => o.name).slice(0, 2).join(", ");
+    ins.push({ icon: "clock", title: `${d.overdue.count} ${d.overdue.count === 1 ? "conta em atraso" : "contas em atraso"}`,
+      desc: `${fmt(d.overdue.total)} vencidos · ${names}${d.overdue.count > 2 ? "…" : ""}`, go: "atrasos" });
+  }
   if (d.uncategorized) {
     ins.push({ icon: "tag", title: `${d.uncategorized} ${d.uncategorized === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}`,
       desc: "Categorize para o orçamento ficar certo", go: "review" });
@@ -303,7 +309,7 @@ async function renderInicio() {
     const avg = withData.length ? withData.reduce((a, b) => a + b, 0) / withData.length : 0;
     const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(6, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
     return `<div class="az-insight cat-row">${well(esc(initials(g.group)))}<div class="az-insight__text"><div class="az-insight__title">${esc(g.group)}</div>
-      <div class="az-insight__desc">média ${fmt(avg)} por mês</div></div><div class="spark">${bars}</div>
+      <div class="az-insight__desc">média ${fmt(avg)}/mês</div></div><div class="spark">${bars}</div>
       <div class="tx-right"><span class="amount">${money(cur)}</span></div></div>`;
   }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
 }
@@ -322,6 +328,10 @@ document.addEventListener("click", (e) => {
     goTab("lancamentos");
   } else if (go) {
     e.preventDefault();
+    if (go.dataset.go === "atrasos") {
+      state.plan.view = "previstos";
+      return goTab("planejamento");
+    }
     goTab(go.dataset.go);
   }
 });
@@ -531,11 +541,193 @@ $("#imp-history").addEventListener("click", async (e) => {
 
 // ------------------------------------------------------------------ PLANEJAMENTO
 const srcTag = (src) => (src === "orçamento" ? "" : ` <span class="muted">(${src})</span>`);
+// Planejamento: três visões (Orçamento, Previstos, Projeção)
 async function renderPlanejamento() {
+  const view = state.plan.view || "orcamento";
+  $$("#plan-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  ["orcamento", "previstos", "projecao"].forEach((x) => { $(`#pv-${x}`).hidden = x !== view; });
+  if (view === "previstos") return renderPrevistos();
+  if (view === "projecao") {
+    await renderProjecao();
+    return chart("chart-proj")?.resize();
+  }
+  return renderOrcamento();
+}
+$("#plan-view").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-view]");
+  if (!b) return;
+  state.plan.view = b.dataset.view;
+  renderPlanejamento();
+});
+
+// ------------------------------------------------------------------ PREVISTOS (fluxo futuro e atrasos)
+const STATUS_BADGE = { pago: '<span class="badge tint">pago</span>', atrasado: '<span class="badge strong">em atraso</span>',
+  pulado: '<span class="badge">pulado</span>', pendente: "" };
+const capFirst = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+function occKey(o) { return `${o.planned_id}|${o.original}`; }
+function occRow(o, { late = false } = {}) {
+  const cat = catById(o.category_id);
+  const freq = o.recurrence === "pontual" ? "uma vez" : o.end_month ? `todo mês até ${mlabel(o.end_month)}` : "todo mês";
+  const value = o.kind === "receita" ? o.amount : -o.amount;
+  const where = late ? `venceu ${dlabel(o.due)}/${o.due.slice(2, 4)}` : `vence ${dlabel(o.due)}`;
+  return `<div class="az-insight occ ${o.status}" data-occ="${occKey(o)}">${well(esc(initials(o.name)))}
+    <div class="az-insight__text"><div class="az-insight__title">${esc(o.name)} ${STATUS_BADGE[o.status]}</div>
+      <div class="az-insight__desc">${esc(cat ? cat.name : o.kind === "receita" ? "Receita" : "Despesa")} · ${freq} · ${where}${o.moved ? ` · movido de ${mlabel(o.original)}` : ""}</div></div>
+    <div class="tx-right"><span class="amount ${o.kind === "receita" ? "in" : ""}">${money(value, { plus: true })}</span>
+      ${late ? `<button class="sm secondary" data-pay="${occKey(o)}">Pago</button>` : ""}</div></div>`;
+}
+
+async function renderPrevistos() {
+  const f = await api("GET", withPerson("/api/planned/flow?months=12"));
+  state.flow = f;
+  state.occ = Object.fromEntries([...f.overdue, ...f.months.flatMap((m) => m.items)].map((o) => [occKey(o), o]));
+  $("#pl-late-card").hidden = !f.overdue.length;
+  $("#pl-late-total").innerHTML = money(-f.overdue_total);
+  $("#pl-late").innerHTML = f.overdue.map((o) => occRow(o, { late: true })).join("");
+  const any = f.overdue.length || f.months.some((m) => m.items.length);
+  if (!any) {
+    $("#pl-months").innerHTML = `<div class="card"><h3>Nada previsto ainda</h3>
+      <p class="hint">Cadastre o que vai acontecer: “Escola R$ 900 todo mês de fev a dez”, “IPVA R$ 2.400 em janeiro”,
+        “Salário R$ 8.000 todo mês”. Para registrar algo que já venceu e não foi pago, use “uma vez” com o mês do vencimento.</p>
+      <button class="primary" data-pl-new>Novo previsto</button></div>`;
+    return;
+  }
+  $("#pl-months").innerHTML = f.months.map((mo) => !mo.items.length ? `<div class="pl-empty">${capFirst(mlong(mo.month))} · nada previsto</div>` : `<div class="card pl-month"><div class="card-head"><h3>${capFirst(mlong(mo.month))}</h3>
+      <span class="pl-sum">${mo.entradas ? `<span class="in">+${fmt(mo.entradas)}</span> · ` : ""}${mo.saidas ? `−${fmt(mo.saidas)}` : mo.entradas ? "" : "–"}</span></div>
+      <div class="list">${mo.items.length ? mo.items.map((o) => occRow(o)).join("") : '<p class="hint" style="margin:0">Nada previsto.</p>'}</div></div>`).join("");
+}
+
+$("#pv-previstos").addEventListener("click", async (e) => {
+  const pay = e.target.closest("[data-pay]");
+  if (pay) {
+    const o = state.occ[pay.dataset.pay];
+    await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, paid: true });
+    toast(`${o.name}: marcado como pago`, { label: "Desfazer", run: async () => {
+      await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, paid: null });
+      await renderPrevistos();
+    } });
+    return renderPrevistos();
+  }
+  if (e.target.closest("#pl-add, [data-pl-new]")) return openPlannedSheet(null);
+  const row = e.target.closest("[data-occ]");
+  if (row) openOccSheet(state.occ[row.dataset.occ]);
+});
+
+function monthInput(id, iso) {
+  return `<div class="month-nav sheet-month"><button class="ghost icon" type="button" data-step="-1" data-for="${id}" aria-label="Mês anterior">‹</button>
+    <input type="month" id="${id}" value="${iso ? iso.slice(0, 7) : ""}"><button class="ghost icon" type="button" data-step="1" data-for="${id}" aria-label="Próximo mês">›</button></div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("#sheet [data-step]");
+  if (!b) return;
+  const inp = $(`#${b.dataset.for}`);
+  const base = inp.value ? inp.value + "-01" : thisMonth();
+  inp.value = addMonths(base, +b.dataset.step).slice(0, 7);
+  inp.dispatchEvent(new Event("change"));
+});
+
+// ocorrência: mudar só este mês (valor, mês), pagar, pular
+function openOccSheet(o) {
+  const recurring = o.recurrence === "mensal";
+  const statusTxt = { pago: "pago", atrasado: "em atraso", pulado: "pulado", pendente: "a vencer" }[o.status];
+  openSheet(`<p class="overline">${capFirst(mlong(o.month))} · ${statusTxt}${o.paid_auto ? " (achado no extrato)" : ""}</p>
+    <h2 style="margin:0 0 4px">${esc(o.name)}</h2>
+    <p class="hint">${recurring ? (o.end_month ? `Todo mês de ${mlabel(o.start_month)} a ${mlabel(o.end_month)}` : `Todo mês desde ${mlabel(o.start_month)}`) : "Uma vez"} · vence ${dlabel(o.due)}</p>
+    <div class="form">
+      <label class="field">${recurring ? "Valor neste mês" : "Valor"}<input id="oc-amount" inputmode="decimal" value="${String(o.amount).replace(".", ",")}"></label>
+      <label class="field">${recurring ? "Mover este mês para" : "Mês"}${monthInput("oc-month", o.month)}</label>
+    </div>
+    <div class="row occ-actions">
+      ${o.status === "pago" ? '<button id="oc-unpay">Desmarcar pago</button>' : '<button class="secondary" id="oc-pay">Marcar como pago</button>'}
+      ${recurring ? (o.status === "pulado" ? '<button id="oc-unskip">Voltar a contar</button>' : '<button id="oc-skip">Pular este mês</button>') : ""}
+    </div>
+    <div class="row occ-links"><button class="link" id="oc-series">Editar previsão</button>
+      ${recurring && (o.moved || o.changed || o.status === "pulado") ? '<button class="link" id="oc-reset">Desfazer ajustes deste mês</button>' : ""}</div>
+    <div class="row"><button class="primary" id="oc-save">Salvar</button></div>`);
+  const put = async (body, msg) => {
+    await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, ...body });
+    closeSheet();
+    if (msg) toast(msg);
+    await renderPrevistos();
+  };
+  $("#oc-save").onclick = async () => {
+    const body = {};
+    const amount = parseNum(sheetVal("oc-amount"));
+    if (amount && Math.abs(amount - o.amount) > 0.001) body.amount = amount;
+    const month = sheetVal("oc-month") ? sheetVal("oc-month") + "-01" : o.month;
+    if (month !== o.month) body.moved_to = month;
+    if (!Object.keys(body).length) return closeSheet();
+    await put(body, body.moved_to ? `Movido para ${mlabel(body.moved_to)}` : "Valor deste mês salvo");
+  };
+  $("#oc-pay")?.addEventListener("click", () => put({ paid: true }, "Marcado como pago"));
+  $("#oc-unpay")?.addEventListener("click", () => put({ paid: false }, "Desmarcado"));
+  $("#oc-skip")?.addEventListener("click", () => put({ skipped: true }, "Este mês foi pulado"));
+  $("#oc-unskip")?.addEventListener("click", () => put({ skipped: false }));
+  $("#oc-reset")?.addEventListener("click", () => put({ reset: true }, "Ajustes deste mês desfeitos"));
+  $("#oc-series").onclick = async () => {
+    const all = await api("GET", "/api/planned");
+    openPlannedSheet(all.find((x) => x.id === o.planned_id));
+  };
+}
+
+// previsão (série): todo mês de um mês até outro, ou uma vez só
+function openPlannedSheet(p) {
+  const v = p || { kind: "despesa", recurrence: "mensal", start_month: addMonths(thisMonth(), 1) };
+  openSheet(`<p class="overline">${p ? "Editar previsto" : "Novo previsto"}</p><h2>${p ? esc(p.name) : "Previsto"}</h2>
+    <div class="row"><div class="segmented" id="pp-kind"><button data-k="despesa">Despesa</button><button data-k="receita">Receita</button></div></div>
+    <div class="row"><div class="segmented" id="pp-rec"><button data-r="mensal">Todo mês</button><button data-r="pontual">Uma vez</button></div></div>
+    <div class="form">
+      <label class="field wide">Nome<input id="pp-name" value="${esc(v.name || "")}" placeholder="Escola, IPVA, aluguel novo…"></label>
+      <label class="field">Valor (R$)<input id="pp-amount" inputmode="decimal" value="${v.amount ? String(v.amount).replace(".", ",") : ""}"></label>
+      <label class="field">Dia do vencimento<input id="pp-day" inputmode="numeric" value="${v.due_day || ""}" placeholder="fim do mês"></label>
+      <label class="field" id="pp-start-l"><span id="pp-start-t">A partir de</span>${monthInput("pp-start", v.start_month)}</label>
+      <label class="field" id="pp-end-l">Até (opcional)${monthInput("pp-end", v.end_month)}</label>
+      <label class="field wide">Categoria<select id="pp-cat">${categoryOptions(v.category_id ?? null)}</select></label>
+      <label class="field">De quem<select id="pp-owner">${peopleOptions(v.owner_id ?? null)}</select></label>
+      <label class="field">Texto no extrato<input id="pp-match" value="${esc(v.match_pattern || "")}" placeholder="ex.: ALUGUEL"></label>
+    </div>
+    <p class="hint">Com a categoria, a projeção usa este valor no lugar do orçamento dela nesses meses. “Texto no extrato”
+      marca como pago quando o lançamento aparecer no extrato; sem ele, marque à mão.</p>
+    <div class="row"><button class="primary" id="pp-save">Salvar</button>${p ? '<button class="danger" id="pp-del">Excluir</button>' : ""}</div>`);
+  let kind = v.kind, rec = v.recurrence;
+  const sync = () => {
+    $$("#pp-kind button").forEach((b) => b.classList.toggle("active", b.dataset.k === kind));
+    $$("#pp-rec button").forEach((b) => b.classList.toggle("active", b.dataset.r === rec));
+    $("#pp-end-l").hidden = rec !== "mensal";
+    $("#pp-start-t").textContent = rec === "mensal" ? "A partir de" : "Mês";
+  };
+  sync();
+  $("#pp-kind").onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) { kind = b.dataset.k; sync(); } };
+  $("#pp-rec").onclick = (e) => { const b = e.target.closest("[data-r]"); if (b) { rec = b.dataset.r; sync(); } };
+  $("#pp-save").onclick = async () => {
+    const amount = parseNum(sheetVal("pp-amount"));
+    if (!sheetVal("pp-name") || !amount) return toast("Informe nome e valor");
+    if (!sheetVal("pp-start")) return toast("Informe o mês");
+    const body = {
+      name: sheetVal("pp-name"), kind, amount, recurrence: rec, start_month: sheetVal("pp-start") + "-01",
+      end_month: rec === "mensal" && sheetVal("pp-end") ? sheetVal("pp-end") + "-01" : null,
+      due_day: parseInt(sheetVal("pp-day"), 10) || null, category_id: sheetVal("pp-cat") ? +sheetVal("pp-cat") : null,
+      owner_id: sheetVal("pp-owner") ? +sheetVal("pp-owner") : null, match_pattern: sheetVal("pp-match") || null,
+    };
+    await api(p ? "PUT" : "POST", p ? `/api/planned/${p.id}` : "/api/planned", body);
+    closeSheet();
+    toast(p ? "Previsto atualizado" : "Previsto criado");
+    state.plan.view = "previstos";
+    await renderPlanejamento();
+  };
+  if (p) $("#pp-del").onclick = async () => {
+    if (!confirm(`Excluir "${p.name}" e todos os meses dele?`)) return;
+    await api("DELETE", `/api/planned/${p.id}`);
+    closeSheet();
+    await renderPrevistos();
+  };
+}
+
+async function renderOrcamento() {
   const p = state.plan;
   $("#bud-month").value = p.month.slice(0, 7);
   $$("#bud-scope button").forEach((b) => b.classList.toggle("active", b.dataset.scope === p.scope));
-  const [v, proj] = await Promise.all([api("GET", withPerson(`/api/budget?month=${p.month}`)), api("GET", withPerson(`/api/projection?months=6`))]);
+  const v = await api("GET", withPerson(`/api/budget?month=${p.month}`));
   const T = v.totals;
   $("#bud-tiles").innerHTML = [
     ["Receitas", fmt(T.receitas), T.receitas_previstas ? `previstas ${fmt(T.receitas_previstas)}` : "sem previsão"],
@@ -572,11 +764,13 @@ async function renderPlanejamento() {
   $("#bud-table").innerHTML = mobile ? "" : h + "</tbody>";
   $("#bud-list").innerHTML = mobile ? budgetList(byCat, sug, unc) : "";
   $("#bud-savebar").hidden = true;
+}
 
-  // projeção
+async function renderProjecao() {
+  const proj = await api("GET", withPerson(`/api/projection?months=6`));
   $("#proj-hint").innerHTML = `Começa no próximo mês com <b>${fmt(proj.saldo_inicial)}</b> (saldo em contas ${fmt(proj.saldo_atual)}
-    menos faturas abertas ${fmt(proj.faturas_abertas)}). Cada categoria usa o orçamento; as que não têm orçamento usam a média dos últimos meses (até 3).
-    Somam-se as parcelas das dívidas e as parcelas de cartão já compradas.`;
+    menos faturas abertas ${fmt(proj.faturas_abertas)}). Cada categoria usa o orçamento (ou a média dos últimos meses); onde há
+    previsto, vale o previsto. Somam-se dívidas, parcelas de cartão e, no primeiro mês, o que está em atraso ou ainda vence neste mês.`;
   const ms = proj.months;
   chart("chart-proj").setOption({
     ...baseOption(),
@@ -591,13 +785,13 @@ async function renderPlanejamento() {
   if (isMobile()) {
     // celular: só o que cabe (saídas = despesas + dívidas + parcelas de cartão)
     $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr></thead><tbody>` +
-      ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${short(m.receitas)}</td><td>${short(m.despesas + m.dividas + m.parcelas_cartao)}</td>
+      ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${short(m.receitas)}</td><td>${short(m.despesas + m.dividas + m.parcelas_cartao + (m.pendentes || 0))}</td>
         <td><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
     return;
   }
-  $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Dívidas</th><th>Parcelas cartão</th><th>Saldo</th></tr></thead><tbody>` +
+  $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Dívidas</th><th>Parcelas cartão</th><th>Atrasos e pendentes</th><th>Saldo</th></tr></thead><tbody>` +
     ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${fmt(m.receitas)}${srcTag(m.fonte_receitas)}</td>
-      <td>${fmt(m.despesas)}${srcTag(m.fonte_despesas)}</td><td>${fmt(m.dividas)}</td><td>${fmt(m.parcelas_cartao)}</td>
+      <td>${fmt(m.despesas)}${srcTag(m.fonte_despesas)}</td><td>${fmt(m.dividas)}</td><td>${fmt(m.parcelas_cartao)}</td><td>${m.pendentes ? fmt(m.pendentes) : ""}</td>
       <td class="${m.saldo < 0 ? "neg" : ""}"><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
 }
 
@@ -931,8 +1125,8 @@ const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar:
 
 const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importar", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
 const SUBTITLES = {
-  inicio: "", lancamentos: "Encontre e categorize qualquer gasto", importar: "Envie extratos e faturas em OFX",
-  planejamento: "Orçamento do mês e projeção de caixa", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
+  inicio: "", lancamentos: "Busque e categorize gastos", importar: "Extratos e faturas em OFX",
+  planejamento: "Orçamento, previstos e projeção", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
 };
 function screenHead(tab) {
   if (tab === "inicio") {

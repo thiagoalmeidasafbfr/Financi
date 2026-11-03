@@ -17,6 +17,12 @@
     try { var t = localStorage.getItem("financi-tema"); document.documentElement.dataset.theme = t === "light" ? "light" : "navy"; }
     catch (e) { document.documentElement.dataset.theme = "navy"; }
   </script>
+  <script>
+    // iPhone/iPad: o Safari dá zoom ao focar campo com fonte < 16px; maximum-scale evita isso (a pinça segue liberada no iOS)
+    if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      document.querySelector('meta[name="viewport"]').setAttribute("content", "width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover");
+    }
+  </script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/vendor/echarts.min.js"></script>
 </head>
@@ -141,7 +147,11 @@
 
   <!-- PLANEJAMENTO -->
   <section class="tab" id="tab-planejamento">
-    <div class="page-head"><p class="overline">Orçamento e projeção</p><h1>Planejamento</h1></div>
+    <div class="page-head"><p class="overline">Orçamento, previstos e projeção</p><h1>Planejamento</h1></div>
+    <div class="row plan-views"><div class="segmented scroll-x" id="plan-view">
+      <button data-view="orcamento" class="active">Orçamento</button><button data-view="previstos">Previstos</button><button data-view="projecao">Projeção</button>
+    </div></div>
+    <div id="pv-orcamento">
     <div class="card filters">
       <div class="row">
         <div class="month-nav"><button class="ghost icon" id="bud-prev" aria-label="Mês anterior">‹</button>
@@ -154,7 +164,17 @@
     <div class="tiles" id="bud-tiles"></div>
     <div class="card" id="bud-card"><div class="table-wrap"><table id="bud-table"></table></div><div class="budget-list" id="bud-list"></div></div>
     <div class="savebar mobile-only" id="bud-savebar" hidden><span>Alterações não salvas</span><button class="primary" id="bud-save-m">Salvar</button></div>
-    <div class="card">
+    </div>
+    <div id="pv-previstos" hidden>
+      <div class="row pl-head"><p class="hint" style="margin:0">Despesas e receitas futuras: todo mês (de um mês até outro) ou uma vez só.</p>
+        <button class="primary" id="pl-add">Novo previsto</button></div>
+      <div class="card pl-late" id="pl-late-card" hidden>
+        <div class="card-head"><h3>Em atraso</h3><span class="amount" id="pl-late-total"></span></div>
+        <div class="list" id="pl-late"></div>
+      </div>
+      <div id="pl-months"></div>
+    </div>
+    <div class="card" id="pv-projecao" hidden>
       <h3>Projeção de caixa</h3>
       <p class="hint" id="proj-hint"></p>
       <div id="chart-proj" class="chart"></div>
