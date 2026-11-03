@@ -189,7 +189,6 @@ label.check { display: inline-flex; align-items: center; gap: var(--space-2); cu
 .az-insight__title .az-badge { flex: none; }
 
 /* ---------------------------------------------------------------- Início */
-.hero-detail { color: var(--ink-muted); }
 .az-action { font-family: var(--font-sans); height: auto; border-radius: 0; padding: var(--space-1) var(--space-2); }
 .az-action:hover { background: none; }
 .az-action:hover b { color: var(--link); }
@@ -532,13 +531,9 @@ html[data-theme="light"] .home-top { padding: var(--space-8); border-radius: 24p
 
 .home-top .az-trend b { background: rgba(255, 255, 255, .14); }
 .home-top .az-trend b svg { width: 12px; height: 12px; }
-.hero-detail { color: var(--ink-muted); }
 .eye { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; background: none; color: var(--ink-muted); }
 .eye:hover { background: none; color: var(--ink); }
 .eye svg { width: 16px; height: 16px; }
-.az-topup { background: rgba(255, 255, 255, .12); border: 1px solid rgba(255, 255, 255, .16); height: 40px; }
-.az-topup i { background: #ffffff; color: var(--midnight-navy); }
-.az-topup:hover { background: rgba(255, 255, 255, .2); }
 .values-hidden .home-top .az-balance__value, .values-hidden .cardviz .money { filter: blur(10px); user-select: none; }
 
 /* cartão de crédito desenhado */
@@ -567,7 +562,6 @@ html[data-theme="light"] .home-top { padding: var(--space-8); border-radius: 24p
 
 /* folha branca que sobe sobre o navy, com atalhos, destaques, contas e lançamentos */
 .home-sheet { background: var(--surface); color: var(--ink); border-radius: 28px; padding: var(--space-6); }
-.home-actions { margin: 0 0 var(--space-4); box-shadow: var(--shadow-card); border-radius: 16px; }
 .sheet-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
 .sheet-grid > .card { margin: 0; }
 .home-sheet .card h3 { text-transform: none; color: var(--ink); }
@@ -628,13 +622,50 @@ html[data-theme="light"] .home-top { padding: var(--space-8); border-radius: 24p
   .home-sheet { margin: 0 calc(-1 * var(--space-4)) calc(-88px - env(safe-area-inset-bottom)); border-radius: 28px 28px 0 0;
     padding: var(--space-4) var(--space-4) calc(104px + env(safe-area-inset-bottom)); min-height: 60vh; }
   html[data-theme="light"] .home-sheet { margin-left: 0; margin-right: 0; padding-left: 0; padding-right: 0; }
-  .home-actions { margin: 0 0 var(--space-3); padding: var(--space-3) 0; }
   .sheet-grid { gap: var(--space-3); }
   .cat-row .spark { width: 44px; }
 
   .bottomnav { background: var(--nav-bg); border-top: 1px solid var(--card-line);
     -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
   #tx-list .tx-row .az-well { width: 36px; height: 36px; }
+}
+
+/* ---------------------------------------------------------------- Início: panorama */
+.hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: var(--space-5);
+  border-top: 1px solid rgba(255, 255, 255, .14); padding-top: var(--space-4); }
+.hero-stat { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.hero-stat + .hero-stat { padding-left: var(--space-4); border-left: 1px solid rgba(255, 255, 255, .14); }
+.hero-stat span { font-size: 11px; line-height: 14px; color: var(--ink-muted); }
+.hero-stat b { font-size: 15px; line-height: 20px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+.big-numbers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+button.tile--link { display: flex; flex-direction: column; align-items: flex-start; height: auto; text-align: left; border: 0;
+  border-radius: 0; background: none; color: var(--ink); white-space: normal; }
+button.tile--link:hover { background: var(--surface-sunken); }
+button.tile--link:active { transform: none; }
+.proj-head { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: wrap; }
+.proj-value { font-size: 22px; line-height: 28px; font-weight: 400; letter-spacing: -0.015em; }
+.chart--mini { height: 120px; margin-top: var(--space-2); }
+.sheet-grid__wide { grid-column: 1 / -1; }
+.sheet-grid { align-items: start; }
+/* computador: cartões desenhados ao lado do saldo */
+@media (min-width: 701px) {
+  .home-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-8); align-items: start; }
+  .home-top .az-balance, .home-top .hero-stats { grid-column: 1; }
+  .home-top .cardviz-row { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; width: 320px; }
+  .home-top .cardviz { width: 100%; }
+}
+.values-hidden .hero-stat b, .values-hidden #home-big .tile__value, .values-hidden #h-proj-value { filter: blur(8px); user-select: none; }
+@media (max-width: 700px) {
+  .big-numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .big-numbers .tile:nth-child(odd) { box-shadow: inset 0 1px 0 var(--line); }
+  .big-numbers .tile:nth-child(even) { box-shadow: inset 1px 0 0 var(--line), inset 0 1px 0 var(--line); }
+  .big-numbers .tile:first-child { box-shadow: none; }
+  .big-numbers .tile:nth-child(2) { box-shadow: inset 1px 0 0 var(--line); }
+  .hero-stats { margin-top: var(--space-4); padding-top: var(--space-3); }
+  .hero-stat + .hero-stat { padding-left: var(--space-3); }
+  .hero-stat b { font-size: 14px; }
+  .home-sheet { padding-top: var(--space-4); }
+  .chart--mini { height: 110px; }
 }
 
 /* ---------------------------------------------------------------- planilha de planejamento */
@@ -683,16 +714,12 @@ a.link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
 .tile { padding: var(--space-4) var(--space-5); }
 .home-top .az-balance { gap: 6px; }
 .home-top .az-trend b { height: 20px; padding: 0 var(--space-2); }
-.az-topup { height: 34px; padding: 0 3px 0 var(--space-3); }
-.az-topup i { width: 26px; height: 26px; }
-.az-topup i svg { width: 14px; height: 14px; }
 .eye svg { width: 14px; height: 14px; }
 .cardviz { width: min(300px, 80%); padding: var(--space-4); border-radius: 16px; }
 .cardviz__chip { width: 32px; height: 24px; left: var(--space-4); }
 .ring-card .az-score { grid-template-columns: 72px 1fr; }
 .ring-card .az-score__ring, .ring-card .az-score__ring svg { width: 72px; height: 72px; }
 .bl-row .bud-in { width: 96px; height: 36px; }
-.home-actions .az-action .az-well { width: 38px; height: 38px; }
 .bottomnav .az-tab__icon { width: 34px; height: 34px; }
 .bottomnav .az-tab svg { width: 20px; height: 20px; }
 .bottomnav .tab-main .az-tab__icon { width: 46px; height: 46px; margin-top: -18px; }
@@ -709,7 +736,6 @@ a.link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
   .cardviz { width: 78%; }
   #tx-list .tx-row .az-well { width: 32px; height: 32px; }
   .tx-check input { width: 16px; height: 16px; }
-  .home-actions { padding: var(--space-3) 0; }
   .card { padding: var(--space-4); }
 }
 
@@ -750,7 +776,6 @@ body,
 tr.subgroup td,
 .month-nav input[type="month"] { font-size: 14px; line-height: 20px; font-weight: 500; }
 button,
-.az-topup,
 .segmented button.active,
 nav.rail button.active { font-size: 13px; line-height: 18px; font-weight: 500; }
 nav.rail button,
@@ -763,7 +788,6 @@ table,
 .tile__label,
 .kv,
 .home-top .az-balance__label,
-.hero-detail,
 .home-top .az-trend,
 .chips span,
 button.chip,

@@ -1,5 +1,5 @@
 """Orçamento, projeção de caixa, painel inicial e dívidas."""
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -143,6 +143,14 @@ def dashboard(person: str | None = None, month: date | None = None, db: Session 
         groups.setdefault(g, [0.0] * 6)[i] += -float(total)
     top = sorted(groups.items(), key=lambda kv: -kv[1][-1])[:6]
     late = planned_mod.overdue(db, today, person, acc_ids)
+    # panorama: projeção curta, próximos vencimentos (30 dias) e previstos do mês corrente
+    proj = projection(db, person, today, 6)
+    pm = [{"month": r["month"], "saldo": r["saldo"]} for r in proj["months"]]
+    current = fin.month_start(today)
+    occ = planned_mod.occurrences(db, today, current, fin.add_months(current, 1), person, acc_ids)
+    horizon = (today + timedelta(days=30)).isoformat()
+    upcoming = [o.as_dict() for o in occ if o.status == "pendente" and today.isoformat() <= o.due <= horizon][:8]
+    this_month = [o for o in occ if o.month == current.isoformat() and o.status != "pulado"]
     uncategorized = db.scalar(select(func.count()).select_from(Transaction)
                               .where(Transaction.account_id.in_(acc_ids), Transaction.category_id.is_(None))) if acc_ids else 0
     return {
@@ -160,5 +168,10 @@ def dashboard(person: str | None = None, month: date | None = None, db: Session 
         "uncategorized": uncategorized,
         "overdue": {"count": len(late), "total": round(sum(o.amount for o in late if o.kind == "despesa"), 2),
                     "items": [o.as_dict() for o in late[:5]]},
+        "projecao": {"saldo_inicial": proj["saldo_inicial"], "meses": pm,
+                     "menor": min(pm, key=lambda r: r["saldo"]) if pm else None},
+        "proximos": upcoming,
+        "previstos_mes": {"receitas": round(sum(o.amount for o in this_month if o.kind == "receita"), 2),
+                          "despesas": round(sum(o.amount for o in this_month if o.kind == "despesa"), 2)},
         "ai_enabled": ai.available(),
     }

@@ -103,3 +103,14 @@ def test_commitment_uses_planned_income_without_statements(client):
     assert client.get("/api/debts/overview").json()["totals"]["comprometimento"] is None
     new(client, name="Salário", kind="receita", amount=5000, start_month=m(0))
     assert client.get("/api/debts/overview").json()["totals"]["comprometimento"] == 0.1
+
+
+def test_dashboard_overview(client):
+    client.post("/api/accounts", json={"name": "Conta", "opening_balance": 5000})
+    new(client, name="Salário", kind="receita", amount=8000, start_month=m(0), due_day=28)
+    new(client, name="Aluguel", amount=1300, start_month=m(0), due_day=28)
+    d = client.get("/api/dashboard").json()
+    assert d["saldo_contas"] == 5000
+    assert d["previstos_mes"] == {"receitas": 8000, "despesas": 1300}
+    assert len(d["projecao"]["meses"]) == 6 and d["projecao"]["menor"]["saldo"] <= d["projecao"]["meses"][-1]["saldo"]
+    assert isinstance(d["proximos"], list)

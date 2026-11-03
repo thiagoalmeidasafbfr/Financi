@@ -238,8 +238,48 @@ async function renderInicio() {
   const net = T.receitas - T.despesas;
   const arrow = svg(net >= 0 ? '<path d="M12 19V5M6 11l6-6 6 6"/>' : '<path d="M12 5v14M6 13l6 6 6-6"/>', "i");
   $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> em ${MESES_LONGOS[+d.month.slice(5, 7) - 1]}`;
-  $("#h-detail").textContent = `Receitas ${fmt(T.receitas)} · Despesas ${fmt(T.despesas)}${d.investido ? ` · Investido ${fmt(d.investido)}` : ""}`;
-  $("#qa-review").textContent = d.uncategorized ? `${d.uncategorized} pendentes` : "Nada pendente";
+  // faixa de saldos: investido, faturas abertas e o que sobra depois de pagar as faturas
+  const livre = d.saldo_contas - DT.faturas_abertas;
+  $("#h-stats").innerHTML = [["Investido", fmt(d.investido)], ["Faturas abertas", fmt(DT.faturas_abertas)],
+    ["Livre após faturas", `${livre < 0 ? "−" : ""}${fmt(Math.abs(livre))}`]]
+    .map(([l, v]) => `<div class="hero-stat"><span>${l}</span><b class="money">${v}</b></div>`).join("");
+
+  // big numbers (cada um leva à sua tela)
+  const P = d.previstos_mes || { receitas: 0, despesas: 0 };
+  const proj = d.projecao || { meses: [] };
+  const last = proj.meses[proj.meses.length - 1];
+  const big = [
+    ["Entradas do mês", fmt(T.receitas), P.receitas || T.receitas_previstas ? `previsto ${fmt(P.receitas || T.receitas_previstas)}` : "sem previsão", "lancamentos"],
+    ["Saídas do mês", fmt(T.despesas), T.despesas_orcadas || P.despesas ? `orçado ${fmt(T.despesas_orcadas + P.despesas)}` : "sem orçamento", "orcamento"],
+    ["Em atraso", fmt(d.overdue ? d.overdue.total : 0), d.overdue && d.overdue.count ? `${d.overdue.count} ${d.overdue.count === 1 ? "conta" : "contas"}` : "nada vencido", "previstos"],
+    ["Dívidas", fmt(DT.saldo_devedor), DT.comprometimento != null ? `${fmt(DT.parcelas_mes)}/mês · ${pct(DT.comprometimento)} da renda` : `${fmt(DT.parcelas_mes)}/mês`, "dividas"],
+    ["Faturas abertas", fmt(DT.faturas_abertas), DT.parcelas_cartao_futuras ? `+ ${fmt(DT.parcelas_cartao_futuras)} a cair` : "sem parcelas futuras", "dividas"],
+    ["Saldo em 6 meses", last ? `${last.saldo < 0 ? "−" : ""}${fmt(Math.abs(last.saldo))}` : "–", proj.menor ? `menor: ${fmt(proj.menor.saldo)} em ${mlabel(proj.menor.month)}` : "", "projecao"],
+  ];
+  $("#home-big").innerHTML = big.map(([l, v, sub, go]) => `<button class="tile tile--link" data-big="${go}"><span class="tile__label">${l}</span>
+    <span class="tile__value">${v}</span><span class="tile__sub">${sub}</span></button>`).join("");
+
+  // saldo projetado: número grande + minigráfico
+  if (last) {
+    $("#h-proj-value").innerHTML = money(last.saldo);
+    $("#h-proj-sub").textContent = `em ${mlabel(last.month)} · começa em ${fmt(proj.saldo_inicial)} (contas menos faturas)`;
+    chart("chart-home-proj").setOption({
+      animationDuration: 400, grid: { left: 0, right: 0, top: 8, bottom: 0, containLabel: true },
+      tooltip: { ...baseOption().tooltip, trigger: "axis" },
+      xAxis: { type: "category", data: proj.meses.map((x) => mlabel(x.month)), axisLine: { show: false }, axisTick: { show: false },
+        axisLabel: { color: "#6b7079", fontSize: 10 } },
+      yAxis: { type: "value", show: false, scale: true },
+      series: [{ type: "line", data: proj.meses.map((x) => x.saldo), smooth: true, symbol: "circle", symbolSize: 5, color: "#405fad",
+        lineStyle: { width: 2 }, areaStyle: { color: "#e6ecfd", opacity: 0.8 },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: "#7f8a9c", type: "dashed" }, data: [{ yAxis: 0 }] } }],
+    }, true);
+  }
+
+  // próximos vencimentos (previstos dos próximos 30 dias)
+  $("#home-next").innerHTML = (d.proximos || []).map((o) => `<div class="az-insight">${well(esc(initials(o.name)))}
+    <div class="az-insight__text"><div class="az-insight__title">${esc(o.name)}</div><div class="az-insight__desc">vence ${dlabel(o.due)}</div></div>
+    <div class="tx-right"><span class="amount ${o.kind === "receita" ? "in" : ""}">${money(o.kind === "receita" ? o.amount : -o.amount, { plus: true })}</span></div></div>`).join("")
+    || '<p class="hint" style="margin:0">Nada vencendo nos próximos 30 dias. Cadastre contas e receitas em Planejamento → Previstos.</p>';
 
   // destaques escritos como constatação + o que significa (InsightRow)
   const ins = [];
@@ -314,7 +354,7 @@ async function renderInicio() {
   }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
 }
 document.addEventListener("click", (e) => {
-  const review = e.target.closest(".home-actions [data-review], #home-insights [data-go=review]");
+  const review = e.target.closest("#home-insights [data-go=review]");
   const go = e.target.closest("#home-insights [data-go]");
   const recent = e.target.closest("#home-recent .tx-row");
   if (recent) {
@@ -381,7 +421,7 @@ function txRow(t, { select = false } = {}) {
 function renderTxList() {
   const f = state.tx;
   if (!f.rows.length) {
-    $("#tx-list").innerHTML = `<p class="hint" style="margin:0">${f.status ? "Nada pendente. Tudo categorizado." : "Nenhum lançamento neste mês. Importe um extrato em Importar extrato."}</p>`;
+    $("#tx-list").innerHTML = `<p class="hint" style="margin:0">${f.status ? "Nada pendente. Tudo categorizado." : "Nenhum lançamento neste mês. Envie um extrato em Importações."}</p>`;
     updateBulk();
     return;
   }
@@ -549,11 +589,16 @@ $("#xlsx-file").addEventListener("change", async (e) => {
     out.innerHTML = `<p class="hint" style="margin:var(--space-3) 0 0">Não foi possível importar: ${esc(err.message)}</p>`;
   }
 });
-$("#xlsx-result").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-goto-plan]");
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-goto-plan], [data-big]");
   if (!b) return;
-  state.plan.view = b.dataset.gotoPlan;
-  goTab("planejamento");
+  const target = b.dataset.gotoPlan || b.dataset.big;
+  if (["orcamento", "previstos", "projecao"].includes(target)) {
+    state.plan.view = target;
+    return goTab("planejamento");
+  }
+  if (target === "lancamentos") state.tx.status = "";
+  goTab(target);
 });
 $("#ofx-files").addEventListener("change", (e) => { importFiles([...e.target.files]); e.target.value = ""; });
 const dz = $("#dropzone");
@@ -1153,7 +1198,7 @@ $("#add-rule").onclick = () => {
 // ------------------------------------------------------------------ navegação, tema e início
 const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, dividas: renderDividas, ajustes: renderAjustes };
 
-const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importar", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
+const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importações", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
 const SUBTITLES = {
   inicio: "", lancamentos: "Busque e categorize gastos", importar: "Extratos e faturas em OFX",
   planejamento: "Orçamento, previstos e projeção", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
