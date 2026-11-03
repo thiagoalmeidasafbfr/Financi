@@ -4,6 +4,14 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Financi</title>
+  <meta name="theme-color" content="#fafafa">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Financi">
+  <link rel="manifest" href="/static/manifest.webmanifest" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
   <script>
     // tema antes do primeiro desenho: claro (páginas brancas) ou navy, como no Azure Finance
     try { var t = localStorage.getItem("financi-theme"); document.documentElement.dataset.theme = t === "navy" ? "navy" : "light"; }
@@ -15,6 +23,7 @@
 <body class="az">
 <header class="topbar">
   <div class="brand">Financi<span>finanças da família</span></div>
+  <h1 class="screen-title" id="screen-title">Início</h1>
   <nav class="rail" id="nav" aria-label="Navegação">
     <button data-tab="inicio" class="active">Início</button>
     <button data-tab="lancamentos">Lançamentos</button>
@@ -28,7 +37,7 @@
     <button class="az-icon-btn mobile-only" data-goto="ajustes" aria-label="Ajustes" title="Ajustes">
       <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
-    <button class="az-icon-btn" id="theme-btn" aria-label="Alternar tema claro/navy" title="Alternar tema claro/navy"></button>
+    <button class="az-icon-btn desktop-only" id="theme-btn" aria-label="Alternar tema claro/navy" title="Alternar tema claro/navy"></button>
   </div>
 </header>
 
@@ -54,9 +63,10 @@
           <span class="az-balance__label">Saldo em contas</span>
           <div class="az-balance__row">
             <span class="az-balance__value" id="h-saldo">–</span>
-            <button class="az-topup" data-goto="importar">Importar<i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></i></button>
+            <button class="az-topup desktop-only" data-goto="importar">Importar<i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></i></button>
           </div>
           <span class="az-trend" id="h-trend"></span>
+          <span class="hero-detail" id="h-detail"></span>
         </div>
       </div>
       <nav class="az-actions home-actions" aria-label="Atalhos">
@@ -83,9 +93,9 @@
           <input type="month" id="tx-month" aria-label="Mês"><button class="ghost icon" id="tx-next" aria-label="Próximo mês">›</button></div>
         <select id="tx-account" aria-label="Conta"></select>
         <input id="tx-q" type="search" placeholder="Buscar descrição" aria-label="Buscar">
-        <button class="primary" id="tx-add">Novo lançamento</button>
+        <button class="primary desktop-only" id="tx-add">Novo lançamento</button>
       </div>
-      <div class="row"><div class="segmented" id="tx-status">
+      <div class="row"><div class="segmented scroll-x" id="tx-status">
         <button data-s="" class="active">Do mês</button><button data-s="revisar">Para revisar</button><button data-s="sem_categoria">Sem categoria</button>
       </div><span class="hint" id="tx-status-hint" style="margin:0"></span></div>
     </div>
@@ -95,6 +105,7 @@
       <button class="primary" id="bulk-apply">Categorizar</button><button class="ghost" id="bulk-clear">Limpar</button>
     </div>
     <div class="card list" id="tx-list"></div>
+    <button class="fab mobile-only" id="tx-fab" aria-label="Novo lançamento"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
   </section>
 
   <!-- IMPORTAR -->
@@ -104,8 +115,8 @@
       <label class="dropzone" id="dropzone">
         <input type="file" id="ofx-files" accept=".ofx,.OFX,application/x-ofx" multiple>
         <span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></span>
-        <span class="dz-title">Arraste os arquivos OFX aqui</span>
-        <span class="hint" style="margin:0">ou toque para escolher · extrato da conta e fatura do cartão · vários de uma vez</span>
+        <span class="dz-title"><span class="dz-desktop">Arraste os arquivos OFX aqui ou clique para escolher</span><span class="dz-mobile">Escolher arquivos OFX</span></span>
+        <span class="hint" style="margin:0">Extrato da conta e fatura do cartão · vários de uma vez</span>
       </label>
       <div class="form" style="margin-top:var(--space-4)">
         <label class="field">Conta<select id="imp-account"></select></label>
@@ -133,11 +144,12 @@
           <input type="month" id="bud-month" aria-label="Mês"><button class="ghost icon" id="bud-next" aria-label="Próximo mês">›</button></div>
         <div class="segmented" id="bud-scope"><button data-scope="padrao" class="active">Todo mês</button><button data-scope="mes">Só este mês</button></div>
         <button class="secondary" id="bud-suggest">Sugerir pela média</button>
-        <button class="primary" id="bud-save">Salvar orçamento</button>
+        <button class="primary desktop-only" id="bud-save">Salvar orçamento</button>
       </div>
     </div>
     <div class="tiles" id="bud-tiles"></div>
-    <div class="card"><div class="table-wrap"><table id="bud-table"></table></div></div>
+    <div class="card" id="bud-card"><div class="table-wrap"><table id="bud-table"></table></div><div class="budget-list" id="bud-list"></div></div>
+    <div class="savebar mobile-only" id="bud-savebar" hidden><span>Alterações não salvas</span><button class="primary" id="bud-save-m">Salvar</button></div>
     <div class="card">
       <h3>Projeção de caixa</h3>
       <p class="hint" id="proj-hint"></p>
@@ -168,6 +180,9 @@
         <div class="row"><input id="new-person" placeholder="Digite o nome" aria-label="Nome"><button id="add-person">Adicionar</button></div></div>
       <div class="card"><h3>Categorização por IA</h3><div id="set-ai"></div></div>
     </div>
+    <div class="card"><h3>Aparência</h3>
+      <div class="row"><div class="segmented" id="theme-seg"><button data-theme-set="light">Claro</button><button data-theme-set="navy">Navy</button></div></div>
+      <p class="hint" style="margin:var(--space-2) 0 0">No celular, use “Adicionar à Tela de Início” no navegador para abrir o Financi como app, em tela cheia.</p></div>
     <div class="card"><div class="card-head"><h3>Contas e cartões</h3><button id="add-account">Nova conta</button></div><div class="list" id="set-accounts"></div></div>
     <div class="card"><div class="card-head"><h3>Categorias</h3><button id="add-category">Nova categoria</button></div><div id="set-categories"></div></div>
     <div class="card">

@@ -113,6 +113,7 @@ function chart(id) {
   return charts[id];
 }
 window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.resize()));
+window.matchMedia("(max-width: 700px)").addEventListener("change", () => refresh());
 function baseOption() {
   const ink2 = css("--ink-muted"), axis = css("--line");
   return {
@@ -216,8 +217,8 @@ async function renderInicio() {
   $("#h-saldo").textContent = fmt2(d.saldo_contas);
   const net = T.receitas - T.despesas;
   const arrow = svg(net >= 0 ? '<path d="M12 19V5M6 11l6-6 6 6"/>' : '<path d="M12 5v14M6 13l6 6 6-6"/>', "i");
-  $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> no mês · receitas ${fmt(T.receitas)} · despesas ${fmt(T.despesas)}` +
-    (d.investido ? ` · investido ${fmt(d.investido)}` : "");
+  $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> em ${MESES_LONGOS[+d.month.slice(5, 7) - 1]}`;
+  $("#h-detail").textContent = `Receitas ${fmt(T.receitas)} · Despesas ${fmt(T.despesas)}${d.investido ? ` · Investido ${fmt(d.investido)}` : ""}`;
   $("#qa-review").textContent = d.uncategorized ? `${d.uncategorized} pendentes` : "Nada pendente";
 
   // destaques escritos como constatação + o que significa (InsightRow)
@@ -288,7 +289,8 @@ document.addEventListener("click", (e) => {
 async function renderLancamentos() {
   const f = state.tx;
   $("#tx-month").value = f.month.slice(0, 7);
-  $("#tx-account").innerHTML = accountOptions(f.account ? +f.account : null, { all: true });
+  $("#tx-account").innerHTML = accountOptions(f.account ? +f.account : null, { all: true, label: "Todas as contas" });
+  if (isMobile()) $("#tx-account").options[0].textContent = "Contas";
   $$("#tx-status button").forEach((b) => b.classList.toggle("active", b.dataset.s === f.status));
   $("#tx-q").value = f.q;
   const pending = f.status !== "";
@@ -302,7 +304,7 @@ async function renderLancamentos() {
   f.rows = await api("GET", withPerson(`/api/transactions?${params}`));
   const ins = f.rows.filter((t) => t.amount > 0 && catById(t.category_id)?.type !== "transferencia").reduce((s, t) => s + t.amount, 0);
   const outs = f.rows.filter((t) => t.amount < 0 && catById(t.category_id)?.type !== "transferencia").reduce((s, t) => s - t.amount, 0);
-  $("#tx-summary").innerHTML = tile("Entradas", fmt2(ins)) + tile("Saídas", fmt2(outs)) + tile("Lançamentos", String(f.rows.length));
+  $("#tx-summary").innerHTML = tile("Entradas", fmt(ins)) + tile("Saídas", fmt(outs)) + tile("Lançamentos", String(f.rows.length));
   renderTxList();
 }
 
@@ -411,7 +413,7 @@ $("#bulk-apply").onclick = async () => {
   await renderLancamentos();
 };
 $("#bulk-clear").onclick = () => { state.tx.selected.clear(); renderTxList(); };
-$("#tx-add").onclick = () => {
+function openNewTx() {
   if (!state.accounts.length) return toast("Cadastre uma conta em Ajustes ou importe um extrato");
   openSheet(`<p class="overline">Novo lançamento</p><h2>Lançar à mão</h2>
     <div class="form">
@@ -431,7 +433,9 @@ $("#tx-add").onclick = () => {
     toast("Lançamento salvo");
     await renderLancamentos();
   };
-};
+}
+$("#tx-add").onclick = openNewTx;
+$("#tx-fab").onclick = openNewTx;
 
 // ------------------------------------------------------------------ IMPORTAR
 async function renderImportar() {
@@ -525,7 +529,10 @@ async function renderPlanejamento() {
   }
   const unc = byCat["null"] || v.rows.find((r) => r.category_id === null);
   if (unc) h += `<tr><td class="cat-name muted">Sem categoria</td><td></td><td>${fmt2(unc.actual)}</td><td></td><td></td></tr>`;
-  $("#bud-table").innerHTML = h + "</tbody>";
+  const mobile = isMobile();
+  $("#bud-table").innerHTML = mobile ? "" : h + "</tbody>";
+  $("#bud-list").innerHTML = mobile ? budgetList(byCat, sug, unc) : "";
+  $("#bud-savebar").hidden = true;
 
   // projeção
   $("#proj-hint").innerHTML = `Começa no próximo mês com <b>${fmt(proj.saldo_inicial)}</b> (saldo em contas ${fmt(proj.saldo_atual)}
@@ -542,11 +549,48 @@ async function renderPlanejamento() {
       { name: "Dívidas + parcelas de cartão", type: "bar", data: ms.map((m) => m.dividas + m.parcelas_cartao), color: css("--chart-mid"), barMaxWidth: 22, itemStyle: { borderRadius: [4, 4, 0, 0] } },
     ],
   }, true);
+  if (isMobile()) {
+    // celular: só o que cabe (saídas = despesas + dívidas + parcelas de cartão)
+    $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Entradas</th><th>Saídas</th><th>Saldo</th></tr></thead><tbody>` +
+      ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${short(m.receitas)}</td><td>${short(m.despesas + m.dividas + m.parcelas_cartao)}</td>
+        <td><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
+    return;
+  }
   $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Dívidas</th><th>Parcelas cartão</th><th>Saldo</th></tr></thead><tbody>` +
     ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${fmt(m.receitas)}${srcTag(m.fonte_receitas)}</td>
       <td>${fmt(m.despesas)}${srcTag(m.fonte_despesas)}</td><td>${fmt(m.dividas)}</td><td>${fmt(m.parcelas_cartao)}</td>
       <td class="${m.saldo < 0 ? "neg" : ""}"><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
 }
+
+// orçamento no celular: uma linha por categoria com o valor editável e a barra de consumo
+function budgetList(byCat, sug, unc) {
+  let h = "";
+  for (const type of ["despesa", "receita"]) {
+    const groups = {};
+    state.categories.filter((c) => c.type === type && c.active).forEach((c) => (groups[c.group] ||= []).push(c));
+    h += `<p class="overline bl-type">${type === "despesa" ? "Despesas" : "Receitas"}</p>`;
+    for (const [g, cs] of Object.entries(groups)) {
+      const sumP = cs.reduce((s, c) => s + (byCat[c.id]?.planned || 0), 0), sumA = cs.reduce((s, c) => s + (byCat[c.id]?.actual || 0), 0);
+      h += `<div class="bl-group"><div class="bl-group__head"><b>${esc(type === "despesa" ? g : "Receitas")}</b>
+        <span>${sumP ? `${fmt(sumA)} de ${fmt(sumP)}` : sumA ? fmt(sumA) : ""}</span></div>`;
+      for (const c of cs) {
+        const r = byCat[c.id] || { planned: 0, actual: 0 };
+        const value = c.id in sug ? sug[c.id] : r.planned || "";
+        const over = r.planned && r.actual > r.planned;
+        const left = r.planned - r.actual;
+        const info = r.planned ? (over ? `${fmt(-left)} acima` : `restam ${fmt(left)}`) : r.actual ? "sem orçamento" : "";
+        h += `<div class="bl-row"><div class="bl-row__text"><div class="bl-row__name">${esc(c.name)}</div>
+            <div class="bl-row__meta">${r.actual ? `${fmt2(r.actual)} realizado` : "nada realizado"}${info ? ` · ${info}` : ""}</div>
+            ${r.planned ? `<div class="meter ${over ? "over" : ""}"><i style="width:${Math.min(100, (r.actual / r.planned) * 100)}%"></i></div>` : ""}</div>
+          <input class="bud-in ${c.id in sug ? "suggested" : ""}" data-cat="${c.id}" inputmode="decimal" value="${value}" placeholder="R$" aria-label="Orçado para ${esc(c.name)}"></div>`;
+      }
+      h += "</div>";
+    }
+  }
+  if (unc) h += `<div class="bl-group"><div class="bl-group__head"><b>Sem categoria</b><span>${fmt2(unc.actual)}</span></div></div>`;
+  return h;
+}
+$("#bud-card").addEventListener("input", (e) => { if (e.target.matches(".bud-in") && isMobile()) $("#bud-savebar").hidden = false; });
 
 $("#bud-month").addEventListener("change", (e) => { if (e.target.value) { state.plan.month = e.target.value + "-01"; state.plan.suggestions = null; renderPlanejamento(); } });
 $("#bud-prev").onclick = () => { state.plan.month = addMonths(state.plan.month, -1); state.plan.suggestions = null; renderPlanejamento(); };
@@ -562,15 +606,17 @@ $("#bud-suggest").onclick = async () => {
   await renderPlanejamento();
   toast(state.plan.suggestions.length ? "Sugestões preenchidas (em destaque). Ajuste e salve." : "Sem histórico suficiente para sugerir");
 };
-$("#bud-save").onclick = async () => {
+async function saveBudget() {
   const month = state.plan.scope === "mes" ? state.plan.month : null;
-  const items = $$("#bud-table .bud-in").map((i) => ({ category_id: +i.dataset.cat, month, amount: parseNum(i.value) ?? null }))
+  const items = $$("#bud-card .bud-in").map((i) => ({ category_id: +i.dataset.cat, month, amount: parseNum(i.value) ?? null }))
     .filter((it) => it.amount !== undefined);
   await api("PUT", "/api/budgets", items);
   state.plan.suggestions = null;
   toast(month ? `Orçamento de ${mlabel(month)} salvo` : "Orçamento padrão salvo (vale para todo mês)");
   await renderPlanejamento();
-};
+}
+$("#bud-save").onclick = saveBudget;
+$("#bud-save-m").onclick = saveBudget;
 
 // ------------------------------------------------------------------ DÍVIDAS
 async function renderDividas() {
@@ -587,7 +633,7 @@ async function renderDividas() {
   $("#debt-ring").innerHTML = `<div class="az-score"><div class="az-score__ring"><svg viewBox="0 0 128 128"><circle class="az-score__track" cx="64" cy="64" r="58"/>
       <circle class="az-score__value" cx="64" cy="64" r="58" stroke-dasharray="${(C * shown).toFixed(1)} ${C.toFixed(1)}"/></svg>
       <div class="az-score__num">${c == null ? "–" : Math.round(c * 100)}<small>% da renda</small></div></div>
-    <div class="az-score__title">Comprometimento</div><div class="az-score__desc">${c == null ? "Importe extratos com receitas<br>para calcular" : "Parcelas por mês sobre<br>a renda média"}</div></div>`;
+    <div class="az-score__title">Comprometimento</div><div class="az-score__desc">${c == null ? "Importe extratos com receitas para calcular" : "Parcelas por mês sobre a renda média"}</div></div>`;
 
   $("#debt-cards").innerHTML = d.cards.length ? d.cards.map((c) => {
     const used = c.limit ? Math.min(1, c.limit_used / c.limit) : null;
@@ -630,16 +676,16 @@ function openDebtSheet(x) {
   const v = x || { kind: "emprestimo" };
   openSheet(`<p class="overline">${x ? "Editar dívida" : "Nova dívida"}</p><h2>${x ? esc(x.name) : "Dívida"}</h2>
     <div class="form">
-      <label class="field">Nome<input id="dv-name" value="${esc(v.name || "")}" placeholder="Consignado Banco X"></label>
+      <label class="field wide">Nome<input id="dv-name" value="${esc(v.name || "")}" placeholder="Consignado Banco X"></label>
       <label class="field">Tipo<select id="dv-kind">${Object.entries(DEBT_LABEL).map(([k, l]) => `<option value="${k}" ${k === v.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <label class="field">Credor<input id="dv-creditor" value="${esc(v.creditor || "")}"></label>
       <label class="field">De quem<select id="dv-owner">${peopleOptions(v.owner_id ?? null)}</select></label>
+      <label class="field wide">Credor<input id="dv-creditor" value="${esc(v.creditor || "")}"></label>
       <label class="field">Parcela (R$)<input id="dv-inst" inputmode="decimal" value="${v.installment || ""}"></label>
       <label class="field">Juros ao mês (%)<input id="dv-rate" inputmode="decimal" value="${v.monthly_rate != null ? +(v.monthly_rate * 100).toFixed(4) : ""}"></label>
       <label class="field">1ª parcela<input id="dv-first" type="date" value="${v.first_due || ""}"></label>
       <label class="field">Nº de parcelas<input id="dv-total" inputmode="numeric" value="${v.total_installments || ""}"></label>
-      <label class="field">Saldo devedor (sem prazo)<input id="dv-balance" inputmode="decimal" value="${v.informed_balance ?? ""}" placeholder="rotativo, acordo"></label>
-      <label class="field">Texto no extrato<input id="dv-match" value="${esc(v.match_pattern || "")}" placeholder="ex.: CONSIGNADO"></label>
+      <label class="field wide">Saldo devedor (sem prazo)<input id="dv-balance" inputmode="decimal" value="${v.informed_balance ?? ""}" placeholder="rotativo, acordo"></label>
+      <label class="field wide">Texto no extrato<input id="dv-match" value="${esc(v.match_pattern || "")}" placeholder="ex.: CONSIGNADO"></label>
     </div>
     <p class="hint">Com parcela, 1ª parcela e número de parcelas o app calcula quantas foram pagas, o saldo devedor e o valor para quitar
       hoje. “Texto no extrato” localiza o último pagamento nos lançamentos.</p>
@@ -746,14 +792,14 @@ function openAccountSheet(a) {
   const v = a || { kind: "corrente", active: true, opening_balance: 0 };
   openSheet(`<p class="overline">${a ? "Editar conta" : "Nova conta"}</p><h2>${a ? esc(a.name) : "Conta"}</h2>
     <div class="form">
-      <label class="field">Nome<input id="ac-name" value="${esc(v.name || "")}"></label>
+      <label class="field wide">Nome<input id="ac-name" value="${esc(v.name || "")}"></label>
       <label class="field">Tipo<select id="ac-kind">${Object.entries(KIND_LABEL).map(([k, l]) => `<option value="${k}" ${k === v.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label>
-      <label class="field">Instituição<input id="ac-inst" value="${esc(v.institution || "")}"></label>
       <label class="field">Titular<select id="ac-owner">${peopleOptions(v.owner_id ?? null)}</select></label>
-      <label class="field">Saldo inicial (R$)<input id="ac-open" inputmode="decimal" value="${v.opening_balance ?? 0}"></label>
+      <label class="field wide">Instituição<input id="ac-inst" value="${esc(v.institution || "")}"></label>
+      <label class="field wide">Saldo inicial (R$)<input id="ac-open" inputmode="decimal" value="${v.opening_balance ?? 0}"></label>
       <label class="field">Dia de fechamento (cartão)<input id="ac-close" inputmode="numeric" value="${v.closing_day ?? ""}"></label>
       <label class="field">Dia de vencimento (cartão)<input id="ac-due" inputmode="numeric" value="${v.due_day ?? ""}"></label>
-      <label class="field">Limite (cartão)<input id="ac-limit" inputmode="decimal" value="${v.credit_limit ?? ""}"></label>
+      <label class="field wide">Limite (cartão)<input id="ac-limit" inputmode="decimal" value="${v.credit_limit ?? ""}"></label>
     </div>
     <label class="check" style="margin-top:12px"><input type="checkbox" id="ac-active" ${v.active ? "checked" : ""}> Conta ativa</label>
     <p class="hint">Contas importadas por OFX acertam o saldo sozinhas pelo saldo que o banco informa no arquivo.</p>
@@ -788,7 +834,7 @@ function openCategorySheet(c) {
   const groups = [...new Set(state.categories.map((x) => x.group))];
   openSheet(`<p class="overline">${c ? "Editar categoria" : "Nova categoria"}</p><h2>${c ? esc(c.name) : "Categoria"}</h2>
     <div class="form">
-      <label class="field">Nome<input id="ct-name" value="${esc(v.name || "")}"></label>
+      <label class="field wide">Nome<input id="ct-name" value="${esc(v.name || "")}"></label>
       <label class="field">Grupo<input id="ct-group" list="ct-groups" value="${esc(v.group)}"><datalist id="ct-groups">${groups.map((g) => `<option value="${esc(g)}">`).join("")}</datalist></label>
       <label class="field">Tipo<select id="ct-type">${Object.entries({ despesa: "Despesa", receita: "Receita", transferencia: "Transferência" }).map(([k, l]) => `<option value="${k}" ${k === v.type ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     </div>
@@ -825,7 +871,7 @@ $("#reapply-rules").onclick = async () => {
 $("#add-rule").onclick = () => {
   openSheet(`<p class="overline">Nova regra</p><h2>Quando a descrição…</h2>
     <div class="form"><label class="field">Tipo<select id="rl-match"><option value="contains">contém</option><option value="exact">é exatamente</option></select></label>
-      <label class="field">Texto<input id="rl-pattern" placeholder="ex.: POSTO"></label></div>
+      <label class="field wide">Texto<input id="rl-pattern" placeholder="ex.: POSTO"></label></div>
     <label class="field">…categorizar como<select id="rl-cat">${categoryOptions(null, { allowNone: false })}</select></label>
     <div class="row" style="margin-top:12px"><button class="primary" id="rl-save">Criar regra</button></div>`);
   $("#rl-save").onclick = async () => {
@@ -840,8 +886,10 @@ $("#add-rule").onclick = () => {
 // ------------------------------------------------------------------ navegação, tema e início
 const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, dividas: renderDividas, ajustes: renderAjustes };
 
+const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importar extrato", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
 function showTab(tab) {
   state.tab = tab;
+  $("#screen-title").textContent = TITLES[tab];
   $$("#nav button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
   $$("#bottomnav button[data-tab]").forEach((x) => (x.dataset.tab === tab ? x.setAttribute("aria-current", "page") : x.removeAttribute("aria-current")));
   $$("section.tab").forEach((s) => s.classList.toggle("active", s.id === `tab-${tab}`));
@@ -867,6 +915,8 @@ $("#person").addEventListener("change", (e) => { state.person = e.target.value; 
 // tema claro (páginas brancas) ou navy; o cabeçalho do Início é sempre navy
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
+  $('meta[name="theme-color"]').setAttribute("content", theme === "navy" ? "#072061" : "#fafafa");
+  $$("#theme-seg button").forEach((b) => b.classList.toggle("active", b.dataset.themeSet === theme));
   try { localStorage.setItem("financi-theme", theme); } catch (_) { /* navegação privada */ }
   $("#theme-btn").innerHTML = theme === "navy" ? ICON.sun : ICON.moon;
 }
@@ -875,6 +925,12 @@ $("#theme-btn").addEventListener("click", async () => {
   await refresh();
 });
 applyTheme(document.documentElement.dataset.theme === "navy" ? "navy" : "light");
+$("#theme-seg").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-theme-set]");
+  if (!b) return;
+  applyTheme(b.dataset.themeSet);
+  await refresh();
+});
 
 async function checkStatus() {
   const st = await api("GET", "/api/status");
