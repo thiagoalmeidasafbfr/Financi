@@ -63,8 +63,9 @@ def budget_suggestions(month: date | None = None, person: str | None = None, db:
 
 
 @router.get("/projection")
-def get_projection(months: int = 6, person: str | None = None, db: Session = Depends(get_session)):
-    return projection(db, person, _today(), max(1, min(months, 24)))
+def get_projection(months: int = 6, person: str | None = None, detail: bool = False, db: Session = Depends(get_session)):
+    """Com detail=true, inclui a tabela mês a mês (linhas por categoria, previsto, dívida e cartão)."""
+    return projection(db, person, _today(), max(1, min(months, 24)), detail=detail)
 
 
 # ---------------------------------------------------------------- dívidas

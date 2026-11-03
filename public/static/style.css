@@ -630,6 +630,36 @@ html[data-theme="light"] .home-top { padding: var(--space-8); border-radius: 24p
   #tx-list .tx-row .az-well { width: 36px; height: 36px; }
 }
 
+/* ---------------------------------------------------------------- Mês a mês (tabela linhas × meses) */
+:root, [data-theme="light"] { --cell-bg: #ffffff; --now-bg: #f3f6fe; }
+[data-theme="navy"] { --cell-bg: #0f2d83; --now-bg: #13348f; }
+.tb-head { justify-content: space-between; gap: var(--space-3); margin: 0 0 var(--space-3); }
+.tb-card { padding: 0; overflow: hidden; }
+.tb-wrap { max-height: 78vh; }
+.flow-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; }
+.flow-table th, .flow-table td { padding: 8px 12px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--line); background: var(--cell-bg); }
+.flow-table th { position: sticky; top: 0; z-index: 2; color: var(--ink-muted); font-weight: 500; }
+.flow-table .lbl { position: sticky; left: 0; z-index: 1; text-align: left; min-width: 200px; max-width: 240px; overflow: hidden;
+  text-overflow: ellipsis; box-shadow: inset -1px 0 0 var(--line); }
+.flow-table th.lbl { z-index: 3; }
+.flow-table .now { background: var(--now-bg); }
+.flow-table tr.sec td { font-weight: 500; color: var(--ink); padding-top: 16px; }
+.flow-table tr.grp td { color: var(--ink-muted); font-weight: 500; }
+.flow-table td.sub { padding-left: 24px; }
+.flow-table td.avg { color: var(--ink-faint); }
+.flow-table tr.total td { font-weight: 500; }
+.flow-table tr.total.first td { border-top: 1px solid var(--line-strong); }
+.flow-table tr.acc td { font-weight: 500; border-bottom: 0; background: var(--now-bg); }
+.flow-table tr.acc td.lbl { background: var(--now-bg); }
+.flow-table tbody tr:not(.sec):not(.total):not(.acc):hover td { background: var(--now-bg); }
+@media (max-width: 700px) {
+  .tb-head .hint { display: none; }
+  .flow-table th, .flow-table td { padding: 7px 8px; font-size: 12px; line-height: 16px; }
+  .flow-table .lbl { min-width: 128px; max-width: 128px; }
+  .flow-table td.sub { padding-left: 14px; }
+  .tb-wrap { max-height: calc(100vh - 230px); }
+}
+
 /* ---------------------------------------------------------------- Início: panorama */
 .hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: var(--space-5);
   border-top: 1px solid rgba(255, 255, 255, .14); padding-top: var(--space-4); }

@@ -19,6 +19,9 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
 - **Planejamento**: orçamento por categoria (valendo todo mês ou só um mês), sugestão pela média dos últimos
   meses, orçado × realizado e **projeção de caixa** dos próximos 6 meses (orçamento ou média, menos parcelas
   das dívidas e parcelas de cartão já compradas).
+- **Mês a mês** (em Planejamento): tabela no formato de planilha, com uma linha por previsto, categoria orçada,
+  dívida e parcelas de cartão, colunas "Agora" (atrasos e o que ainda vence no mês) e os próximos 6, 12 ou 24 meses,
+  totais de entradas e saídas, saldo do mês e saldo acumulado. Usa os mesmos números da projeção.
 - **Previstos** (em Planejamento): despesas e receitas futuras **todo mês** (a partir de um mês, com fim opcional)
   ou **uma vez**. Dá para mover uma ocorrência para outro mês, mudar o valor só de um mês, pular um mês ou marcar
   como pago. O que venceu e não foi pago aparece **em atraso** (no Início e em Previstos); o pagamento é reconhecido

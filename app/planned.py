@@ -155,22 +155,19 @@ def flow(db: Session, today: date, months: int, person: str | None = None, accou
     }
 
 
-def projection_inputs(db: Session, today: date, months: int, person: str | None = None,
-                      account_ids: list[int] | None = None) -> tuple[dict[str, dict], float]:
-    """Para a projeção: por mês futuro, {(tipo, categoria): valor} das ocorrências não pagas; e o que está pendente
-    agora (atrasados + o que ainda vence no mês atual), que sai do caixa no primeiro mês projetado."""
-    current = fin.month_start(today)
-    occ = occurrences(db, today, None, fin.add_months(current, months), person, account_ids)
-    by_month: dict[str, dict] = {}
-    pending = 0.0
+def projection_items(db: Session, today: date, months: int, person: str | None = None,
+                     account_ids: list[int] | None = None) -> tuple[dict[str, list[Occurrence]], list[Occurrence]]:
+    """Para a projeção: ocorrências não pagas por mês futuro; e as pendentes agora (atrasadas + o que ainda vence
+    no mês atual), que saem do caixa no primeiro mês projetado."""
+    current = fin.month_start(today).isoformat()
+    occ = occurrences(db, today, None, fin.add_months(fin.month_start(today), months), person, account_ids)
+    by_month: dict[str, list[Occurrence]] = {}
+    pending: list[Occurrence] = []
     for o in occ:
         if o.status in ("pago", "pulado"):
             continue
-        sign = 1 if o.kind == "receita" else -1
-        if o.month <= current.isoformat():
-            pending += sign * o.amount
-            continue
-        key = (o.kind, o.category_id)
-        by_month.setdefault(o.month, {}).setdefault(key, 0.0)
-        by_month[o.month][key] += o.amount
-    return by_month, round(pending, 2)
+        if o.month <= current:
+            pending.append(o)
+        else:
+            by_month.setdefault(o.month, []).append(o)
+    return by_month, pending

@@ -222,13 +222,16 @@ def debts_summary(db: Session, person: str | None, today: date) -> dict:
 
 # ---------------------------------------------------------------- projeção
 
-def projection(db: Session, person: str | None, today: date, months: int = 6) -> dict:
+def projection(db: Session, person: str | None, today: date, months: int = 6, detail: bool = False) -> dict:
     """Caixa dos próximos meses: saldo atual + receitas previstas − despesas orçadas − dívidas − parcelas de cartão.
 
     Cada categoria usa o orçamento do mês; categoria sem orçamento usa a média dos últimos meses com extrato
     (até 3). Lançamentos previstos da categoria naquele mês substituem orçamento e média; previstos sem categoria
     somam. O que está em atraso ou ainda vence no mês atual sai no primeiro mês projetado. O grupo Dívidas fica
-    de fora porque as parcelas vêm do módulo de dívidas."""
+    de fora porque as parcelas vêm do módulo de dívidas.
+
+    Com detail, devolve também a tabela mês a mês (uma linha por categoria, previsto sem categoria, dívida e cartão),
+    montada com os mesmos números da projeção."""
     accs = accounts_for(db, person)
     acc_ids = [a.id for a in accs]
     bal = balances(db, accs)
@@ -248,60 +251,156 @@ def projection(db: Session, person: str | None, today: date, months: int = 6) ->
             return None
         return cat.type
 
+    # tabela: chave da linha → {seção, grupo, rótulo, valores por mês, fonte por mês, "agora"}
+    lines: dict[tuple, dict] = {}
+
+    def cell(key: tuple, section: str, group: str, label: str, i: int | None, value: float, source: str) -> None:
+        if not detail or not value:
+            return
+        row = lines.setdefault(key, {"section": section, "group": group, "label": label, "now": 0.0,
+                                     "values": [0.0] * months, "sources": [""] * months})
+        if i is None:
+            row["now"] += value
+        else:
+            row["values"][i] += value
+            row["sources"][i] = source if not row["sources"][i] or row["sources"][i] == source else "misto"
+
+    def cat_line(cid: int | None, k: str) -> tuple[tuple, str, str, str]:
+        cat = cats.get(cid)
+        section = "entradas" if k == "receita" else "saidas"
+        if cat is None:
+            return ("cat", None), section, "Outros", "Sem categoria (média)"
+        group = "Receitas" if k == "receita" else cat.group
+        return ("cat", cid), section, group, cat.name
+
+    def planned_line(o) -> tuple[tuple, str, str, str]:
+        """Cada previsto é uma linha com o seu nome (previstos de mesmo nome, como os períodos do salário, juntam)."""
+        section = "entradas" if o.kind == "receita" else "saidas"
+        cat = cats.get(o.category_id)
+        if cat is not None and cat.group == "Dívidas" and o.kind == "despesa":
+            section, group = "dividas", "Dívidas e parcelas"
+        elif o.kind == "receita":
+            group = "Receitas"
+        else:
+            group = cat.group if cat is not None else "Outros previstos"
+        return ("plan", section, group, o.name), section, group, o.name
+
     debt_q = select(Debt).where(Debt.active.is_(True))
     if person == "conjunto":
         debt_q = debt_q.where(Debt.owner_id.is_(None))
     elif person and person != "all":
         debt_q = debt_q.where(Debt.owner_id == int(person))
     debt_sched: dict[date, float] = defaultdict(float)
-    for d in db.scalars(debt_q):
-        for m, v in fin.loan_schedule(d.installment, d.first_due, d.total_installments, today=today,
-                                      rate=d.monthly_rate, balance=d.balance).items():
+    debt_rows: list[tuple[Debt, dict[date, float]]] = []
+    for d in db.scalars(debt_q.order_by(Debt.id)):
+        sched = fin.loan_schedule(d.installment, d.first_due, d.total_installments, today=today,
+                                  rate=d.monthly_rate, balance=d.balance)
+        debt_rows.append((d, sched))
+        for m, v in sched.items():
             debt_sched[m] += v
     card_sched: dict[date, float] = defaultdict(float)
+    card_rows: list[tuple[Account, dict[date, float]]] = []
     open_invoices = 0.0
     for a in accs:
         if a.kind == "cartao":
             txs, closing = _card_txs(db, a), a.closing_day or 1
             current = fin.invoice_month(today, closing)
             open_invoices += fin.card_invoices(txs, closing).get(current, 0.0)
-            for m, v in fin.future_installments(txs, closing).items():
-                if m > current:
-                    card_sched[m] += v
+            future = {m: v for m, v in fin.future_installments(txs, closing).items() if m > current}
+            card_rows.append((a, future))
+            for m, v in future.items():
+                card_sched[m] += v
     # o que já foi gasto no cartão e ainda não foi pago sai do saldo de partida
     start_balance -= open_invoices
 
-    plan_by_month, pending = planned_mod.projection_inputs(db, today, months + 1, person, acc_ids)
+    items_by_month, pending_items = planned_mod.projection_items(db, today, months + 1, person, acc_ids)
+    pending = round(sum(o.amount if o.kind == "receita" else -o.amount for o in pending_items), 2)
+    for o in pending_items:
+        key, section, group, label = planned_line(o)
+        cell(key, section, group, label, None, o.amount, "previsto")
     order = ("orçamento", "média", "previsto")
 
     rows, running = [], start_balance
     for i in range(months):
         m = fin.add_months(first, i)
         b = budget_map(db, m)
-        pm = plan_by_month.get(m.isoformat(), {})
-        planned_cats = {cid for (_, cid) in pm if cid is not None}
+        items = items_by_month.get(m.isoformat(), [])
+        planned_cats = {o.category_id for o in items if o.category_id is not None}
         tot = {"receita": 0.0, "despesa": 0.0}
         used = {"receita": set(), "despesa": set()}  # fontes usadas: orçamento, média e/ou previsto
         for cid in set(b) | set(hist):
             k = kind(cid)
             if k is None or cid in planned_cats:  # o previsto da categoria substitui orçamento e média no mês
                 continue
+            key, section, group, label = cat_line(cid, k)
             if cid in b:
                 tot[k] += b[cid]
                 used[k].add("orçamento")
+                cell(key, section, group, label, i, b[cid], "orçamento")
             else:
-                tot[k] += hist[cid] if k == "receita" else -hist[cid]
+                v = hist[cid] if k == "receita" else -hist[cid]
+                tot[k] += v
                 used[k].add("média")
-        for (pk, _cid), v in pm.items():
-            tot[pk] += v
-            used[pk].add("previsto")
+                cell(key, section, group, label, i, v, "média")
+        for o in items:
+            tot[o.kind] += o.amount
+            used[o.kind].add("previsto")
+            key, section, group, label = planned_line(o)
+            cell(key, section, group, label, i, o.amount, "previsto")
         inc, exp = max(0.0, tot["receita"]), max(0.0, tot["despesa"])
         src = {k: " + ".join(x for x in order if x in v) or "média" for k, v in used.items()}
         debts, cards = debt_sched.get(m, 0.0), card_sched.get(m, 0.0)
+        for d, sched in debt_rows:
+            cell(("debt", d.id), "dividas", "Dívidas e parcelas", d.name, i, sched.get(m, 0.0), "dívida")
+        for a, sched in card_rows:
+            cell(("card", a.id), "dividas", "Dívidas e parcelas", f"Parcelas no cartão · {a.name}", i, sched.get(m, 0.0), "cartão")
         pend = pending if i == 0 else 0.0  # atrasados e o que ainda vence neste mês (com sinal: entrada +, saída −)
         running += inc - exp - debts - cards + pend
         rows.append({"month": m.isoformat(), "receitas": round(inc, 2), "despesas": round(exp, 2),
                      "dividas": round(debts, 2), "parcelas_cartao": round(cards, 2), "pendentes": round(-pend, 2),
                      "saldo": round(running, 2), "fonte_receitas": src["receita"], "fonte_despesas": src["despesa"]})
-    return {"saldo_atual": round(start_balance + open_invoices, 2), "faturas_abertas": round(open_invoices, 2),
-            "saldo_inicial": round(start_balance, 2), "months": rows}
+    out = {"saldo_atual": round(start_balance + open_invoices, 2), "faturas_abertas": round(open_invoices, 2),
+           "saldo_inicial": round(start_balance, 2), "months": rows}
+    if detail:
+        out["table"] = _table(lines, rows, start_balance, pending)
+    return out
+
+
+def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pending: float) -> dict:
+    """Linhas agrupadas por seção e grupo, com subtotais e os totais do mês (iguais aos da projeção)."""
+    def rnd(xs):
+        return [round(x, 2) for x in xs]
+
+    sections = []
+    for sec in ("entradas", "saidas", "dividas"):
+        sec_lines = [r for r in lines.values() if r["section"] == sec]
+        groups: dict[str, list[dict]] = defaultdict(list)
+        for r in sec_lines:
+            groups[r["group"]].append(r)
+        out_groups = []
+        for g, rs in sorted(groups.items(), key=lambda kv: (-sum(sum(r["values"]) + r["now"] for r in kv[1]), kv[0])):
+            rs.sort(key=lambda r: -(sum(r["values"]) + r["now"]))
+            out_groups.append({
+                "group": g,
+                "now": round(sum(r["now"] for r in rs), 2),
+                "values": rnd([sum(r["values"][i] for r in rs) for i in range(len(rows))]),
+                "rows": [{"label": r["label"], "now": round(r["now"], 2), "values": rnd(r["values"]), "sources": r["sources"]} for r in rs],
+            })
+        sections.append({"key": sec, "groups": out_groups,
+                         "now": round(sum(g["now"] for g in out_groups), 2),
+                         "values": rnd([sum(g["values"][i] for g in out_groups) for i in range(len(rows))])})
+    entradas = [r["receitas"] for r in rows]
+    saidas = [r["despesas"] + r["dividas"] + r["parcelas_cartao"] for r in rows]
+    now_in = next(s["now"] for s in sections if s["key"] == "entradas")
+    now_out = sum(s["now"] for s in sections if s["key"] != "entradas")
+    return {
+        "months": [r["month"] for r in rows],
+        "sections": sections,
+        "saldo_inicial": round(start_balance, 2),
+        "totais": {
+            "entradas": {"now": round(now_in, 2), "values": rnd(entradas)},
+            "saidas": {"now": round(now_out, 2), "values": rnd(saidas)},
+            "saldo_mes": {"now": round(pending, 2), "values": rnd([e - s for e, s in zip(entradas, saidas, strict=True)])},
+            "acumulado": {"now": round(start_balance + pending, 2), "values": [r["saldo"] for r in rows]},
+        },
+    }

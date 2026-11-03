@@ -593,7 +593,7 @@ document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-goto-plan], [data-big]");
   if (!b) return;
   const target = b.dataset.gotoPlan || b.dataset.big;
-  if (["orcamento", "previstos", "projecao"].includes(target)) {
+  if (["orcamento", "previstos", "tabela", "projecao"].includes(target)) {
     state.plan.view = target;
     return goTab("planejamento");
   }
@@ -620,8 +620,9 @@ const srcTag = (src) => (src === "orçamento" ? "" : ` <span class="muted">(${sr
 async function renderPlanejamento() {
   const view = state.plan.view || "orcamento";
   $$("#plan-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
-  ["orcamento", "previstos", "projecao"].forEach((x) => { $(`#pv-${x}`).hidden = x !== view; });
+  ["orcamento", "previstos", "tabela", "projecao"].forEach((x) => { $(`#pv-${x}`).hidden = x !== view; });
   if (view === "previstos") return renderPrevistos();
+  if (view === "tabela") return renderTabela();
   if (view === "projecao") {
     await renderProjecao();
     return chart("chart-proj")?.resize();
@@ -633,6 +634,50 @@ $("#plan-view").addEventListener("click", (e) => {
   if (!b) return;
   state.plan.view = b.dataset.view;
   renderPlanejamento();
+});
+
+// ------------------------------------------------------------------ MÊS A MÊS (tabela linhas × meses)
+const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
+const num = (v) => (Math.round(v) ? NUM.format(Math.round(v)) : "");
+const snum = (v) => `${v < 0 ? "−" : ""}${NUM.format(Math.abs(Math.round(v)))}`;
+const SECTION_TITLE = { entradas: "Entradas", saidas: "Saídas", dividas: "Dívidas e parcelas" };
+
+async function renderTabela() {
+  const h = state.plan.horizon || 12;
+  $$("#tb-horizon button").forEach((b) => b.classList.toggle("active", +b.dataset.h === h));
+  const p = await api("GET", withPerson(`/api/projection?months=${h}&detail=true`));
+  const t = p.table;
+  $("#tb-hint").innerHTML = `Começa com <b>${fmt(t.saldo_inicial)}</b> (contas menos faturas). “Agora” = atrasos e o que ainda vence
+    neste mês. Valores em cinza vêm da média dos extratos.`;
+  const cells = (now, values, cls = "", sources) => `<td class="now ${cls}">${num(now)}</td>` +
+    values.map((v, i) => `<td class="${cls} ${sources && sources[i] === "média" ? "avg" : ""}">${num(v)}</td>`).join("");
+  const signed = (now, values, cls) => `<td class="now ${cls}">${snum(now)}</td>` +
+    values.map((v) => `<td class="${cls} ${v < 0 ? "neg" : ""}">${snum(v)}</td>`).join("");
+  let body = "";
+  for (const s of t.sections) {
+    if (!s.groups.length) continue;
+    body += `<tr class="sec"><td class="lbl">${SECTION_TITLE[s.key]}</td>${cells(s.now, s.values)}</tr>`;
+    const showGroups = s.groups.length > 1;
+    for (const g of s.groups) {
+      if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g.now, g.values)}</tr>`;
+      for (const r of g.rows) {
+        body += `<tr><td class="lbl ${showGroups ? "sub" : ""}" title="${esc(r.label)}">${esc(r.label)}</td>${cells(r.now, r.values, "", r.sources)}</tr>`;
+      }
+    }
+  }
+  const T = t.totais;
+  body += `<tr class="total first"><td class="lbl">Total de entradas</td>${cells(T.entradas.now, T.entradas.values)}</tr>
+    <tr class="total"><td class="lbl">Total de saídas</td>${cells(T.saidas.now, T.saidas.values)}</tr>
+    <tr class="total"><td class="lbl">Saldo do mês</td>${signed(T.saldo_mes.now, T.saldo_mes.values, "")}</tr>
+    <tr class="acc"><td class="lbl">Saldo acumulado</td>${signed(T.acumulado.now, T.acumulado.values, "")}</tr>`;
+  $("#tb-table").innerHTML = `<thead><tr><th class="lbl">R$</th><th class="now" title="Atrasos e o que ainda vence neste mês">Agora</th>
+    ${t.months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
+}
+$("#tb-horizon").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-h]");
+  if (!b) return;
+  state.plan.horizon = +b.dataset.h;
+  renderTabela();
 });
 
 // ------------------------------------------------------------------ PREVISTOS (fluxo futuro e atrasos)

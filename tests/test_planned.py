@@ -122,3 +122,34 @@ def test_dashboard_has_data_without_accounts(client):
     new(client, name="Aluguel", amount=1300, start_month=m(0))
     d = client.get("/api/dashboard").json()
     assert d["has_data"] is True and d["accounts"] == [] and d["previstos_mes"]["despesas"] == 1300
+
+
+def test_month_by_month_table_matches_projection(client):
+    import pytest
+    client.post("/api/accounts", json={"name": "Conta", "opening_balance": 10000})
+    aluguel, mercado = cat_id(client, "Aluguel"), cat_id(client, "Supermercado")
+    client.put("/api/budgets", json=[{"category_id": aluguel, "amount": 1000}, {"category_id": mercado, "amount": 800}])
+    new(client, name="Aluguel novo", amount=1300, category_id=aluguel, start_month=m(2))
+    new(client, name="Salário", kind="receita", amount=7000, category_id=cat_id(client, "Salário"), start_month=m(0))
+    new(client, name="Freela", kind="receita", amount=2000, recurrence="pontual", start_month=m(3))
+    new(client, name="Multa", amount=500, recurrence="pontual", start_month=m(-1))
+    client.post("/api/debts", json={"name": "Consignado", "kind": "consignado", "installment": 300,
+                                    "first_due": f"{m(-2)[:7]}-05", "total_installments": 10})
+    p = client.get("/api/projection", params={"months": 4, "detail": True}).json()
+    t, rows = p["table"], p["months"]
+    assert t["months"] == [r["month"] for r in rows]
+    sec = {s["key"]: s for s in t["sections"]}
+    for i, r in enumerate(rows):
+        assert sec["entradas"]["values"][i] == pytest.approx(r["receitas"])
+        assert sec["saidas"]["values"][i] + sec["dividas"]["values"][i] == pytest.approx(r["despesas"] + r["dividas"] + r["parcelas_cartao"])
+        assert t["totais"]["acumulado"]["values"][i] == r["saldo"]
+    # coluna "Agora": multa atrasada + salário e o que vence neste mês
+    assert t["totais"]["saldo_mes"]["now"] == -rows[0]["pendentes"]
+    lines = {row["label"]: row for s in t["sections"] for g in s["groups"] for row in g["rows"]}
+    # orçamento da categoria e o previsto que o substitui viram linhas separadas (o previsto com o próprio nome)
+    assert lines["Aluguel"]["values"][:2] == [1000, 0] and lines["Aluguel"]["sources"][0] == "orçamento"
+    assert lines["Aluguel novo"]["values"][:2] == [0, 1300] and lines["Aluguel novo"]["sources"][1] == "previsto"
+    assert lines["Freela"]["values"][2] == 2000 and lines["Multa"]["now"] == 500
+    assert lines["Consignado"]["values"][0] == 300
+    groups = [g["group"] for g in sec["saidas"]["groups"]]
+    assert "Moradia" in groups and "Alimentação" in groups
