@@ -1,4 +1,4 @@
-/* Financi — finanças pessoais (vanilla JS + ECharts, design system Modern Finance). */
+/* Financi — finanças pessoais (vanilla JS + ECharts, design system Azure Finance). */
 "use strict";
 
 // ------------------------------------------------------------------ utilidades
@@ -38,6 +38,28 @@ const addMonths = (iso, n) => {
 };
 const isMobile = () => window.matchMedia("(max-width: 700px)").matches;
 const initials = (s) => (s || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+
+// ------------------------------------------------------------------ componentes do Azure Finance
+const svg = (d, cls = "") => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  tag: svg('<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.2"/>'),
+  chart: svg('<path d="M7 20V10M12 20V4M17 20v-7"/>'),
+  up: svg('<path d="M7 17 17 7M8 7h9v9"/>'),
+  down: svg('<path d="M7 7l10 10M17 8v9H8"/>'),
+  card: svg('<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>'),
+  debt: svg('<path d="M4 20h16M6 16V9M10 16V9M14 16V9M18 16V9M12 3l8 4H4z"/>'),
+  sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', "i"),
+  moon: svg('<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>', "i"),
+};
+const SPARKLE = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.2 7.8L22 12l-7.8 2.2L12 22l-2.2-7.8L2 12l7.8-2.2z"/></svg>';
+const CHEV = `<span class="az-insight__chev">${svg('<path d="M9 6l6 6-6 6"/>')}</span>`;
+const well = (content) => `<span class="az-well az-well--sm">${content}</span>`;
+const tile = (label, value, sub = "") => `<div class="tile"><div class="tile__label">${label}</div><div class="tile__value">${value}</div>${sub ? `<div class="tile__sub">${sub}</div>` : ""}</div>`;
+// linha no padrão InsightRow: poço, título, descrição e (opcional) valor à direita
+const listRow = ({ icon, title, desc = "", amount = "", extra = "", cls = "" }) =>
+  `<div class="az-insight ${cls}">${well(icon)}<div class="az-insight__text"><div class="az-insight__title">${title}</div>` +
+  `${desc ? `<div class="az-insight__desc">${desc}</div>` : ""}</div>${amount ? `<span class="amount">${amount}</span>` : ""}${extra}</div>`;
+const signed = (v) => `${v < 0 ? "−" : ""}${fmt2(Math.abs(v))}`;
 
 function toast(msg, action) {
   const t = $("#toast");
@@ -79,7 +101,7 @@ const withPerson = (url) => {
   return url + (url.includes("?") ? "&" : "?") + `person=${encodeURIComponent(p)}`;
 };
 
-// ------------------------------------------------------------------ gráficos (monocromáticos, DS Modern Finance)
+// ------------------------------------------------------------------ gráficos (azuis da marca: aceso Royal Blue / Bright Azure, apagado Cloud Blue)
 const charts = {};
 const LIT = () => css("--chart-lit");
 const DIM = () => css("--chart-dim");
@@ -92,20 +114,20 @@ function chart(id) {
 }
 window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.resize()));
 function baseOption() {
-  const ink2 = css("--text-secondary"), axis = css("--border-default");
+  const ink2 = css("--ink-muted"), axis = css("--line");
   return {
     animationDuration: 480,
-    textStyle: { fontFamily: css("--font-core"), color: ink2 },
+    textStyle: { fontFamily: css("--font-sans"), color: ink2 },
     grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
     tooltip: {
-      trigger: "axis", backgroundColor: css("--surface-card"), borderWidth: 0,
-      extraCssText: `box-shadow:${css("--shadow-pop")};border-radius:12px`,
-      textStyle: { color: css("--text-primary"), fontFamily: css("--font-core") },
+      trigger: "axis", backgroundColor: css("--surface-raised"), borderWidth: 0,
+      extraCssText: `box-shadow:${css("--shadow-card")};border-radius:12px`,
+      textStyle: { color: css("--ink"), fontFamily: css("--font-sans") },
       axisPointer: { type: "line", lineStyle: { color: axis } }, valueFormatter: (v) => fmt(v),
     },
     legend: { top: 0, left: 0, icon: "circle", itemWidth: 8, itemHeight: 8, textStyle: { color: ink2 } },
-    xAxis: { type: "category", axisLine: { lineStyle: { color: axis } }, axisTick: { show: false }, axisLabel: { color: css("--text-muted") } },
-    yAxis: { type: "value", splitLine: { lineStyle: { color: css("--chart-grid") } }, axisLabel: { color: css("--text-muted"), formatter: short } },
+    xAxis: { type: "category", axisLine: { lineStyle: { color: axis } }, axisTick: { show: false }, axisLabel: { color: css("--ink-faint") } },
+    yAxis: { type: "value", splitLine: { lineStyle: { color: css("--chart-grid") } }, axisLabel: { color: css("--ink-faint"), formatter: short } },
   };
 }
 
@@ -190,51 +212,75 @@ async function renderInicio() {
     state.monthSynced = true;
     state.tx.month = state.plan.month = d.month;
   }
-  const T = d.month_totals;
+  const T = d.month_totals, DT = d.debts_totals;
   $("#h-saldo").textContent = fmt2(d.saldo_contas);
   const net = T.receitas - T.despesas;
-  const arrow = net >= 0 ? '<path d="M7 17 17 7M9 7h8v8"/>' : '<path d="M7 7l10 10M17 9v8H9"/>';
-  $("#h-trend").hidden = false;
-  $("#h-trend").innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${arrow}</svg>${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))} no mês`;
-  $("#h-caption").textContent = `receitas ${fmt(T.receitas)} · despesas ${fmt(T.despesas)}${d.investido ? ` · investido ${fmt(d.investido)}` : ""}`;
+  const arrow = svg(net >= 0 ? '<path d="M12 19V5M6 11l6-6 6 6"/>' : '<path d="M12 5v14M6 13l6 6 6-6"/>', "i");
+  $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> no mês · receitas ${fmt(T.receitas)} · despesas ${fmt(T.despesas)}` +
+    (d.investido ? ` · investido ${fmt(d.investido)}` : "");
+  $("#qa-review").textContent = d.uncategorized ? `${d.uncategorized} pendentes` : "Nada pendente";
 
-  $("#home-alert").innerHTML = d.uncategorized
-    ? `<div class="card alert-row"><span><b>${d.uncategorized}</b> ${d.uncategorized === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}</span>
-        <button class="primary" data-review>Revisar agora</button></div>` : "";
+  // destaques escritos como constatação + o que significa (InsightRow)
+  const ins = [];
+  if (d.uncategorized) {
+    ins.push({ icon: "tag", title: `${d.uncategorized} ${d.uncategorized === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}`,
+      desc: "Categorize para o orçamento ficar certo", go: "review" });
+  }
+  if (T.despesas_orcadas) {
+    const left = T.despesas_orcadas - T.despesas;
+    ins.push({ icon: "chart", title: `Gastos em ${pct(T.despesas / T.despesas_orcadas)} do orçamento`,
+      desc: left >= 0 ? `Ainda pode gastar ${fmt(left)} este mês` : `${fmt(-left)} acima do orçado`, go: "planejamento" });
+  } else {
+    ins.push({ icon: "chart", title: `Gastos de ${fmt(T.despesas)} no mês`, desc: "Defina um orçamento para acompanhar", go: "planejamento" });
+  }
+  const moves = d.groups.filter((g) => g.group !== "Sem categoria").map((g) => {
+    const cur = g.values[g.values.length - 1], prev = g.values[g.values.length - 2];
+    return { group: g.group, cur, prev, ch: prev > 0 && cur > 0 ? cur / prev - 1 : null };  // só compara meses com gasto nos dois
+  }).filter((m) => m.ch != null && Math.abs(m.ch) >= 0.1).sort((a, b) => Math.abs(b.cur - b.prev) - Math.abs(a.cur - a.prev));
+  if (moves.length) {
+    const m = moves[0];
+    ins.push({ icon: m.ch > 0 ? "up" : "down", title: `${m.group} ${m.ch > 0 ? "subiu" : "caiu"}`, badge: `${m.ch > 0 ? "+" : "−"}${pct(Math.abs(m.ch))}`,
+      desc: `${fmt(m.cur)} neste mês contra ${fmt(m.prev)} no anterior`, go: "planejamento" });
+  }
+  if (DT.faturas_abertas || DT.parcelas_cartao_futuras) {
+    ins.push({ icon: "card", title: `Faturas abertas somam ${fmt(DT.faturas_abertas)}`,
+      desc: DT.parcelas_cartao_futuras ? `Mais ${fmt(DT.parcelas_cartao_futuras)} em parcelas a cair` : "Sem parcelas futuras", go: "dividas" });
+  }
+  if (DT.saldo_devedor) {
+    ins.push({ icon: "debt", title: DT.comprometimento != null ? `Parcelas levam ${pct(DT.comprometimento)} da renda` : `Dívidas somam ${fmt(DT.saldo_devedor)}`,
+      desc: `${fmt(DT.parcelas_mes)} por mês · saldo devedor ${fmt(DT.saldo_devedor)}`, go: "dividas" });
+  }
+  $("#home-insights").innerHTML = ins.map((i) => `<a class="az-insight" href="#" data-go="${i.go}">${well(ICON[i.icon])}
+    <div class="az-insight__text"><div class="az-insight__title">${esc(i.title)}${i.badge ? `<span class="az-badge">${i.badge}</span>` : ""}</div>
+    <div class="az-insight__desc">${esc(i.desc)}</div></div>${CHEV}</a>`).join("");
 
-  const budgetLeft = T.despesas_orcadas ? T.despesas_orcadas - T.despesas : null;
-  const DT = d.debts_totals;
-  const tiles = [
-    ["Gastos do mês", fmt(T.despesas), T.despesas_orcadas ? `de ${fmt(T.despesas_orcadas)} orçados` : "sem orçamento definido"],
-    ["Ainda pode gastar", budgetLeft == null ? "–" : fmt(budgetLeft), budgetLeft == null ? "defina em Planejamento" : budgetLeft < 0 ? "acima do orçamento" : "até o fim do mês"],
-    ["Faturas abertas", fmt(DT.faturas_abertas), `parcelas futuras ${fmt(DT.parcelas_cartao_futuras)}`],
-    ["Dívidas", fmt(DT.saldo_devedor), DT.comprometimento != null ? `parcelas ${fmt(DT.parcelas_mes)}/mês · ${pct(DT.comprometimento)} da renda` : `parcelas ${fmt(DT.parcelas_mes)}/mês`],
-  ];
-  $("#home-tiles").innerHTML = tiles.map(([l, v, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+  const accRows = d.accounts.filter((a) => a.kind !== "cartao").map((a) => listRow({ icon: esc(initials(a.name)), title: esc(a.name),
+    desc: `${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}`, amount: signed(a.balance) }));
+  const cardRows = d.cards.map((c) => listRow({ icon: ICON.card, title: esc(c.name),
+    desc: c.configured ? `Fatura de ${mlabel(c.invoice.month)} · vence ${dlabel(c.invoice.due)}` : "Configure fechamento e vencimento",
+    amount: fmt2(c.invoice.amount) }));
+  $("#home-accounts").innerHTML = [...accRows, ...cardRows].join("") || '<p class="hint">Nenhuma conta.</p>';
 
   $("#home-groups").innerHTML = d.groups.length ? d.groups.map((g) => {
     const max = Math.max(...g.values, 1), cur = g.values[g.values.length - 1];
-    const [whole, cents] = BRL2.format(cur).split(",");
-    const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(4, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
-    return `<div class="mf-cat" data-group="${esc(g.group)}"><div class="mf-cat__icon">${esc(initials(g.group))}</div>
-      <div class="mf-spark">${bars}</div><div><div class="mf-cat__label">${esc(g.group)}</div>
-      <div class="mf-cat__amount">${whole}<small>,${cents}</small></div><div class="mf-cat__meta">neste mês · 6 meses no gráfico</div></div></div>`;
+    const withData = g.values.filter((v) => v > 0);
+    const avg = withData.length ? withData.reduce((a, b) => a + b, 0) / withData.length : 0;
+    const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(6, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
+    return `<div class="cat-card">${well(esc(initials(g.group)))}<div class="cat-card__text"><div class="cat-card__label">${esc(g.group)}</div>
+      <div class="cat-card__meta">média ${fmt(avg)} por mês</div></div><div class="cat-card__right"><div class="cat-card__amount">${fmt2(cur)}</div>
+      <div class="spark">${bars}</div></div></div>`;
   }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
-
-  $("#home-accounts").innerHTML = d.accounts.filter((a) => a.kind !== "cartao").map((a) => `
-    <div class="mf-tx"><div class="mf-tx__icon">${esc(initials(a.name))}</div>
-      <div class="mf-tx__text"><div class="mf-tx__title">${esc(a.name)}</div><div class="mf-tx__meta">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}</div></div>
-      <div class="mf-tx__amount">${fmt2(a.balance)}</div></div>`).join("") || '<p class="hint">Nenhuma conta.</p>';
-  $("#home-cards").innerHTML = d.cards.map((c) => `
-    <div class="mf-tx"><div class="mf-tx__icon">${esc(initials(c.name))}</div>
-      <div class="mf-tx__text"><div class="mf-tx__title">${esc(c.name)}</div>
-        <div class="mf-tx__meta">${c.configured ? `fatura de ${mlabel(c.invoice.month)} · vence ${dlabel(c.invoice.due)}` : "configure fechamento e vencimento"}</div></div>
-      <div class="mf-tx__amount">${fmt2(c.invoice.amount)}</div></div>`).join("") || '<p class="hint">Nenhum cartão importado.</p>';
 }
-$("#home-alert").addEventListener("click", (e) => {
-  if (e.target.closest("[data-review]")) {
+document.addEventListener("click", (e) => {
+  const review = e.target.closest(".home-actions [data-review], #home-insights [data-go=review]");
+  const go = e.target.closest("#home-insights [data-go]");
+  if (review) {
+    e.preventDefault();
     state.tx.status = "revisar";
     goTab("lancamentos");
+  } else if (go) {
+    e.preventDefault();
+    goTab(go.dataset.go);
   }
 });
 
@@ -256,14 +302,13 @@ async function renderLancamentos() {
   f.rows = await api("GET", withPerson(`/api/transactions?${params}`));
   const ins = f.rows.filter((t) => t.amount > 0 && catById(t.category_id)?.type !== "transferencia").reduce((s, t) => s + t.amount, 0);
   const outs = f.rows.filter((t) => t.amount < 0 && catById(t.category_id)?.type !== "transferencia").reduce((s, t) => s - t.amount, 0);
-  $("#tx-summary").innerHTML = [["Entradas", fmt2(ins)], ["Saídas", fmt2(outs)], ["Lançamentos", String(f.rows.length)]]
-    .map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  $("#tx-summary").innerHTML = tile("Entradas", fmt2(ins)) + tile("Saídas", fmt2(outs)) + tile("Lançamentos", String(f.rows.length));
   renderTxList();
 }
 
 function txBadge(t) {
   if (!t.category_id) return '<span class="badge">sem categoria</span>';
-  if (t.categorized_by === "ia" && !t.reviewed) return `<span class="badge accent" title="Sugerido pela IA">IA ${pct(t.confidence)}</span>`;
+  if (t.categorized_by === "ia" && !t.reviewed) return `<span class="badge ai" title="Sugerido pela IA">${SPARKLE}IA ${pct(t.confidence)}</span>`;
   return "";
 }
 
@@ -282,12 +327,12 @@ function renderTxList() {
     }
     const cat = catById(t.category_id), acc = accById(t.account_id);
     const inst = t.installment ? ` · parcela ${t.installment[0]}/${t.installment[1]}` : "";
-    h += `<div class="mf-tx tx-row" data-id="${t.id}">
+    h += `<div class="az-insight tx-row" data-id="${t.id}">
       <label class="tx-check" title="Selecionar"><input type="checkbox" data-sel="${t.id}" ${f.selected.has(t.id) ? "checked" : ""}></label>
-      <div class="mf-tx__icon">${esc(initials(cat ? cat.group : "?"))}</div>
-      <div class="mf-tx__text"><div class="mf-tx__title">${esc(t.description)}</div>
-        <div class="mf-tx__meta">${esc(cat ? cat.name : "Sem categoria")} · ${esc(acc ? acc.name : "")}${inst} ${txBadge(t)}</div></div>
-      <div class="mf-tx__amount">${t.amount < 0 ? "−" : ""}${fmt2(Math.abs(t.amount))}</div></div>`;
+      ${well(esc(initials(cat ? cat.group : "?")))}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(t.description)}</div>
+        <div class="az-insight__desc">${esc(cat ? cat.name : "Sem categoria")} · ${esc(acc ? acc.name : "")}${inst} ${txBadge(t)}</div></div>
+      <span class="amount">${signed(t.amount)}</span></div>`;
   }
   $("#tx-list").innerHTML = h;
   updateBulk();
@@ -315,12 +360,12 @@ $("#tx-list").addEventListener("click", (e) => {
 function openTxSheet(t) {
   const acc = accById(t.account_id);
   const ia = t.categorized_by === "ia" && !t.reviewed;
-  openSheet(`<p class="eyebrow">${dlabel(t.date)}/${t.date.slice(0, 4)} · ${esc(acc ? acc.name : "")}</p>
+  openSheet(`<p class="overline">${dlabel(t.date)}/${t.date.slice(0, 4)} · ${esc(acc ? acc.name : "")}</p>
     <h2 style="margin:0 0 4px">${t.amount < 0 ? "−" : ""}${fmt2(Math.abs(t.amount))}</h2>
     <p class="hint">${esc(t.description)}${t.installment ? ` · parcela ${t.installment[0]} de ${t.installment[1]}` : ""}</p>
     ${ia ? `<p class="hint">Sugestão da IA com ${pct(t.confidence)} de confiança. Confirme ou troque.</p>` : ""}
     <label class="field">Categoria<select id="sh-cat">${categoryOptions(t.category_id)}</select></label>
-    <label class="pick" style="margin-top:12px"><input type="checkbox" id="sh-learn" checked> Lembrar para “${esc(t.merchant)}” e corrigir os parecidos</label>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="sh-learn" checked> Lembrar para “${esc(t.merchant)}” e corrigir os parecidos</label>
     <label class="field" style="margin-top:12px">Observação<input id="sh-notes" value="${esc(t.notes || "")}"></label>
     <div class="row" style="margin-top:16px"><button class="primary" id="sh-save">Salvar</button>
       <button class="danger" id="sh-del">Excluir</button></div>`);
@@ -368,7 +413,7 @@ $("#bulk-apply").onclick = async () => {
 $("#bulk-clear").onclick = () => { state.tx.selected.clear(); renderTxList(); };
 $("#tx-add").onclick = () => {
   if (!state.accounts.length) return toast("Cadastre uma conta em Ajustes ou importe um extrato");
-  openSheet(`<p class="eyebrow">Novo lançamento</p><h2 style="margin:0 0 12px">Lançar à mão</h2>
+  openSheet(`<p class="overline">Novo lançamento</p><h2>Lançar à mão</h2>
     <div class="form">
       <label class="field">Data<input id="sh-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></label>
       <label class="field">Valor (− saída, + entrada)<input id="sh-amount" inputmode="decimal" placeholder="-50,00"></label>
@@ -396,7 +441,7 @@ async function renderImportar() {
   $("#imp-history").innerHTML = hist.length ? `<thead><tr><th>Arquivo</th><th>Conta</th><th>Período</th><th>Novos</th><th>Repetidos</th><th>Regra</th><th>IA</th><th>Sem cat.</th><th></th></tr></thead><tbody>` +
     hist.map((b) => `<tr><td>${esc(b.filename)}</td><td>${esc(b.account || "–")}</td><td>${dlabel(b.period[0])} a ${dlabel(b.period[1])}</td>
       <td>${b.new}</td><td>${b.duplicates}</td><td>${b.by_rule}</td><td>${b.by_ai}</td><td>${b.uncategorized}</td>
-      <td><button class="ghost sm danger" data-undo="${b.id}">Desfazer</button></td></tr>`).join("") + "</tbody>"
+      <td><button class="sm" data-undo="${b.id}">Desfazer</button></td></tr>`).join("") + "</tbody>"
     : '<tbody><tr><td class="muted">Nenhuma importação ainda.</td></tr></tbody>';
 }
 
@@ -413,11 +458,11 @@ async function importFiles(files) {
     if ($("#imp-owner").value) fd.append("owner_id", $("#imp-owner").value);
     try {
       const r = await api("POST", "/api/imports", fd);
-      card.innerHTML = `<div class="mf-section"><h3>${esc(file.name)}</h3><span class="badge ${r.account.created ? "accent" : ""}">${r.account.created ? "conta criada" : "conta reconhecida"}</span></div>
-        <p class="hint" style="margin:4px 0 12px">${esc(r.account.name)} · ${KIND_LABEL[r.account.kind]} · ${dlabel(r.period[0])} a ${dlabel(r.period[1])}</p>
+      card.innerHTML = `<div class="card-head"><h3>${esc(file.name)}</h3><span class="badge ${r.account.created ? "tint" : ""}">${r.account.created ? "conta criada" : "conta reconhecida"}</span></div>
+        <p class="hint" style="margin:0">${esc(r.account.name)} · ${KIND_LABEL[r.account.kind]} · ${dlabel(r.period[0])} a ${dlabel(r.period[1])}</p>
         <div class="tiles">${[["Novos", r.new], ["Repetidos (ignorados)", r.duplicates], ["Por regra", r.by_rule],
           ["Pela IA", r.ai_enabled ? r.by_ai : "desligada"], ["Sem categoria", r.uncategorized]]
-          .map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("")}</div>
+          .map(([l, v]) => tile(l, v)).join("")}</div>
         ${r.uncategorized ? `<button class="primary" data-review>Revisar ${r.uncategorized} sem categoria</button>` : ""}
         ${r.account.kind === "cartao" && r.account.created ? `<p class="hint">Cartão novo: informe o dia de fechamento e de vencimento em Ajustes para o app calcular as faturas.</p>` : ""}`;
     } catch (err) {
@@ -452,9 +497,9 @@ async function renderPlanejamento() {
   $("#bud-tiles").innerHTML = [
     ["Receitas", fmt(T.receitas), T.receitas_previstas ? `previstas ${fmt(T.receitas_previstas)}` : "sem previsão"],
     ["Despesas", fmt(T.despesas), T.despesas_orcadas ? `orçadas ${fmt(T.despesas_orcadas)}` : "sem orçamento"],
-    ["Sobra do mês", fmt(T.receitas - T.despesas), T.receitas_previstas ? `prevista ${fmt(T.receitas_previstas - T.despesas_orcadas)}` : ""],
+    ["Sobra do mês", `${T.receitas < T.despesas ? "−" : ""}${fmt(Math.abs(T.receitas - T.despesas))}`, T.receitas_previstas ? `prevista ${fmt(T.receitas_previstas - T.despesas_orcadas)}` : ""],
     ["Sem categoria", fmt(T.sem_categoria), T.sem_categoria ? "categorize em Lançamentos" : "tudo categorizado"],
-  ].map(([l, val, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${val}</div><div class="sub">${s}</div></div>`).join("");
+  ].map(([l, val, sub]) => tile(l, val, sub)).join("");
 
   const byCat = Object.fromEntries(v.rows.map((r) => [r.category_id, r]));
   const sug = p.suggestions ? Object.fromEntries(p.suggestions.map((s) => [s.category_id, s.amount])) : {};
@@ -491,9 +536,10 @@ async function renderPlanejamento() {
     ...baseOption(),
     xAxis: { ...baseOption().xAxis, data: ms.map((m) => mlabel(m.month)) },
     series: [
-      { name: "Saldo projetado", type: "line", data: ms.map((m) => m.saldo), color: LIT(), symbol: "circle", symbolSize: 6, lineStyle: { width: 2.5 },
-        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
-      { name: "Dívidas + parcelas de cartão", type: "bar", data: ms.map((m) => m.dividas + m.parcelas_cartao), color: DIM(), barMaxWidth: 22, itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: "Saldo projetado", type: "line", data: ms.map((m) => m.saldo), color: LIT(), symbol: "circle", symbolSize: 7, lineStyle: { width: 2.5 },
+        areaStyle: { color: DIM(), opacity: 0.5 },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--line-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
+      { name: "Dívidas + parcelas de cartão", type: "bar", data: ms.map((m) => m.dividas + m.parcelas_cartao), color: css("--chart-mid"), barMaxWidth: 22, itemStyle: { borderRadius: [4, 4, 0, 0] } },
     ],
   }, true);
   $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Dívidas</th><th>Parcelas cartão</th><th>Saldo</th></tr></thead><tbody>` +
@@ -534,24 +580,30 @@ async function renderDividas() {
     ["Saldo devedor", fmt(T.saldo_devedor), "empréstimos e acordos"],
     ["Faturas abertas", fmt(T.faturas_abertas), "cartões, fatura atual"],
     ["Parcelas futuras no cartão", fmt(T.parcelas_cartao_futuras), "compras parceladas a cair"],
-    ["Parcelas por mês", fmt(T.parcelas_mes), T.comprometimento != null ? `${pct(T.comprometimento)} da renda média` : "sem renda registrada"],
-  ].map(([l, v, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+    ["Parcelas por mês", fmt(T.parcelas_mes), "empréstimos e acordos"],
+  ].map(([l, v, sub]) => tile(l, v, sub)).join("");
+  // ScoreRing: quanto da renda média vai para parcelas (o número sempre impresso; o anel só reforça)
+  const c = T.comprometimento, C = 2 * Math.PI * 58, shown = c == null ? 0 : Math.min(1, c);
+  $("#debt-ring").innerHTML = `<div class="az-score"><div class="az-score__ring"><svg viewBox="0 0 128 128"><circle class="az-score__track" cx="64" cy="64" r="58"/>
+      <circle class="az-score__value" cx="64" cy="64" r="58" stroke-dasharray="${(C * shown).toFixed(1)} ${C.toFixed(1)}"/></svg>
+      <div class="az-score__num">${c == null ? "–" : Math.round(c * 100)}<small>% da renda</small></div></div>
+    <div class="az-score__title">Comprometimento</div><div class="az-score__desc">${c == null ? "Importe extratos com receitas<br>para calcular" : "Parcelas por mês sobre<br>a renda média"}</div></div>`;
 
   $("#debt-cards").innerHTML = d.cards.length ? d.cards.map((c) => {
     const used = c.limit ? Math.min(1, c.limit_used / c.limit) : null;
     const hist = c.history.map((h) => `<span><b>${fmt(h.amount)}</b> ${mlabel(h.month)}</span>`).join("");
     const fut = c.future_installments.slice(0, 6).map((f) => `<span>${mlabel(f.month)} <b>${fmt(f.amount)}</b></span>`).join("");
-    return `<div class="card"><div class="mf-section"><h3>${esc(c.name)}</h3><button class="mf-link" data-card="${c.account_id}">${c.configured ? "Editar" : "Configurar"}</button></div>
+    return `<div class="card"><div class="card-head"><h3>${esc(c.name)}</h3><button class="link" data-card="${c.account_id}">${c.configured ? "Editar" : "Configurar"}</button></div>
       ${c.configured ? `<div class="amount-row"><span class="big">${fmt2(c.current_invoice.amount)}</span><span class="muted">fatura de ${mlabel(c.current_invoice.month)} · vence ${dlabel(c.current_invoice.due)}</span></div>`
         : `<p class="hint">Informe o dia de fechamento e de vencimento para calcular as faturas.</p>`}
       ${used != null ? `<div class="meter" title="Limite usado"><i style="width:${used * 100}%"></i></div><p class="hint">${fmt(c.limit_used)} usados de ${fmt(c.limit)} · disponível ${fmt(c.limit_available)}</p>` : ""}
-      ${hist ? `<p class="eyebrow">Últimas faturas</p><div class="chips">${hist}</div>` : ""}
-      ${fut ? `<p class="eyebrow">Parcelas a cair · total ${fmt(c.future_total)}</p><div class="chips">${fut}</div>` : ""}</div>`;
+      ${hist ? `<p class="overline">Últimas faturas</p><div class="chips">${hist}</div>` : ""}
+      ${fut ? `<p class="overline">Parcelas a cair · total ${fmt(c.future_total)}</p><div class="chips">${fut}</div>` : ""}</div>`;
   }).join("") : '<p class="hint">Nenhum cartão. Importe o OFX da fatura em Importar extrato.</p>';
 
   $("#debt-list").innerHTML = d.debts.length ? d.debts.map((x) => {
     const prog = x.total_installments ? x.paid / x.total_installments : null;
-    return `<div class="card debt"><div class="mf-section"><h3>${esc(x.name)}</h3><button class="mf-link" data-debt="${x.id}">Editar</button></div>
+    return `<div class="card debt"><div class="card-head"><h3>${esc(x.name)}</h3><button class="link" data-debt="${x.id}">Editar</button></div>
       <p class="hint" style="margin:0 0 8px">${DEBT_LABEL[x.kind]}${x.creditor ? ` · ${esc(x.creditor)}` : ""} · ${esc(personName(x.owner_id))}</p>
       <div class="amount-row"><span class="big">${fmt2(x.balance)}</span><span class="muted">saldo devedor${x.total_installments ? " (valor para quitar hoje)" : ""}</span></div>
       ${prog != null ? `<div class="meter"><i style="width:${prog * 100}%"></i></div>
@@ -563,10 +615,10 @@ async function renderDividas() {
   }).join("") : '<p class="hint">Nenhuma dívida cadastrada. Cadastre empréstimos, consignados, financiamentos e acordos para acompanhar saldo e parcelas.</p>';
 
   const name = (id) => esc(d.debts.find((x) => x.id === id)?.name || "");
-  const list = (ids, why) => ids.length ? `<ol class="steps">${ids.map((id) => `<li>${name(id)}</li>`).join("")}</ol><p class="hint">${why}</p>` : '<p class="hint">–</p>';
+  const list = (ids, why) => ids.length ? `<ol>${ids.map((id) => `<li>${name(id)}</li>`).join("")}</ol><p class="hint">${why}</p>` : '<p class="hint">–</p>';
   $("#debt-strategy-card").hidden = d.debts.filter((x) => x.balance > 0).length < 2;
-  $("#debt-strategy").innerHTML = `<div><p class="eyebrow">Maior juro primeiro (avalanche)</p>${list(d.avalanche, "Paga menos juros no total.")}</div>
-    <div><p class="eyebrow">Menor saldo primeiro (bola de neve)</p>${list(d.snowball, "Elimina dívidas mais rápido e libera parcelas antes.")}</div>`;
+  $("#debt-strategy").innerHTML = `<div><p class="overline">Maior juro primeiro (avalanche)</p>${list(d.avalanche, "Paga menos juros no total.")}</div>
+    <div><p class="overline">Menor saldo primeiro (bola de neve)</p>${list(d.snowball, "Elimina dívidas mais rápido e libera parcelas antes.")}</div>`;
   state.debts = d.debts;
 }
 
@@ -576,7 +628,7 @@ $("#debt-add").onclick = () => openDebtSheet(null);
 
 function openDebtSheet(x) {
   const v = x || { kind: "emprestimo" };
-  openSheet(`<p class="eyebrow">${x ? "Editar dívida" : "Nova dívida"}</p><h2 style="margin:0 0 12px">${x ? esc(x.name) : "Dívida"}</h2>
+  openSheet(`<p class="overline">${x ? "Editar dívida" : "Nova dívida"}</p><h2>${x ? esc(x.name) : "Dívida"}</h2>
     <div class="form">
       <label class="field">Nome<input id="dv-name" value="${esc(v.name || "")}" placeholder="Consignado Banco X"></label>
       <label class="field">Tipo<select id="dv-kind">${Object.entries(DEBT_LABEL).map(([k, l]) => `<option value="${k}" ${k === v.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -617,29 +669,30 @@ function openDebtSheet(x) {
 
 // ------------------------------------------------------------------ AJUSTES
 async function renderAjustes() {
-  $("#set-people").innerHTML = state.people.map((p) => `<div class="mf-tx"><div class="mf-tx__icon">${esc(initials(p.name))}</div>
-    <div class="mf-tx__text"><div class="mf-tx__title">${esc(p.name)}</div></div>
-    <button class="ghost sm" data-ren-person="${p.id}">Renomear</button><button class="ghost sm danger" data-del-person="${p.id}">Excluir</button></div>`).join("")
+  $("#set-people").innerHTML = state.people.map((p) => listRow({ icon: esc(initials(p.name)), title: esc(p.name),
+    extra: `<button class="sm" data-ren-person="${p.id}">Renomear</button><button class="sm ghost" data-del-person="${p.id}">Excluir</button>` })).join("")
     || '<p class="hint">Cadastre quem usa o app (ex.: vocês dois). Cada conta, cartão e dívida pode ter um titular; sem titular fica como conjunta.</p>';
   const st = await api("GET", "/api/status");
   state.status = st;
   $("#set-ai").innerHTML = st.ai
-    ? `<p><span class="badge accent">ligada</span> Os lançamentos que nenhuma regra reconhece são categorizados pela IA do Claude. Respostas muito confiantes viram regras.</p>
-       <button id="ai-run">Categorizar pendentes com IA</button>`
-    : `<p><span class="badge">desligada</span> Para ligar, crie uma chave em console.anthropic.com e configure a variável
-       <code>ANTHROPIC_API_KEY</code> nas variáveis de ambiente do Vercel (depois faça Redeploy). O custo é de centavos por mês.</p>
+    ? `<div class="az-ai"><span class="az-ai__label">${SPARKLE}IA ligada</span>
+         <div class="az-ai__text">Os lançamentos que nenhuma regra reconhece são categorizados pelo Claude. Respostas muito confiantes viram regras.</div>
+         <div><button class="sm" id="ai-run" style="background:var(--surface-raised);color:var(--link);border-color:transparent">Categorizar pendentes</button></div></div>`
+    : `<div class="az-ai"><span class="az-ai__label">${SPARKLE}IA desligada</span>
+         <div class="az-ai__text">Para ligar, crie uma chave em console.anthropic.com e cadastre <code>ANTHROPIC_API_KEY</code> nas variáveis
+         de ambiente do Vercel (depois faça Redeploy). O custo é de centavos por mês.</div></div>
        <p class="hint">Sem a chave, o app categoriza só pelas regras, que aprendem com as suas correções.</p>`;
   const accs = state.accounts;
-  $("#set-accounts").innerHTML = accs.length ? accs.map((a) => `<div class="mf-tx ${a.active ? "" : "muted"}"><div class="mf-tx__icon">${esc(initials(a.name))}</div>
-    <div class="mf-tx__text"><div class="mf-tx__title">${esc(a.name)}${a.active ? "" : " (inativa)"}</div>
-      <div class="mf-tx__meta">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}${a.kind === "cartao" ? (a.closing_day ? ` · fecha dia ${a.closing_day}, vence dia ${a.due_day}` : " · sem fechamento/vencimento") : ""}</div></div>
-    <div class="mf-tx__amount">${a.kind === "cartao" ? "" : fmt2(a.balance)}</div><button class="ghost sm" data-acc="${a.id}">Editar</button></div>`).join("")
+  $("#set-accounts").innerHTML = accs.length ? accs.map((a) => listRow({ cls: a.active ? "" : "inactive",
+    icon: a.kind === "cartao" ? ICON.card : esc(initials(a.name)), title: `${esc(a.name)}${a.active ? "" : " (inativa)"}`,
+    desc: `${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}${a.kind === "cartao" ? (a.closing_day ? ` · fecha dia ${a.closing_day}, vence dia ${a.due_day}` : " · sem fechamento/vencimento") : ""}`,
+    amount: a.kind === "cartao" ? "" : signed(a.balance), extra: `<button class="sm" data-acc="${a.id}">Editar</button>` })).join("")
     : '<p class="hint">As contas são criadas sozinhas ao importar o OFX. Também dá para criar à mão (ex.: dinheiro, investimentos).</p>';
   const groups = {};
   state.categories.forEach((c) => (groups[`${c.type}|${c.group}`] ||= []).push(c));
   $("#set-categories").innerHTML = Object.entries(groups).map(([k, cs]) => {
     const [type, g] = k.split("|");
-    return `<div class="cat-group"><p class="eyebrow">${esc(type === "despesa" ? g : TYPE_LABEL[type])}</p><div class="chips">${cs.map((c) =>
+    return `<div class="cat-group"><p class="overline">${esc(type === "despesa" ? g : TYPE_LABEL[type])}</p><div class="chips">${cs.map((c) =>
       `<button class="chip ${c.active ? "" : "off"}" data-cat="${c.id}">${esc(c.name)}</button>`).join("")}</div></div>`;
   }).join("");
   await renderRules();
@@ -652,7 +705,7 @@ async function renderRules() {
   const SRC = { aprendida: "aprendida", manual: "manual", ia: "da IA", padrao: "padrão" };
   $("#set-rules").innerHTML = shown.length ? `<thead><tr><th>Quando a descrição</th><th>Categoria</th><th>Origem</th><th>Usos</th><th></th></tr></thead><tbody>` +
     shown.map((r) => `<tr><td>${r.match === "exact" ? "é" : "contém"} <b>${esc(r.pattern)}</b></td><td>${esc(catById(r.category_id)?.name || "–")}</td>
-      <td>${SRC[r.source]}</td><td>${r.hits}</td><td><button class="ghost sm danger" data-del-rule="${r.id}">Excluir</button></td></tr>`).join("") + "</tbody>"
+      <td>${SRC[r.source]}</td><td>${r.hits}</td><td><button class="sm ghost" data-del-rule="${r.id}">Excluir</button></td></tr>`).join("") + "</tbody>"
     : '<tbody><tr><td class="muted">Nenhuma regra sua ainda. Elas aparecem quando você corrige categorias em Lançamentos.</td></tr></tbody>';
 }
 
@@ -691,7 +744,7 @@ $("#add-account").onclick = () => openAccountSheet(null);
 
 function openAccountSheet(a) {
   const v = a || { kind: "corrente", active: true, opening_balance: 0 };
-  openSheet(`<p class="eyebrow">${a ? "Editar conta" : "Nova conta"}</p><h2 style="margin:0 0 12px">${a ? esc(a.name) : "Conta"}</h2>
+  openSheet(`<p class="overline">${a ? "Editar conta" : "Nova conta"}</p><h2>${a ? esc(a.name) : "Conta"}</h2>
     <div class="form">
       <label class="field">Nome<input id="ac-name" value="${esc(v.name || "")}"></label>
       <label class="field">Tipo<select id="ac-kind">${Object.entries(KIND_LABEL).map(([k, l]) => `<option value="${k}" ${k === v.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -702,7 +755,7 @@ function openAccountSheet(a) {
       <label class="field">Dia de vencimento (cartão)<input id="ac-due" inputmode="numeric" value="${v.due_day ?? ""}"></label>
       <label class="field">Limite (cartão)<input id="ac-limit" inputmode="decimal" value="${v.credit_limit ?? ""}"></label>
     </div>
-    <label class="pick" style="margin-top:12px"><input type="checkbox" id="ac-active" ${v.active ? "checked" : ""}> Conta ativa</label>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="ac-active" ${v.active ? "checked" : ""}> Conta ativa</label>
     <p class="hint">Contas importadas por OFX acertam o saldo sozinhas pelo saldo que o banco informa no arquivo.</p>
     <div class="row"><button class="primary" id="ac-save">Salvar</button>${a ? '<button class="danger" id="ac-del">Excluir conta e lançamentos</button>' : ""}</div>`);
   $("#ac-save").onclick = async () => {
@@ -733,13 +786,13 @@ $("#add-category").onclick = () => openCategorySheet(null);
 function openCategorySheet(c) {
   const v = c || { type: "despesa", group: "", active: true };
   const groups = [...new Set(state.categories.map((x) => x.group))];
-  openSheet(`<p class="eyebrow">${c ? "Editar categoria" : "Nova categoria"}</p><h2 style="margin:0 0 12px">${c ? esc(c.name) : "Categoria"}</h2>
+  openSheet(`<p class="overline">${c ? "Editar categoria" : "Nova categoria"}</p><h2>${c ? esc(c.name) : "Categoria"}</h2>
     <div class="form">
       <label class="field">Nome<input id="ct-name" value="${esc(v.name || "")}"></label>
       <label class="field">Grupo<input id="ct-group" list="ct-groups" value="${esc(v.group)}"><datalist id="ct-groups">${groups.map((g) => `<option value="${esc(g)}">`).join("")}</datalist></label>
       <label class="field">Tipo<select id="ct-type">${Object.entries({ despesa: "Despesa", receita: "Receita", transferencia: "Transferência" }).map(([k, l]) => `<option value="${k}" ${k === v.type ? "selected" : ""}>${l}</option>`).join("")}</select></label>
     </div>
-    <label class="pick" style="margin-top:12px"><input type="checkbox" id="ct-active" ${v.active ? "checked" : ""}> Ativa</label>
+    <label class="check" style="margin-top:12px"><input type="checkbox" id="ct-active" ${v.active ? "checked" : ""}> Ativa</label>
     <div class="row" style="margin-top:12px"><button class="primary" id="ct-save">Salvar</button>${c ? '<button class="danger" id="ct-del">Excluir</button>' : ""}</div>`);
   $("#ct-save").onclick = async () => {
     const body = { name: sheetVal("ct-name"), group: sheetVal("ct-group") || "Outros", type: sheetVal("ct-type"), active: $("#ct-active").checked, sort_order: c ? c.sort_order : 9999 };
@@ -770,7 +823,7 @@ $("#reapply-rules").onclick = async () => {
   toast(`${r.categorized} de ${r.checked} pendentes categorizados pelas regras`);
 };
 $("#add-rule").onclick = () => {
-  openSheet(`<p class="eyebrow">Nova regra</p><h2 style="margin:0 0 12px">Quando a descrição…</h2>
+  openSheet(`<p class="overline">Nova regra</p><h2>Quando a descrição…</h2>
     <div class="form"><label class="field">Tipo<select id="rl-match"><option value="contains">contém</option><option value="exact">é exatamente</option></select></label>
       <label class="field">Texto<input id="rl-pattern" placeholder="ex.: POSTO"></label></div>
     <label class="field">…categorizar como<select id="rl-cat">${categoryOptions(null, { allowNone: false })}</select></label>
@@ -789,7 +842,8 @@ const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar:
 
 function showTab(tab) {
   state.tab = tab;
-  $$("#nav button, #bottomnav button[data-tab]").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+  $$("#nav button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
+  $$("#bottomnav button[data-tab]").forEach((x) => (x.dataset.tab === tab ? x.setAttribute("aria-current", "page") : x.removeAttribute("aria-current")));
   $$("section.tab").forEach((s) => s.classList.toggle("active", s.id === `tab-${tab}`));
   history.replaceState(null, "", `#${tab}`);
 }
@@ -810,20 +864,17 @@ window.addEventListener("hashchange", () => {
 });
 $("#person").addEventListener("change", (e) => { state.person = e.target.value; refresh(); });
 
-const THEME_ICONS = {
-  dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
-  light: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
-};
+// tema claro (páginas brancas) ou navy; o cabeçalho do Início é sempre navy
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   try { localStorage.setItem("financi-theme", theme); } catch (_) { /* navegação privada */ }
-  $("#theme-btn").innerHTML = THEME_ICONS[theme];
+  $("#theme-btn").innerHTML = theme === "navy" ? ICON.sun : ICON.moon;
 }
 $("#theme-btn").addEventListener("click", async () => {
-  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+  applyTheme(document.documentElement.dataset.theme === "navy" ? "light" : "navy");
   await refresh();
 });
-applyTheme(document.documentElement.dataset.theme || "dark");
+applyTheme(document.documentElement.dataset.theme === "navy" ? "navy" : "light");
 
 async function checkStatus() {
   const st = await api("GET", "/api/status");
@@ -833,7 +884,7 @@ async function checkStatus() {
   if (st.hosted && st.database === "sqlite") warn.push("DATABASE_URL não está definida: os dados não ficam salvos. Configure a connection string do Neon no Vercel.");
   const el = $("#security-banner");
   el.hidden = !warn.length;
-  el.innerHTML = warn.map((w) => `<div><span class="badge negative">atenção</span> ${esc(w)}</div>`).join("");
+  el.innerHTML = warn.map((w) => `<div><span class="badge strong">atenção</span> ${esc(w)}</div>`).join("");
 }
 
 (async function init() {

@@ -1,0 +1,114 @@
+/* Azure Finance — component styles. Every value comes from tokens.css. */
+
+.az { font-family: var(--font-sans); color: var(--ink); -webkit-font-smoothing: antialiased; }
+.az-num { font-variant-numeric: tabular-nums lining-nums; }
+.az :focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.az svg { flex: none; }
+
+/* Button */
+.az-btn { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-6); border-radius: var(--radius-sm); border: 1px solid transparent; font: 500 14px/18px var(--font-sans); cursor: pointer; }
+.az-btn--primary { background: var(--action); color: var(--on-action); }
+.az-btn--primary:hover { filter: brightness(1.08); }
+.az-btn--secondary { background: var(--surface-tint); color: var(--link); }
+.az-btn--outline { background: transparent; color: var(--ink); border-color: var(--line-strong); }
+.az-btn--block { width: 100%; }
+.az-btn--sm { height: 32px; padding: 0 var(--space-3); font-size: 12px; }
+.az-btn[disabled] { opacity: .45; cursor: not-allowed; }
+.az-btn svg { width: 16px; height: 16px; }
+
+/* Chip */
+.az-chip { display: inline-flex; align-items: center; gap: var(--space-2); height: 40px; padding: 0 var(--space-4); border-radius: var(--radius-pill); background: var(--surface-sunken); color: var(--ink); font: 400 16px/20px var(--font-sans); border: 0; }
+.az-chip--tint { background: var(--surface-tint); color: var(--link); font-weight: 500; }
+
+/* Badge */
+.az-badge { display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border-radius: 4px; background: var(--badge); color: var(--on-action); font: 500 12px/16px var(--font-sans); font-variant-numeric: tabular-nums; }
+
+/* Icon well & icon button */
+.az-well { display: inline-grid; place-items: center; width: 48px; height: 48px; border-radius: var(--radius-pill); background: var(--surface-tint); color: var(--link); }
+.az-well svg { width: 22px; height: 22px; }
+.az-well--sm { width: 32px; height: 32px; }
+.az-well--sm svg { width: 16px; height: 16px; }
+.az-icon-btn { position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); cursor: pointer; }
+.az-icon-btn svg { width: 18px; height: 18px; }
+.az-icon-btn__dot { position: absolute; top: 8px; right: 9px; width: 6px; height: 6px; border-radius: var(--radius-pill); background: var(--notify); }
+
+/* Card */
+.az-card { background: var(--surface-raised); border-radius: var(--radius-lg); box-shadow: var(--shadow-card); padding: var(--space-6); }
+.az-card--app { border-radius: var(--radius-md); padding: var(--space-4); border: 1px solid var(--line); box-shadow: none; }
+
+/* Score ring */
+.az-score { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--space-2); }
+.az-score__ring { position: relative; width: 128px; height: 128px; }
+.az-score__ring svg { width: 128px; height: 128px; transform: rotate(-90deg); }
+.az-score__track { fill: none; stroke: var(--surface-tint); stroke-width: 6; }
+.az-score__value { fill: none; stroke: var(--royal-blue); stroke-width: 6; stroke-linecap: round; }
+.az-score__num { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 500 44px/1 var(--font-sans); font-variant-numeric: tabular-nums; }
+.az-score__num small { font: 400 16px/20px var(--font-sans); color: var(--ink-muted); }
+.az-score__title { font: 500 20px/26px var(--font-sans); margin-top: var(--space-2); }
+.az-score__desc { font: 400 14px/18px var(--font-sans); color: var(--ink-muted); }
+
+/* Insight row */
+.az-insight { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px solid var(--line); text-decoration: none; color: inherit; }
+.az-insight:last-child { border-bottom: 0; }
+.az-insight__text { flex: 1; min-width: 0; }
+.az-insight__title { font: 500 15px/20px var(--font-sans); color: var(--ink); display: flex; gap: var(--space-2); align-items: center; }
+.az-insight__desc { font: 400 12px/16px var(--font-sans); color: var(--ink-muted); }
+.az-insight__chev { width: 16px; height: 16px; color: var(--link); }
+
+/* AI insight card */
+.az-ai { position: relative; background: var(--surface-tint); border-radius: var(--radius-md); padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2); }
+.az-ai__label { display: inline-flex; align-items: center; gap: var(--space-1); font: 500 13px/16px var(--font-sans); color: var(--link); }
+.az-ai__label svg { width: 14px; height: 14px; color: var(--ai); }
+.az-ai__text { font: 500 15px/20px var(--font-sans); color: var(--ink); max-width: 26ch; }
+.az-ai__close { position: absolute; top: var(--space-3); right: var(--space-3); background: none; border: 0; color: var(--link); cursor: pointer; padding: 0; }
+.az-ai__close svg { width: 16px; height: 16px; }
+
+/* Balance header (navy) */
+.az-balance { display: flex; flex-direction: column; gap: var(--space-2); }
+.az-balance__label { display: flex; align-items: center; gap: var(--space-2); font: 400 13px/16px var(--font-sans); color: var(--ink-muted); }
+.az-balance__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.az-balance__value { font: 500 32px/38px var(--font-sans); font-variant-numeric: tabular-nums; color: var(--ink); }
+.az-trend { display: inline-flex; align-items: center; gap: var(--space-2); font: 400 12px/16px var(--font-sans); color: var(--ink-muted); }
+.az-trend b { display: inline-flex; align-items: center; gap: 2px; height: 22px; padding: 0 var(--space-2); border-radius: var(--radius-pill); background: var(--surface-tint); color: var(--ink); font-weight: 400; }
+.az-topup { display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 4px 0 var(--space-3); border-radius: var(--radius-pill); background: var(--surface-sunken); color: var(--ink); border: 0; font: 400 13px/16px var(--font-sans); cursor: pointer; }
+.az-topup i { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--radius-pill); background: var(--ink); color: var(--surface); font-style: normal; }
+
+/* Quick actions */
+.az-actions { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface-raised); border-radius: var(--radius-md); padding: var(--space-3) 0; }
+.az-action { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 0 var(--space-2); border: 0; border-right: 1px solid var(--line); background: none; color: var(--ink); cursor: pointer; }
+.az-action:last-child { border-right: 0; }
+.az-action .az-well { margin-bottom: var(--space-1); }
+.az-action b { font: 500 13px/16px var(--font-sans); }
+.az-action span { font: 400 11px/14px var(--font-sans); color: var(--ink-muted); }
+
+/* Tab bar */
+.az-tabbar { display: flex; align-items: flex-end; justify-content: space-around; padding: var(--space-3) var(--space-2); background: var(--surface-raised); border-top: 1px solid var(--line); }
+.az-tab { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); min-width: 56px; border: 0; background: none; color: var(--ink-muted); font: 400 11px/14px var(--font-sans); cursor: pointer; }
+.az-tab svg { width: 22px; height: 22px; }
+.az-tab[aria-current="page"] { color: var(--ink); }
+.az-tab[aria-current="page"] .az-tab__icon { background: var(--surface-tint); }
+.az-tab__icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-pill); }
+.az-tab--ai .az-tab__icon { width: 48px; height: 48px; margin-top: -16px; background: var(--bright-azure); color: #ffffff; box-shadow: var(--shadow-fab); }
+
+/* Segmented tabs */
+.az-seg { display: inline-flex; gap: var(--space-2); }
+.az-seg button { height: 34px; padding: 0 var(--space-4); border-radius: var(--radius-pill); border: 1px solid var(--line-strong); background: transparent; color: var(--ink); font: 400 13px/16px var(--font-sans); cursor: pointer; }
+.az-seg button[aria-selected="true"] { background: var(--action); border-color: var(--action); color: var(--on-action); }
+
+/* Text field */
+.az-field { display: flex; flex-direction: column; gap: var(--space-2); }
+.az-field label { font: 400 13px/16px var(--font-sans); color: var(--ink); }
+.az-field__box { display: flex; align-items: center; gap: var(--space-2); height: 44px; padding: 0 var(--space-3); border-radius: var(--radius-sm); background: var(--surface-sunken); border: 1px solid var(--line-strong); color: var(--ink-muted); }
+.az-field__box svg { width: 16px; height: 16px; }
+.az-field__box input { flex: 1; min-width: 0; border: 0; background: none; outline: none; color: var(--ink); font: 400 14px/18px var(--font-sans); }
+.az-field__box input::placeholder { color: var(--ink-muted); }
+.az-field__box:focus-within { border-color: var(--focus-ring); box-shadow: 0 0 0 1px var(--focus-ring); }
+
+/* Step list */
+.az-steps { list-style: none; margin: 0; padding: 0; position: relative; }
+.az-steps li { position: relative; padding: 0 0 var(--space-8) 48px; }
+.az-steps li::before { content: ""; position: absolute; left: 6px; top: 8px; width: 12px; height: 12px; border-radius: var(--radius-pill); background: var(--bright-azure); }
+.az-steps li::after { content: ""; position: absolute; left: 11px; top: 26px; bottom: 6px; width: 2px; background: var(--line); }
+.az-steps li:last-child::after { display: none; }
+.az-steps b { display: block; font: 500 18px/24px var(--font-sans); color: var(--ink); }
+.az-steps span { display: block; margin-top: var(--space-1); font: 400 14px/18px var(--font-sans); color: var(--ink-muted); max-width: 40ch; }

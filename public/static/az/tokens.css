@@ -1,0 +1,75 @@
+/* Azure Finance — generated from tokens.json */
+:root, [data-theme="light"] {
+  --cloud-blue: #e6ecfd;
+  --bright-azure: #5889fa;
+  --royal-blue: #405fad;
+  --midnight-navy: #072061;
+  --surface: #fafafa;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f1f3f6;
+  --surface-tint: #e6ecfd;
+  --line: #eaeef2;
+  --line-strong: #7f8a9c;
+  --ink: #0d151e;
+  --ink-muted: #6b7079;
+  --ink-faint: #9a9fa6;
+  --link: #405fad;
+  --action: #405fad;
+  --on-action: #ffffff;
+  --badge: #405fad;
+  --ai: #5889fa;
+  --notify: #ff5a4f;
+  --focus-ring: #5889fa;
+  --shadow-card: 0 8px 24px rgba(13, 21, 30, 0.06);
+  --shadow-fab: 0 6px 16px rgba(88, 137, 250, 0.45);
+}
+[data-theme="navy"] {
+  --cloud-blue: #e6ecfd;
+  --bright-azure: #5889fa;
+  --royal-blue: #405fad;
+  --midnight-navy: #072061;
+  --surface: #072061;
+  --surface-raised: #0a2b7b;
+  --surface-sunken: #1d3f96;
+  --surface-tint: #163a92;
+  --line: #2d4da0;
+  --line-strong: #6f8bd6;
+  --ink: #ffffff;
+  --ink-muted: #b7c6f2;
+  --ink-faint: #8ea3dd;
+  --link: #9db8ff;
+  --action: #5889fa;
+  --on-action: #ffffff;
+  --badge: #405fad;
+  --ai: #8fb0ff;
+  --notify: #ff6b61;
+  --focus-ring: #ffffff;
+  --shadow-card: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --shadow-fab: 0 6px 16px rgba(88, 137, 250, 0.55);
+}
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-18: 72px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.display { font-family: var(--font-sans); font-size: 56px; line-height: 60px; font-weight: 500; letter-spacing: -0.02em; }
+.headline { font-family: var(--font-sans); font-size: 36px; line-height: 40px; font-weight: 500; letter-spacing: -0.01em; }
+.heading { font-family: var(--font-sans); font-size: 24px; line-height: 30px; font-weight: 500; }
+.lead { font-family: var(--font-sans); font-size: 18px; line-height: 24px; font-weight: 400; }
+.overline { font-family: var(--font-sans); font-size: 16px; line-height: 20px; font-weight: 400; letter-spacing: 0.02em; }
+.balance { font-family: var(--font-sans); font-size: 32px; line-height: 38px; font-weight: 500; }
+.title { font-family: var(--font-sans); font-size: 20px; line-height: 26px; font-weight: 500; }
+.body { font-family: var(--font-sans); font-size: 15px; line-height: 20px; font-weight: 400; }
+.label { font-family: var(--font-sans); font-size: 14px; line-height: 18px; font-weight: 500; }
+.caption { font-family: var(--font-sans); font-size: 12px; line-height: 16px; font-weight: 400; }
+.micro { font-family: var(--font-sans); font-size: 11px; line-height: 14px; font-weight: 400; }

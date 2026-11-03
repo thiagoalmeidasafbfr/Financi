@@ -5,30 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Financi</title>
   <script>
-    // tema antes do primeiro desenho (escuro é o tema principal do Modern Finance)
-    try { document.documentElement.dataset.theme = localStorage.getItem("financi-theme") || "dark"; }
-    catch (e) { document.documentElement.dataset.theme = "dark"; }
+    // tema antes do primeiro desenho: claro (páginas brancas) ou navy, como no Azure Finance
+    try { var t = localStorage.getItem("financi-theme"); document.documentElement.dataset.theme = t === "navy" ? "navy" : "light"; }
+    catch (e) { document.documentElement.dataset.theme = "light"; }
   </script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/vendor/echarts.min.js"></script>
 </head>
-<body>
+<body class="az">
 <header class="topbar">
-  <div class="wordmark">Financi <span>finanças da família</span></div>
+  <div class="brand">Financi<span>finanças da família</span></div>
   <nav class="rail" id="nav" aria-label="Navegação">
     <button data-tab="inicio" class="active">Início</button>
     <button data-tab="lancamentos">Lançamentos</button>
-    <button data-tab="importar">Importar extrato</button>
+    <button data-tab="importar">Importar</button>
     <button data-tab="planejamento">Planejamento</button>
     <button data-tab="dividas">Dívidas</button>
     <button data-tab="ajustes">Ajustes</button>
   </nav>
-  <div class="scenario-pick">
+  <div class="top-actions">
     <select id="person" aria-label="De quem" title="De quem"></select>
-    <button class="mf-icon-btn mf-icon-btn--sm mobile-only" data-goto="ajustes" aria-label="Ajustes" title="Ajustes">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    <button class="az-icon-btn mobile-only" data-goto="ajustes" aria-label="Ajustes" title="Ajustes">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
     </button>
-    <button class="mf-icon-btn mf-icon-btn--sm theme-btn" id="theme-btn" aria-label="Alternar tema claro/escuro" title="Alternar tema claro/escuro"></button>
+    <button class="az-icon-btn" id="theme-btn" aria-label="Alternar tema claro/navy" title="Alternar tema claro/navy"></button>
   </div>
 </header>
 
@@ -37,42 +37,50 @@
 <main>
   <!-- INÍCIO -->
   <section class="tab active" id="tab-inicio">
-    <div class="page-title"><div class="crumb" id="home-crumb"></div><h1>Início</h1></div>
+    <div class="page-head"><p class="overline" id="home-crumb"></p><h1>Início</h1></div>
     <div class="card onboarding" id="home-empty" hidden>
-      <h2 class="two-part"><span>Vamos começar.</span><b>Importe seu primeiro extrato.</b></h2>
-      <ol class="steps">
-        <li>Em <b>Ajustes</b>, cadastre quem usa (vocês dois).</li>
-        <li>No app ou internet banking, exporte o extrato da conta e a fatura do cartão em <b>OFX</b>.</li>
-        <li>Em <b>Importar extrato</b>, envie os arquivos: as contas são criadas e os gastos categorizados sozinhos.</li>
+      <p class="overline">Primeiros passos</p>
+      <h2>Seus extratos, organizados.<span>Importe o primeiro e o resto é automático.</span></h2>
+      <ol class="az-steps">
+        <li><b>01 — Cadastre quem usa</b><span>Em Ajustes, adicione vocês dois. Contas e dívidas podem ter titular ou ser conjuntas.</span></li>
+        <li><b>02 — Exporte o OFX</b><span>No app do banco, exporte o extrato da conta e a fatura do cartão no formato OFX.</span></li>
+        <li><b>03 — Importe aqui</b><span>As contas são criadas e os gastos categorizados sozinhos. Você só confere.</span></li>
       </ol>
       <div class="row"><button class="primary" data-goto="importar">Importar extrato</button><button data-goto="ajustes">Cadastrar pessoas</button></div>
     </div>
     <div id="home-content">
-      <div class="hero-stage">
-        <div class="mf-balance">
-          <span class="mf-balance__label">Saldo em contas</span>
-          <span class="mf-balance__value" id="h-saldo">–</span>
-          <div class="hero-row"><span class="mf-trend" id="h-trend" hidden></span><span class="mf-muted caption" id="h-caption"></span></div>
+      <div class="hero" data-theme="navy">
+        <div class="az-balance">
+          <span class="az-balance__label">Saldo em contas</span>
+          <div class="az-balance__row">
+            <span class="az-balance__value" id="h-saldo">–</span>
+            <button class="az-topup" data-goto="importar">Importar<i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></i></button>
+          </div>
+          <span class="az-trend" id="h-trend"></span>
         </div>
       </div>
-      <div id="home-alert"></div>
-      <div class="tiles" id="home-tiles"></div>
-      <div class="mf-section"><h2 class="mf-section__title">Gastos por grupo</h2><button class="mf-link" data-goto="planejamento">Ver orçamento</button></div>
-      <div class="cat-grid" id="home-groups"></div>
+      <nav class="az-actions home-actions" aria-label="Atalhos">
+        <button class="az-action" data-goto="importar"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span><b>Importar</b><span>Enviar extrato</span></button>
+        <button class="az-action" data-review><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h11"/></svg></span><b>Revisar</b><span id="qa-review">Nada pendente</span></button>
+        <button class="az-action" data-goto="planejamento"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 20V10M12 20V4M17 20v-7"/></svg></span><b>Orçar</b><span>Planejar mês</span></button>
+        <button class="az-action" data-goto="dividas"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span><b>Dívidas</b><span>Ver parcelas</span></button>
+      </nav>
       <div class="grid2">
-        <div class="card"><div class="mf-section"><h3>Contas</h3><button class="mf-link" data-goto="ajustes">Gerenciar</button></div><div id="home-accounts"></div></div>
-        <div class="card"><div class="mf-section"><h3>Cartões</h3><button class="mf-link" data-goto="dividas">Ver dívidas</button></div><div id="home-cards"></div></div>
+        <div class="card"><div class="card-head"><h3>Destaques do mês</h3></div><div class="insight-list" id="home-insights"></div></div>
+        <div class="card"><div class="card-head"><h3>Contas e cartões</h3><button class="link" data-goto="ajustes">Gerenciar</button></div><div class="list" id="home-accounts"></div></div>
       </div>
+      <div class="section-head"><h2>Gastos por grupo</h2><button class="link" data-goto="planejamento">Ver orçamento</button></div>
+      <div class="cat-grid" id="home-groups"></div>
     </div>
   </section>
 
   <!-- LANÇAMENTOS -->
   <section class="tab" id="tab-lancamentos">
-    <div class="page-title"><div class="crumb">Extrato</div><h1>Lançamentos</h1></div>
+    <div class="page-head"><p class="overline">Extrato</p><h1>Lançamentos</h1></div>
     <div class="card filters">
       <div class="row">
-        <div class="month-nav"><button class="ghost sm icon" id="tx-prev" aria-label="Mês anterior">‹</button>
-          <input type="month" id="tx-month" aria-label="Mês"><button class="ghost sm icon" id="tx-next" aria-label="Próximo mês">›</button></div>
+        <div class="month-nav"><button class="ghost icon" id="tx-prev" aria-label="Mês anterior">‹</button>
+          <input type="month" id="tx-month" aria-label="Mês"><button class="ghost icon" id="tx-next" aria-label="Próximo mês">›</button></div>
         <select id="tx-account" aria-label="Conta"></select>
         <input id="tx-q" type="search" placeholder="Buscar descrição" aria-label="Buscar">
         <button class="primary" id="tx-add">Novo lançamento</button>
@@ -84,25 +92,26 @@
     <div class="tiles" id="tx-summary"></div>
     <div class="bulkbar card" id="bulkbar" hidden>
       <span id="bulk-count"></span><select id="bulk-cat" aria-label="Categoria"></select>
-      <button class="primary" id="bulk-apply">Categorizar</button><button class="ghost" id="bulk-clear">Limpar seleção</button>
+      <button class="primary" id="bulk-apply">Categorizar</button><button class="ghost" id="bulk-clear">Limpar</button>
     </div>
-    <div class="card" id="tx-list"></div>
+    <div class="card list" id="tx-list"></div>
   </section>
 
   <!-- IMPORTAR -->
   <section class="tab" id="tab-importar">
-    <div class="page-title"><div class="crumb">Extratos e faturas</div><h1>Importar extrato</h1></div>
+    <div class="page-head"><p class="overline">Extratos e faturas</p><h1>Importar extrato</h1></div>
     <div class="card">
       <label class="dropzone" id="dropzone">
         <input type="file" id="ofx-files" accept=".ofx,.OFX,application/x-ofx" multiple>
+        <span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M5 20h14"/></svg></span>
         <span class="dz-title">Arraste os arquivos OFX aqui</span>
         <span class="hint" style="margin:0">ou toque para escolher · extrato da conta e fatura do cartão · vários de uma vez</span>
       </label>
-      <div class="form" style="margin-top:16px">
+      <div class="form" style="margin-top:var(--space-4)">
         <label class="field">Conta<select id="imp-account"></select></label>
         <label class="field">Titular, se a conta for nova<select id="imp-owner"></select></label>
       </div>
-      <p class="hint">A conta é reconhecida pelo número que vem no arquivo; na primeira vez ela é criada. Lançamentos que já
+      <p class="hint" style="margin-top:var(--space-3)">A conta é reconhecida pelo número que vem no arquivo; na primeira vez ela é criada. Lançamentos que já
         foram importados são ignorados, então pode reenviar períodos que se sobrepõem.</p>
     </div>
     <div id="imp-results"></div>
@@ -117,13 +126,13 @@
 
   <!-- PLANEJAMENTO -->
   <section class="tab" id="tab-planejamento">
-    <div class="page-title"><div class="crumb">Orçamento e projeção</div><h1>Planejamento</h1></div>
+    <div class="page-head"><p class="overline">Orçamento e projeção</p><h1>Planejamento</h1></div>
     <div class="card filters">
       <div class="row">
-        <div class="month-nav"><button class="ghost sm icon" id="bud-prev" aria-label="Mês anterior">‹</button>
-          <input type="month" id="bud-month" aria-label="Mês"><button class="ghost sm icon" id="bud-next" aria-label="Próximo mês">›</button></div>
-        <div class="segmented" id="bud-scope"><button data-scope="padrao" class="active">Valer todo mês</button><button data-scope="mes">Só este mês</button></div>
-        <button id="bud-suggest">Sugerir pela média</button>
+        <div class="month-nav"><button class="ghost icon" id="bud-prev" aria-label="Mês anterior">‹</button>
+          <input type="month" id="bud-month" aria-label="Mês"><button class="ghost icon" id="bud-next" aria-label="Próximo mês">›</button></div>
+        <div class="segmented" id="bud-scope"><button data-scope="padrao" class="active">Todo mês</button><button data-scope="mes">Só este mês</button></div>
+        <button class="secondary" id="bud-suggest">Sugerir pela média</button>
         <button class="primary" id="bud-save">Salvar orçamento</button>
       </div>
     </div>
@@ -139,27 +148,30 @@
 
   <!-- DÍVIDAS -->
   <section class="tab" id="tab-dividas">
-    <div class="page-title"><div class="crumb">Cartões, empréstimos e acordos</div><h1>Dívidas</h1></div>
-    <div class="tiles" id="debt-tiles"></div>
-    <div class="mf-section"><h2 class="mf-section__title">Cartões</h2></div>
+    <div class="page-head"><p class="overline">Cartões, empréstimos e acordos</p><h1>Dívidas</h1></div>
+    <div class="debt-top">
+      <div class="card ring-card" id="debt-ring"></div>
+      <div class="tiles" id="debt-tiles"></div>
+    </div>
+    <div class="section-head"><h2>Cartões</h2></div>
     <div class="grid2" id="debt-cards"></div>
-    <div class="mf-section"><h2 class="mf-section__title">Empréstimos e outras dívidas</h2><button class="primary" id="debt-add">Nova dívida</button></div>
+    <div class="section-head"><h2>Empréstimos e outras dívidas</h2><button class="primary" id="debt-add">Nova dívida</button></div>
     <div class="grid2" id="debt-list"></div>
-    <div class="card" id="debt-strategy-card"><h3>Ordem sugerida para quitar</h3><div class="grid2" id="debt-strategy"></div></div>
+    <div class="card strategy" id="debt-strategy-card"><h3>Ordem sugerida para quitar</h3><div class="grid2" id="debt-strategy" style="margin:0"></div></div>
   </section>
 
   <!-- AJUSTES -->
   <section class="tab" id="tab-ajustes">
-    <div class="page-title"><div class="crumb">Configurações</div><h1>Ajustes</h1></div>
+    <div class="page-head"><p class="overline">Configurações</p><h1>Ajustes</h1></div>
     <div class="grid2">
-      <div class="card"><h3>Pessoas</h3><div id="set-people"></div>
-        <div class="row"><input id="new-person" placeholder="Nome" aria-label="Nome"><button id="add-person">Adicionar</button></div></div>
+      <div class="card"><h3>Pessoas</h3><div class="list" id="set-people"></div>
+        <div class="row"><input id="new-person" placeholder="Digite o nome" aria-label="Nome"><button id="add-person">Adicionar</button></div></div>
       <div class="card"><h3>Categorização por IA</h3><div id="set-ai"></div></div>
     </div>
-    <div class="card"><div class="mf-section"><h3>Contas e cartões</h3><button id="add-account">Nova conta</button></div><div id="set-accounts"></div></div>
-    <div class="card"><div class="mf-section"><h3>Categorias</h3><button id="add-category">Nova categoria</button></div><div id="set-categories"></div></div>
+    <div class="card"><div class="card-head"><h3>Contas e cartões</h3><button id="add-account">Nova conta</button></div><div class="list" id="set-accounts"></div></div>
+    <div class="card"><div class="card-head"><h3>Categorias</h3><button id="add-category">Nova categoria</button></div><div id="set-categories"></div></div>
     <div class="card">
-      <div class="mf-section"><h3>Regras de categorização</h3><div class="row" style="margin:0"><button id="add-rule">Nova regra</button><button id="reapply-rules">Reaplicar às pendentes</button></div></div>
+      <div class="card-head"><h3>Regras de categorização</h3><div class="row" style="margin:0"><button id="add-rule">Nova regra</button><button class="secondary" id="reapply-rules">Reaplicar às pendentes</button></div></div>
       <p class="hint">Cada vez que você corrige a categoria de um lançamento, o app cria uma regra para aquele estabelecimento.
         As regras “padrão” são palavras-chave de partida; as suas sempre têm prioridade.</p>
       <div class="row"><div class="segmented" id="rule-filter"><button data-src="" class="active">Suas</button><button data-src="padrao">Padrão</button></div></div>
@@ -169,11 +181,11 @@
 </main>
 
 <nav class="bottomnav" id="bottomnav" aria-label="Navegação">
-  <button data-tab="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Início</span></button>
-  <button data-tab="lancamentos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Lançamentos</span></button>
-  <button data-tab="importar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Importar</span></button>
-  <button data-tab="planejamento"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-6"/></svg><span>Planejar</span></button>
-  <button data-tab="dividas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg><span>Dívidas</span></button>
+  <button class="az-tab" data-tab="inicio" aria-current="page"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7v9H4z"/><path d="M10 20v-5h4v5"/></svg></span>Início</button>
+  <button class="az-tab" data-tab="lancamentos"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg></span>Extrato</button>
+  <button class="az-tab" data-tab="importar"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>Importar</button>
+  <button class="az-tab" data-tab="planejamento"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 20V10M12 20V4M17 20v-7"/></svg></span>Planejar</button>
+  <button class="az-tab" data-tab="dividas"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span>Dívidas</button>
 </nav>
 <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden><div class="sheet-grip"></div><div id="sheet-body"></div></div>

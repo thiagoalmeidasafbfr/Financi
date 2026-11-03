@@ -25,8 +25,9 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
 - **Casal**: cadastre as pessoas em **Ajustes**. Contas, cartões e dívidas têm titular (ou são conjuntos) e o
   seletor no topo filtra tudo por pessoa.
 
-Funciona no desktop e no celular. Visual no design system **Modern Finance** (`public/static/mf/`), tema escuro
-por padrão e claro pelo botão no topo.
+Funciona no desktop e no celular. Visual no design system **Azure Finance** (`public/static/az/`: `tokens.css` e
+componentes `az-*` em `bundle.css`): páginas brancas com o cabeçalho do Início em navy, tema navy pelo botão no
+topo, Helvetica Neue, direção dos valores pelo sinal e pela seta (sem verde e vermelho).
 
 ## Publicando no Vercel + Neon
 
@@ -131,6 +132,6 @@ app/
   seed.py          categorias e palavras-chave iniciais
   routers/         API: core (cadastros), transactions (lançamentos e importação), planning
   index.html       a página
-public/static/     app.js, style.css, design system e ECharts
+public/static/     app.js, style.css, design system (az/) e ECharts
 tests/             testes e extratos OFX de exemplo
 ```
