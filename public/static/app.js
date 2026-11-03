@@ -1,4 +1,4 @@
-/* Financi — interface (vanilla JS + ECharts). */
+/* Financi — finanças pessoais (vanilla JS + ECharts, design system Modern Finance). */
 "use strict";
 
 // ------------------------------------------------------------------ utilidades
@@ -8,13 +8,14 @@ const css = (name) => getComputedStyle(document.documentElement).getPropertyValu
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 const BRL2 = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const NUM = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (v) => (v == null || isNaN(v) ? "–" : BRL.format(v));
 const fmt2 = (v) => (v == null || isNaN(v) ? "–" : BRL2.format(v));
-const num = (v) => (!v ? "" : NUM.format(v));
-const pct = (v, d = 1) => (v == null || isNaN(v) ? "–" : (v * 100).toFixed(d).replace(".", ",") + "%");
+const pct = (v, d = 0) => (v == null || isNaN(v) ? "–" : (v * 100).toFixed(d).replace(".", ",") + "%");
 const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+const MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const mlabel = (iso) => (iso ? `${MESES[+iso.slice(5, 7) - 1]}/${iso.slice(2, 4)}` : "–");
+const mlong = (iso) => (iso ? `${MESES_LONGOS[+iso.slice(5, 7) - 1]} de ${iso.slice(0, 4)}` : "–");
+const dlabel = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "–");
 const short = (v) => {
   const a = Math.abs(v);
   if (a >= 1e6) return (v / 1e6).toFixed(1).replace(".", ",") + "M";
@@ -23,14 +24,20 @@ const short = (v) => {
 };
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const parseNum = (s) => {
-  s = String(s).trim();
+  s = String(s ?? "").trim();
   if (s === "") return null;
   if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
   const v = Number(s);
   return isNaN(v) ? undefined : v;
 };
-const toMonthInput = (iso) => (iso ? iso.slice(0, 7) : "");
-const fromMonthInput = (v) => (v ? `${v}-01` : null);
+const thisMonth = () => new Date().toISOString().slice(0, 7) + "-01";
+const addMonths = (iso, n) => {
+  const [y, m] = iso.split("-").map(Number);
+  const i = y * 12 + m - 1 + n;
+  return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}-01`;
+};
+const isMobile = () => window.matchMedia("(max-width: 700px)").matches;
+const initials = (s) => (s || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
 
 function toast(msg, action) {
   const t = $("#toast");
@@ -44,10 +51,8 @@ function toast(msg, action) {
   }
   t.classList.add("show");
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => t.classList.remove("show"), action ? 7000 : 2600);
+  toast._t = setTimeout(() => t.classList.remove("show"), action ? 7000 : 2800);
 }
-
-const isMobile = () => window.matchMedia("(max-width: 700px)").matches;
 
 async function api(method, url, body) {
   const opts = { method, headers: {} };
@@ -59,17 +64,25 @@ async function api(method, url, body) {
   const r = await fetch(url, opts);
   if (!r.ok) {
     let detail = r.statusText;
-    try { detail = JSON.stringify((await r.json()).detail); } catch (_) { /* sem corpo */ }
+    try {
+      const j = await r.json();
+      detail = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail);
+    } catch (_) { /* sem corpo */ }
     toast(`Erro: ${detail}`);
     throw new Error(detail);
   }
   return r.status === 204 ? null : r.json();
 }
+const withPerson = (url) => {
+  const p = state.person;
+  if (!p || p === "all") return url;
+  return url + (url.includes("?") ? "&" : "?") + `person=${encodeURIComponent(p)}`;
+};
 
-// ------------------------------------------------------------------ gráficos
-const SERIES = () => ["--series-1", "--series-2", "--series-3", "--series-4", "--series-5"].map(css);
+// ------------------------------------------------------------------ gráficos (monocromáticos, DS Modern Finance)
 const charts = {};
-
+const LIT = () => css("--chart-lit");
+const DIM = () => css("--chart-dim");
 function chart(id) {
   const el = document.getElementById(id);
   if (!el) return null;
@@ -78,1465 +91,32 @@ function chart(id) {
   return charts[id];
 }
 window.addEventListener("resize", () => Object.values(charts).forEach((c) => c.resize()));
-
 function baseOption() {
-  const ink2 = css("--text-secondary"), grid = css("--chart-grid"), axis = css("--border-default");
+  const ink2 = css("--text-secondary"), axis = css("--border-default");
   return {
-    animationDuration: 520,
+    animationDuration: 480,
     textStyle: { fontFamily: css("--font-core"), color: ink2 },
     grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
     tooltip: {
       trigger: "axis", backgroundColor: css("--surface-card"), borderWidth: 0,
-      extraCssText: `box-shadow:${css("--shadow-pop")};border-radius:10px`,
+      extraCssText: `box-shadow:${css("--shadow-pop")};border-radius:12px`,
       textStyle: { color: css("--text-primary"), fontFamily: css("--font-core") },
-      axisPointer: { type: "line", lineStyle: { color: axis } },
-      valueFormatter: (v) => fmt(v),
+      axisPointer: { type: "line", lineStyle: { color: axis } }, valueFormatter: (v) => fmt(v),
     },
     legend: { top: 0, left: 0, icon: "circle", itemWidth: 8, itemHeight: 8, textStyle: { color: ink2 } },
     xAxis: { type: "category", axisLine: { lineStyle: { color: axis } }, axisTick: { show: false }, axisLabel: { color: css("--text-muted") } },
-    yAxis: {
-      type: "value", splitLine: { lineStyle: { color: grid } }, axisLabel: { color: css("--text-muted"), formatter: short },
-    },
+    yAxis: { type: "value", splitLine: { lineStyle: { color: css("--chart-grid") } }, axisLabel: { color: css("--text-muted"), formatter: short } },
   };
 }
 
-// Modern Finance: gráficos monocromáticos; "aceso" para o foco, "apagado" para o contexto.
-const LIT = () => css("--chart-lit");
-const DIM = () => css("--chart-dim");
-const DASHES = ["solid", "dashed", "dotted", [8, 3, 2, 3], [2, 6]];
-// traço fixo por cenário, para distinguir linhas sem depender de cor
-function scenarioDash(id) {
-  const idx = state.scenarios.findIndex((s) => s.id === id);
-  return DASHES[Math.max(0, idx) % DASHES.length];
-}
-
-// cor fixa por cenário (segue a entidade, não a posição na seleção)
-function scenarioColor(id) {
-  const idx = state.scenarios.findIndex((s) => s.id === id);
-  const pal = SERIES();
-  return idx >= 0 && idx < pal.length ? pal[idx] : css("--series-other");
-}
-
-const SANKEY_COLORS = () => ({
-  receita: css("--series-1"),
-  despesa_fixa: css("--series-2"),
-  divida: css("--series-4"),
-  despesa_variavel: css("--series-5"),
-  investimento: css("--series-3"),
-  sobra: css("--ink-900"),
-  outros: css("--gray-500"),
-});
-
-function renderSankey(id, data, compact = false) {
-  const c = chart(id);
-  if (!c) return;
-  const colors = SANKEY_COLORS();
-  c.setOption({
-    textStyle: { fontFamily: css("--font-core") },
-    tooltip: {
-      trigger: "item", backgroundColor: css("--surface-card"), borderWidth: 0,
-      extraCssText: `box-shadow:${css("--shadow-pop")};border-radius:10px`,
-      textStyle: { color: css("--text-primary") },
-      formatter: (p) => {
-        if (p.dataType === "edge") return `${esc(p.data.source)} → ${esc(p.data.target)}<br><b>${fmt(p.data.value)}</b>`;
-        let html = `${esc(p.name)}<br><b>${fmt(p.value)}</b>`;
-        const src = data.sources;
-        if (p.name === data.hub && src && (src.resgates > 0.005 || src.saldo_anterior > 0.005)) {
-          html += `<br><span style="color:${css("--text-secondary")}">receitas ${fmt(src.receitas)}` +
-            (src.resgates > 0.005 ? ` · resgates ${fmt(src.resgates)}` : "") +
-            (src.saldo_anterior > 0.005 ? ` · saldo anterior ${fmt(src.saldo_anterior)}` : "") + "</span>";
-        }
-        return html;
-      },
-    },
-    series: [{
-      type: "sankey", left: 8, right: compact ? 110 : 190, top: 8, bottom: 8,
-      nodeGap: compact ? 6 : 9, nodeWidth: 10, draggable: false,
-      emphasis: { focus: "adjacency" },
-      data: data.nodes.map((n) => ({
-        name: n.name, depth: n.depth, itemStyle: { color: colors[n.group] || colors.outros, borderWidth: 0 },
-        // rótulos das colunas do meio ganham fundo para não se perderem sobre os fluxos
-        label: n.depth === 1 || n.depth === 2
-          ? { backgroundColor: css("--surface-card"), borderRadius: 4, padding: [2, 5], opacity: 0.94 }
-          : { overflow: "truncate", width: compact ? 105 : 180 },
-      })),
-      links: data.links,
-      lineStyle: { color: "gradient", opacity: 0.28, curveness: 0.5 },
-      label: {
-        color: css("--text-primary"), fontSize: compact ? 10 : 12,
-        formatter: (p) => `${p.name}  {v|${short(p.value)}}`,
-        rich: { v: { color: css("--text-muted"), fontSize: compact ? 9 : 11 } },
-      },
-    }],
-  }, true);
-}
-
-// ------------------------------------------------------------------ estado
-const state = {
-  scenarios: [], categories: [], accounts: [], loans: [],
-  current: null, projection: null, view: null, period: { start: null, end: null }, tab: "painel", arrears: [], newLines: new Set(), sug: { month: null, result: null },
-  sankeyMonth: null, compareIds: null,
-};
-const GROUPS = {
-  receita: "Receitas", despesa_fixa: "Despesas fixas", divida: "Empréstimos e dívidas",
-  despesa_variavel: "Despesas variáveis", investimento: "Investimentos e reserva",
-};
-const KINDS = {
-  manual: "Manual", salario: "Salário (reajustes)", decimo_terceiro: "13º salário", ferias: "1/3 de férias",
-  restituicao_ir: "Restituição IR", bonus: "Bônus", consignados: "Consignados", quitacao: "Quitação de consignados",
-  atrasos: "Pagamento de atrasos",
-};
-
-async function loadBase() {
-  [state.scenarios, state.categories, state.accounts] = await Promise.all([
-    api("GET", "/api/scenarios"), api("GET", "/api/categories"), api("GET", "/api/accounts"),
-  ]);
-  const sel = $("#scenario");
-  if (!state.scenarios.find((s) => s.id === state.current)) {
-    const base = state.scenarios.find((s) => s.is_baseline) || state.scenarios[0];
-    state.current = base ? base.id : null;
-  }
-  sel.innerHTML = state.scenarios.map((s) => `<option value="${s.id}">${esc(s.name)}${s.is_baseline ? " (base)" : ""}</option>`).join("");
-  if (state.current) sel.value = state.current;
-}
-
-const currentScenario = () => state.scenarios.find((s) => s.id === state.current);
-
-async function loadProjection() {
-  if (!state.current) {
-    state.projection = state.view = null;
-    return;
-  }
-  state.projection = await api("GET", `/api/scenarios/${state.current}/projection`);
-  const months = state.projection.months;
-  let { start, end } = state.period;
-  if (start && !months.includes(start)) start = null;
-  if (end && !months.includes(end)) end = null;
-  if (start && end && start > end) [start, end] = [end, start];
-  state.period = { start, end };
-  // Painel e Fluxo usam o recorte do período; as demais telas usam o horizonte inteiro
-  state.view = start || end
-    ? await api("GET", `/api/scenarios/${state.current}/projection?${periodQuery()}`)
-    : state.projection;
-}
-
-function periodQuery() {
-  const q = new URLSearchParams();
-  if (state.period.start) q.set("start", state.period.start);
-  if (state.period.end) q.set("end", state.period.end);
-  return q.toString();
-}
-
-function periodPresets(months) {
-  const presets = [["Horizonte todo", null, null]];
-  const today = new Date().toISOString().slice(0, 7) + "-01";
-  const from = months.find((m) => m >= today);
-  if (from) {
-    const i = months.indexOf(from);
-    presets.push(["Próximos 12 meses", from, months[Math.min(i + 11, months.length - 1)]]);
-  }
-  for (const y of [...new Set(months.map((m) => m.slice(0, 4)))]) {
-    const ms = months.filter((m) => m.startsWith(y));
-    presets.push([y, ms[0], ms[ms.length - 1]]);
-  }
-  return presets;
-}
-
-function renderPeriodBars() {
-  const months = state.projection?.months || [];
-  const { start, end } = state.period;
-  const s = start || months[0], e = end || months[months.length - 1];
-  const opts = (sel) => months.map((m) => `<option value="${m}" ${m === sel ? "selected" : ""}>${mlabel(m)}</option>`).join("");
-  const presets = periodPresets(months);
-  $$(".period-bar").forEach((bar) => {
-    bar.innerHTML = `<span class="eyebrow" style="margin:0">Período</span>
-      <select data-p="start" aria-label="Início do período">${opts(s)}</select><span class="muted">a</span>
-      <select data-p="end" aria-label="Fim do período">${opts(e)}</select>
-      <div class="segmented">${presets.map(([label, a, b]) =>
-        `<button data-a="${a || ""}" data-b="${b || ""}" class="${(a || null) === start && (b || null) === end ? "active" : ""}">${label}</button>`).join("")}</div>
-      <span class="muted">${state.view ? `${state.view.months.length} meses` : ""}</span>`;
-  });
-}
-
-async function setPeriod(start, end) {
-  const months = state.projection?.months || [];
-  // período igual ao horizonte inteiro = sem recorte
-  state.period = {
-    start: start && start !== months[0] ? start : null,
-    end: end && end !== months[months.length - 1] ? end : null,
-  };
-  await refresh();
-}
-
-document.addEventListener("change", (e) => {
-  const bar = e.target.closest(".period-bar");
-  if (!bar || !e.target.dataset.p) return;
-  setPeriod(bar.querySelector('[data-p="start"]').value, bar.querySelector('[data-p="end"]').value);
-});
-document.addEventListener("click", (e) => {
-  const b = e.target.closest(".period-bar .segmented button");
-  if (b) setPeriod(b.dataset.a || null, b.dataset.b || null);
-});
-
-async function refresh() {
-  $$("[data-scn]").forEach((el) => (el.textContent = currentScenario()?.name || "sem cenário"));
-  const empty = !state.scenarios.length;
-  $("#empty-state").hidden = !empty;
-  $("#painel-content").hidden = empty;
-  await loadProjection();
-  renderPeriodBars();
-  await (RENDER[state.tab] || (() => {}))();
-}
-
-// ------------------------------------------------------------------ PAINEL
-const KPI_LABELS = [
-  ["PERÍODO", null],
-  ["mes_inicial", "Mês inicial", "m"], ["mes_final", "Mês final", "m"], ["n_meses", "Nº de meses", "n"],
-  ["PATRIMÔNIO", null],
-  ["saldo_inicial_conta", "Saldo inicial em conta"], ["saldo_final_conta", "Saldo final em conta"],
-  ["saldo_final_investido", "Saldo final investido"], ["saldo_inicial_fgts", "Saldo inicial FGTS"],
-  ["saldo_final_fgts", "Saldo final FGTS"], ["patrimonio_final", "Conta + investimentos + FGTS"],
-  ["menor_saldo_conta", "Menor saldo em conta"], ["mes_menor_saldo", "Mês do menor saldo", "m"],
-  ["meses_saldo_negativo", "Meses com saldo negativo", "n"], ["rendimento_acumulado", "Rendimento acumulado dos investimentos"],
-  ["MÉDIAS MENSAIS", null],
-  ["receita_media", "Receita média"], ["despesa_media", "Despesa média (total)"],
-  ["custo_moradia_medio", "Custo médio com moradia"], ["pct_renda_moradia", "% da renda com moradia", "p"],
-  ["custo_saude_medio", "Custo médio com saúde"], ["despesa_variavel_media", "Despesas variáveis – média"],
-  ["saldo_livre_medio", "Saldo livre médio"], ["taxa_poupanca", "Taxa de poupança", "p"],
-  ["DÍVIDAS", null],
-  ["total_parcelas", "Total pago em parcelas"], ["total_quitacoes", "Total em quitações antecipadas"],
-  ["total_atrasos_pagos", "Total pago em atrasos"],
-  ["total_dividas", "Total de dívidas pagas"], ["pct_renda_dividas", "% da renda com dívidas", "p"],
-  ["ultimo_mes_com_parcela", "Último mês com parcela", "m"], ["meses_acima_limite_dividas", "Meses acima do limite", "n"],
-  ["INVESTIMENTOS", null],
-  ["total_investido", "Total investido / reserva"],
-];
-const kfmt = (v, t) => (t === "m" ? mlabel(v) : t === "n" ? String(v ?? "–") : t === "p" ? pct(v) : fmt(v));
-
-async function renderPainel() {
-  const p = state.view;
-  if (!p) return;
-  const k = p.kpis, s = p.series, months = p.months;
-  const whole = !state.period.start && !state.period.end;
-  $("#hero-eyebrow").textContent = "Patrimônio";
-  $("#hero-value").textContent = fmt2(k.patrimonio_final);
-  $("#hero-caption").textContent = `${whole ? "fim do horizonte" : `fim de ${mlabel(k.mes_final)}`} · conta + investimentos + FGTS`;
-  // TrendPill: variação do patrimônio no período (direção pela seta e pelas palavras, nunca pela cor)
-  const startPat = p.waterfall.start + k.saldo_inicial_fgts;
-  const delta = k.patrimonio_final - startPat;
-  const arrow = delta >= 0 ? '<path d="M7 17 17 7M9 7h8v8"/>' : '<path d="M7 7l10 10M17 9v8H9"/>';
-  const rel = Math.abs(startPat) > 1 ? ` (${(Math.abs(delta / startPat) * 100).toFixed(1).replace(".", ",")}%)` : "";
-  $("#hero-trend").hidden = false;
-  $("#hero-trend").innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${arrow}</svg>${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))}${rel} no período`;
-  renderCategoryCards(p);
-  const neg = k.meses_saldo_negativo;
-  $("#hero-insight").innerHTML = neg
-    ? `<div class="insight"><span class="badge negative">${neg} ${neg > 1 ? "meses" : "mês"}</span><span>com saldo negativo em conta; o pior é <b>${mlabel(k.mes_menor_saldo)}</b> (${fmt(k.menor_saldo_conta)})</span></div>`
-    : `<div class="insight"><span class="badge accent">ok</span><span>saldo em conta nunca fica negativo no período</span></div>`;
-
-  const tiles = [
-    ["Saldo final em conta", fmt(k.saldo_final_conta), `menor: ${fmt(k.menor_saldo_conta)} em ${mlabel(k.mes_menor_saldo)}`],
-    ["Saldo final investido", fmt(k.saldo_final_investido), `rendimento acumulado ${fmt(k.rendimento_acumulado)}`],
-    ["FGTS ao fim", fmt(k.saldo_final_fgts), "referência, fora do saldo em conta"],
-    ["Saldo livre médio", fmt(k.saldo_livre_medio), `taxa de poupança ${pct(k.taxa_poupanca)}`],
-    ["Renda com dívidas", pct(k.pct_renda_dividas), `${k.meses_acima_limite_dividas} meses acima do limite`],
-    ["Última parcela", mlabel(k.ultimo_mes_com_parcela), `quitações: ${fmt(k.total_quitacoes)}`, true],
-  ];
-  $("#kpi-tiles").innerHTML = tiles.map(([l, v, sub, inv]) =>
-    `<div class="tile${inv ? " inverse" : ""}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${sub}</div></div>`).join("");
-
-  // Sankey
-  const mSel = $("#sankey-month");
-  mSel.innerHTML = months.map((m) => `<option value="${m}">${mlabel(m)}</option>`).join("");
-  if (state.sankeyMonth && months.includes(state.sankeyMonth)) mSel.value = state.sankeyMonth;
-  await drawPainelSankey();
-
-  renderWaterfall(p.waterfall, k);
-  const line = (name, data, color, extra = {}) => ({ name, type: "line", data, color, symbol: "none", lineStyle: { width: 2 }, ...extra });
-  chart("chart-lines").setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
-    series: [
-      line("Receitas", s.receitas, css("--ink-muted"), { lineStyle: { width: 2, type: "dashed" } }),
-      line("Despesas", s.total_despesas, css("--ink-subtle"), { lineStyle: { width: 2, type: "dotted" } }),
-      line("Saldo conta + investido", s.saldo_total, LIT(), { lineStyle: { width: 2.5 },
-        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } }),
-      line("FGTS", s.fgts_saldo, DIM(), { lineStyle: { width: 2 } }),
-    ],
-  }, true);
-
-  // tabela de KPIs
-  let html = "<table>";
-  for (const [key, label, t] of KPI_LABELS) {
-    if (label === null) html += `<tr class="group"><td colspan="2">${key}</td></tr>`;
-    else html += `<tr><td>${label}</td><td>${kfmt(k[key], t)}</td></tr>`;
-  }
-  $("#kpi-table").innerHTML = html + "</table>";
-}
-
-function renderWaterfall(w, k) {
-  const SHORT = { receitas: "Receitas", despesas_fixas: "Fixas", dividas: "Dívidas", despesas_variaveis: "Variáveis", rendimento: "Rend." };
-  const cats = isMobile()
-    ? ["Inicial", ...w.steps.map((x) => SHORT[x.key] || x.label), "Final"]
-    : ["Saldo inicial", ...w.steps.map((x) => x.label), "Saldo final"];
-  const items = [];
-  let run = w.start;
-  items.push({ y0: 0, y1: w.start, v: w.start, kind: "total" });
-  for (const st of w.steps) {
-    items.push({ y0: run, y1: run + st.value, v: st.value, kind: st.value >= 0 ? "up" : "down" });
-    run += st.value;
-  }
-  items.push({ y0: 0, y1: w.end, v: w.end, kind: "total" });
-  const color = { total: LIT(), up: css("--ink-muted"), down: DIM() };
-  const signed = (v, kind) => (kind === "total" ? fmt(v) : `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`);
-  chart("chart-waterfall").setOption({
-    ...baseOption(),
-    legend: { show: false },
-    grid: { left: 8, right: 16, top: 30, bottom: 8, containLabel: true },
-    tooltip: { ...baseOption().tooltip, trigger: "item", formatter: (p) => {
-      const it = items[p.dataIndex];
-      return `${cats[p.dataIndex]}<br><b>${signed(it.v, it.kind)}</b>` +
-        (p.dataIndex === 0 ? `<br><span style="color:${css("--text-muted")}">fim de ${mlabel(prevMonth(k.mes_inicial))}</span>` : "") +
-        (p.dataIndex === items.length - 1 ? `<br><span style="color:${css("--text-muted")}">fim de ${mlabel(k.mes_final)}</span>` : "");
-    } },
-    xAxis: { ...baseOption().xAxis, data: cats, axisLabel: { color: css("--text-secondary"), interval: 0, width: 80, overflow: "break", fontSize: 11 } },
-    series: [{
-      type: "custom",
-      data: items.map((it, i) => [i, it.y0, it.y1]),
-      renderItem: (params, api) => {
-        const i = api.value(0), a = api.coord([i, api.value(1)]), b = api.coord([i, api.value(2)]);
-        const w2 = api.size([1, 0])[0] * 0.56;
-        const it = items[i];
-        return {
-          type: "group",
-          children: [
-            { type: "rect", shape: { x: a[0] - w2 / 2, y: Math.min(a[1], b[1]), width: w2, height: Math.max(1, Math.abs(a[1] - b[1])), r: 3 },
-              style: { fill: color[it.kind] } },
-            { type: "text", style: { text: it.kind === "total" ? short(it.v) : `${it.v >= 0 ? "+" : "−"}${short(Math.abs(it.v))}`, x: a[0], y: Math.min(a[1], b[1]) - 6, align: "center", verticalAlign: "bottom",
-              fill: css("--text-secondary"), font: `11px ${css("--font-core")}` } },
-          ],
-        };
-      },
-      encode: { x: 0, y: [1, 2] },
-    }],
-  }, true);
-}
-
-const prevMonth = (iso) => { const [y, m] = iso.split("-").map(Number); return m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, "0")}-01`; };
-
-const CAT_ICONS = {
-  receitas: '<path d="M12 19V5M5 12l7-7 7 7"/>',
-  despesas_fixas: '<path d="M3 11l9-7 9 7v9H3z"/><path d="M9 20v-6h6v6"/>',
-  dividas: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>',
-  despesas_variaveis: '<path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/>',
-};
-
-// CategoryCard do DS: ícone, barras do período (mês atual aceso), total com centavos discretos
-function renderCategoryCards(p) {
-  const s = p.series, months = p.months;
-  const today = new Date().toISOString().slice(0, 7) + "-01";
-  const focus = months.includes(today) ? months.indexOf(today) : months.length - 1;
-  const cards = [["receitas", "Receitas"], ["despesas_fixas", "Despesas fixas"], ["dividas", "Dívidas"], ["despesas_variaveis", "Variáveis"]];
-  $("#cat-cards").innerHTML = cards.map(([key, label]) => {
-    const vals = s[key], max = Math.max(...vals, 1), total = vals.reduce((a, b) => a + b, 0);
-    const [whole, cents] = BRL2.format(total).split(",");
-    const bars = vals.map((v, i) => `<i class="${i === focus ? "on" : ""}" style="height:${Math.max(4, (v / max) * 100)}%" title="${mlabel(months[i])}: ${fmt(v)}"></i>`).join("");
-    return `<div class="mf-cat">
-      <div class="mf-cat__icon"><svg viewBox="0 0 24 24" aria-hidden="true">${CAT_ICONS[key]}</svg></div>
-      <div class="mf-spark">${bars}</div>
-      <div><div class="mf-cat__label">${label}</div>
-        <div class="mf-cat__amount">${whole}<small>,${cents}</small></div>
-        <div class="mf-cat__meta">média ${fmt(total / vals.length)}/mês · aceso: ${mlabel(months[focus])}</div></div>
-    </div>`;
-  }).join("");
-}
-
-async function drawPainelSankey() {
-  const mode = $("#sankey-mode .active").dataset.mode;
-  const sel = $("#sankey-month");
-  sel.hidden = mode !== "month";
-  let url = `/api/scenarios/${state.current}/sankey?${periodQuery()}`;
-  if (mode === "month") {
-    state.sankeyMonth = sel.value;
-    url = `/api/scenarios/${state.current}/sankey?month=${sel.value}`;
-  }
-  renderSankey("chart-sankey", await api("GET", url), isMobile());
-}
-
-// ------------------------------------------------------------------ FLUXO
-const SUMMARY_ROWS = [
-  ["receitas", "Receitas totais"], ["total_despesas", "Total de despesas"], ["saldo_operacional", "Saldo operacional"],
-  ["saldo_disponivel", "Saldo disponível em conta (antes de investir)"], ["investimentos", "(−) Investimentos e reserva"],
-  ["inv_resgate_automatico", "(+) Resgate automático"], ["saldo_livre", "Saldo livre do mês"],
-  ["saldo_conta", "Saldo acumulado em conta", "highlight"], ["inv_rendimento", "(+) Rendimento dos investimentos"],
-  ["inv_saldo_fim", "Saldo investido"],
-  ["saldo_total", "Saldo total (conta + investimentos)", "highlight"], ["fgts_saldo", "Saldo FGTS (referência)"],
-];
-
-function seriesRow(label, vals, { cls = "", tip = "", last = false, fmtv = num } = {}) {
-  const sum = vals.reduce((a, b) => a + b, 0);
-  return `<tr class="${cls}" title="${tip}"><td>${label}</td>${vals.map((v) => `<td class="auto">${fmtv(v)}</td>`).join("")}
-    <td>${last ? fmtv(vals[vals.length - 1]) : fmtv(sum)}</td><td>${last ? "" : fmtv(sum / vals.length)}</td></tr>`;
-}
-
-function investAutoRow(p) {
-  const s = p.series;
-  if (!s.inv_automatico.some((v) => v)) return "";
-  return seriesRow('Investimento automático <span class="badge">auto</span>', s.inv_automatico,
-    { tip: "Calculado pelo % a investir e pelo saldo mínimo (Premissas → parâmetros mês a mês)" });
-}
-
-function investYieldRows(p) {
-  const s = p.series;
-  if (!s.inv_saldo_fim.some((v) => v) && !s.inv_rendimento.some((v) => v)) return "";
-  const pctv = (v) => (v ? pct(v, 2) : "");
-  return seriesRow("Rendimento do mês", s.inv_rendimento, { cls: "info", tip: "Saldo investido no início do mês × rentabilidade" }) +
-    seriesRow("Rendimento acumulado", s.inv_rendimento_acumulado, { cls: "info", last: true }) +
-    seriesRow("Rentabilidade (% a.m.)", s.inv_rentabilidade, { cls: "info", last: true, fmtv: pctv }) +
-    seriesRow("Saldo investido no fim do mês", s.inv_saldo_fim, { cls: "info", last: true });
-}
-
-function renderFluxo() {
-  if (!state.flowView) state.flowView = isMobile() ? "mes" : "tabela";
-  $$("#flow-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === state.flowView));
-  $("#flow-table-view").hidden = state.flowView !== "tabela";
-  $("#flow-month-view").hidden = state.flowView !== "mes";
-  return state.flowView === "mes" ? renderFluxoMonths() : renderFluxoTable();
-}
-
-function renderFluxoTable() {
-  const p = state.view;
-  if (!p) return;
-  const months = p.months;
-  let h = `<thead><tr><th>R$</th>${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}<th>Total</th><th>Média</th></tr></thead><tbody>`;
-  for (const [g, label] of Object.entries(GROUPS)) {
-    const showEmpty = $("#flow-empty").checked;
-    const rows = p.rows.filter((r) => r.group === g &&
-      (showEmpty || r.kind !== "manual" || state.newLines.has(r.category_id) || r.values.some((v) => v)));
-    h += `<tr class="group"><td>${label} <button class="ghost sm newline" data-newline="${g}">+ Nova linha</button></td>${months.map(() => "<td></td>").join("")}<td></td><td></td></tr>`;
-    if (g === "investimento") h += investAutoRow(p);
-    for (const r of rows) {
-      const auto = r.kind !== "manual";
-      h += `<tr data-cat="${r.category_id}"><td>${esc(r.name)}${auto ? ' <span class="badge">auto</span>' : ""}
-        <span class="rowtools"><button class="ghost sm" data-fill="${r.category_id}" title="Repetir um valor em vários meses">Repetir</button>${auto ? "" : `<button class="ghost sm" data-rename="${r.category_id}" title="Renomear a linha (vale para todos os cenários)">Renomear</button><button class="ghost sm danger" data-clear="${r.category_id}" title="Apagar os valores desta linha neste cenário">Remover</button>`}</span></td>`;
-      const movable = !LOCKED_KINDS.has(r.kind);
-      r.values.forEach((v, i) => {
-        const has = Math.abs(v) > 0.005;
-        const cls = ["cell", auto ? "auto" : "", r.overridden[i] ? "override" : "", movable && has ? "draggable" : ""].join(" ");
-        const dnd = movable
-          ? ` data-drop-month="${months[i]}" data-drop-cat="${r.category_id}"` +
-            (has ? ` data-drag data-cat="${r.category_id}" data-month="${months[i]}" data-value="${v}" data-label="${esc(r.name)}"` : "")
-          : "";
-        h += `<td class="${cls}" data-i="${i}"${dnd}>${num(v)}</td>`;
-      });
-      h += `<td>${num(r.total)}</td><td>${num(r.average)}</td></tr>`;
-    }
-    // investimentos: o total inclui o investimento automático (que não é uma linha digitada)
-    const tot = g === "investimento" ? p.series.investimentos
-      : months.map((_, i) => rows.reduce((a, r) => a + r.values[i], 0));
-    const sum = tot.reduce((a, b) => a + b, 0);
-    h += `<tr class="total"><td>Total ${label.toLowerCase()}</td>${tot.map((v) => `<td>${num(v)}</td>`).join("")}<td>${num(sum)}</td><td>${num(sum / months.length)}</td></tr>`;
-    if (g === "investimento") h += investYieldRows(p);
-  }
-  h += `<tr class="group"><td>Visão consolidada</td>${months.map(() => "<td></td>").join("")}<td></td><td></td></tr>`;
-  for (const [key, label, cls] of SUMMARY_ROWS) {
-    const vals = p.series[key];
-    const cum = ["saldo_conta", "inv_saldo_fim", "saldo_total", "fgts_saldo", "saldo_disponivel"].includes(key);
-    const sum = vals.reduce((a, b) => a + b, 0);
-    h += `<tr class="${cls || ""}"><td>${label}</td>${vals.map((v) => `<td class="${v < -0.005 ? "neg" : ""}">${num(v)}</td>`).join("")}
-      <td>${cum ? num(vals[vals.length - 1]) : num(sum)}</td><td>${cum ? "" : num(sum / vals.length)}</td></tr>`;
-  }
-  h += `<tr><td>% da renda com dívidas</td>${p.series.pct_dividas.map((v, i) =>
-    `<td class="${p.series.alerta_dividas[i] ? "alert" : ""}">${pct(v)}</td>`).join("")}<td></td><td></td></tr>`;
-  h += "</tbody>";
-  $("#flow-table").innerHTML = h;
-}
-
-$("#flow-empty").addEventListener("change", renderFluxo);
-$("#flow-table").addEventListener("click", async (ev) => {
-  const fillBtn = ev.target.closest("[data-fill]");
-  if (fillBtn) return fillRow(+fillBtn.dataset.fill);
-  const t = ev.target.closest("[data-newline],[data-rename],[data-clear]");
-  if (t?.dataset.newline) return newLine(t.dataset.newline);
-  if (t?.dataset.rename) return renameLine(+t.dataset.rename);
-  if (t?.dataset.clear) return clearLine(+t.dataset.clear);
-  const td = ev.target.closest("td.cell");
-  if (!td || td.querySelector("input")) return;
-  const catId = +td.parentElement.dataset.cat, i = +td.dataset.i;
-  const row = state.view.rows.find((r) => r.category_id === catId);
-  const month = state.view.months[i];
-  const editable = row.kind === "manual" ? row.values[i] : row.overridden[i] ? row.values[i] : "";
-  td.innerHTML = `<input class="edit" value="${editable ? String(editable).replace(".", ",") : ""}">`;
-  const input = td.querySelector("input");
-  input.focus();
-  input.select();
-  let done = false;
-  const commit = async (save) => {
-    if (done) return;
-    done = true;
-    if (!save) return renderFluxo();
-    const v = parseNum(input.value);
-    if (v === undefined) { toast("Valor inválido"); return renderFluxo(); }
-    await api("PUT", `/api/scenarios/${state.current}/entries`, [{ category_id: catId, month, amount: v }]);
-    await refresh();
-  };
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") commit(true);
-    if (e.key === "Escape") commit(false);
-  });
-  input.addEventListener("blur", () => commit(true));
-});
-
-async function newLine(group) {
-  const name = (prompt(`Nome da nova linha em "${GROUPS[group]}":`) || "").trim();
-  if (!name) return;
-  // linha que já existe (oculta por estar vazia neste cenário ou desativada) é reaproveitada
-  let cat = state.categories.find((c) => c.group === group && c.name.toLowerCase() === name.toLowerCase());
-  if (cat && !cat.active) await api("PUT", `/api/categories/${cat.id}`, { ...cat, active: true });
-  if (!cat) {
-    const order = Math.max(0, ...state.categories.filter((c) => c.group === group).map((c) => c.sort_order)) + 10;
-    cat = await api("POST", "/api/categories", { name, group, kind: "manual", sort_order: order });
-  }
-  state.newLines.add(cat.id);
-  await loadBase();
-  await refresh();
-  toast(`Linha “${name}” criada: clique nas células para lançar valores`);
-}
-
-async function renameLine(catId) {
-  const cat = state.categories.find((c) => c.id === catId);
-  const name = (prompt("Novo nome (vale para todos os cenários):", cat.name) || "").trim();
-  if (!name || name === cat.name) return;
-  await api("PUT", `/api/categories/${catId}`, { ...cat, name });
-  await loadBase();
-  await refresh();
-}
-
-async function clearLine(catId) {
-  const row = state.projection.rows.find((r) => r.category_id === catId);
-  if (!confirm(`Apagar todos os valores de "${row.name}" neste cenário? A linha some do fluxo (continua disponível nos outros cenários).`)) return;
-  const m = state.projection.months;
-  await api("POST", `/api/scenarios/${state.current}/entries/fill`,
-    { category_id: catId, from_month: m[0], to_month: m[m.length - 1], amount: null });
-  state.newLines.delete(catId);
-  await refresh();
-}
-
-async function fillRow(catId) {
-  const row = state.view.rows.find((r) => r.category_id === catId);
-  const months = state.view.months;
-  const value = prompt(`Valor para "${row.name}" (vazio = limpar):`, "");
-  if (value === null) return;
-  const v = parseNum(value);
-  if (v === undefined) return toast("Valor inválido");
-  const from = prompt("A partir de (mm/aaaa):", mlabel(months[0]).replace(/^(\w+)\/(\d+)$/, (_, m, y) => `${String(MESES.indexOf(m) + 1).padStart(2, "0")}/20${y}`));
-  if (!from) return;
-  const to = prompt("Até (mm/aaaa):", `${months[months.length - 1].slice(5, 7)}/${months[months.length - 1].slice(0, 4)}`);
-  if (!to) return;
-  const iso = (s) => { const [m, y] = s.split("/"); return `${y}-${m.padStart(2, "0")}-01`; };
-  await api("POST", `/api/scenarios/${state.current}/entries/fill`, { category_id: catId, from_month: iso(from), to_month: iso(to), amount: v });
-  toast("Valores lançados");
-  await refresh();
-}
-
-// ------------------------------------------------------------------ PREMISSAS
-const SCN_FIELDS = [
-  ["name", "Nome", "text"], ["description", "Descrição", "text"], ["start_month", "Mês inicial", "month"],
-  ["months", "Horizonte (meses)", "int"], ["initial_balance", "Saldo inicial em conta (R$)", "money"],
-  ["debt_limit_pct", "Limite de dívidas (% da renda)", "pct"], ["is_baseline", "Cenário base (orçado × realizado)", "bool"],
-  ["fgts_initial", "Saldo inicial FGTS (R$)", "money"], ["fgts_rate_yearly", "Rendimento FGTS (% a.a.)", "pct"],
-  ["fgts_aliquot", "Alíquota FGTS (% do bruto)", "pct"], ["gross_salary", "Salário bruto (R$)", "money"],
-  ["bonus_salaries", "Bônus anual (nº de salários)", "float"], ["bonus_month", "Mês do bônus (1–12)", "int"],
-  ["ir_amount", "Restituição IR (R$)", "money"], ["ir_month", "Mês da restituição (1–12)", "int"],
-  ["vacation_month", "Mês do 1/3 de férias (1–12)", "int"],
-  ["thirteenth_first_year", "13º – primeiro ano", "int"], ["thirteenth_last_year", "13º – último ano", "int"],
-  ["thirteenth_month_1", "13º – mês da 1ª parcela", "int"], ["thirteenth_month_2", "13º – mês da 2ª parcela", "int"],
-  ["apply_inflation", "Aplicar inflação nas despesas", "bool"], ["inflation_month", "Mês do reajuste (1–12)", "int"],
-  ["invest_mode", "Regra do investimento automático", "mode"], ["invest_pct", "% a investir (padrão)", "pct"],
-  ["min_balance", "Saldo mínimo em conta (R$)", "money"], ["invest_return_monthly", "Rentabilidade (% a.m.)", "pct"],
-  ["initial_invested", "Saldo inicial investido (R$)", "money"],
-];
-
-// [exemplo no campo, explicação ao passar o mouse]
-const FIELD_HELP = {
-  months: ["26", "Quantos meses o cenário projeta a partir do mês inicial"],
-  gross_salary: ["12000", "Usado só para o depósito de FGTS (alíquota × salário bruto); o fluxo usa o salário líquido dos reajustes"],
-  bonus_salaries: ["1,5", "Bônus = este número × salário líquido do mês do bônus. Vazio ou 0 = sem bônus"],
-  bonus_month: ["3", "Mês do ano em que o bônus cai (1 = janeiro … 12 = dezembro)"],
-  ir_month: ["5", "Mês do ano em que a restituição cai (1–12). Vazio = sem restituição"],
-  vacation_month: ["9", "Mês do ano em que entra o 1/3 de férias (salário líquido ÷ 3). Vazio = sem 1/3"],
-  thirteenth_first_year: ["2026", "Primeiro ano em que você recebe 13º neste cenário. 13º = metade do salário líquido em cada mês de parcela. Vazio = sem 13º (ex.: MEI/PJ)"],
-  thirteenth_last_year: ["2028", "Último ano em que você recebe 13º (normalmente o último ano do horizonte). Vazio = sem 13º"],
-  thirteenth_month_1: ["11", "Mês da 1ª parcela do 13º (normalmente 11 = novembro)"],
-  thirteenth_month_2: ["12", "Mês da 2ª parcela do 13º (normalmente 12 = dezembro)"],
-  inflation_month: ["6", "Mês do ano em que a inflação das despesas é aplicada"],
-  invest_pct: ["90", "Quanto do saldo vai para investimentos todo mês (pode variar mês a mês em Parâmetros mês a mês)"],
-  min_balance: ["1000", "Valor que sempre fica em conta; abaixo disso o app resgata dos investimentos"],
-  invest_return_monthly: ["1,1", "Rentabilidade mensal dos investimentos, em % ao mês"],
-};
-
-function scenarioFormHTML(sc) {
-  return SCN_FIELDS.map(([k, label, t]) => {
-    const v = sc[k];
-    const [ph, tip] = FIELD_HELP[k] || ["", ""];
-    if (t === "bool") return `<label class="field check"><input type="checkbox" name="${k}" ${v ? "checked" : ""}>${label}</label>`;
-    if (t === "mode") return `<label class="field" title="% do saldo acima do mínimo: investe parte de tudo que está em conta acima do saldo mínimo. % da sobra do mês: investe parte só do que sobrou no mês (regra das abas antigas)"><span>${label} <span class="help">?</span></span><select name="${k}">
-      <option value="excedente" ${v === "excedente" ? "selected" : ""}>% do saldo acima do mínimo</option>
-      <option value="saldo_mes" ${v === "saldo_mes" ? "selected" : ""}>% da sobra do mês</option></select></label>`;
-    let val = v ?? "";
-    if (t === "month") val = toMonthInput(v);
-    if (t === "pct" && v != null) val = +(v * 100).toFixed(4);
-    const type = t === "month" ? "month" : t === "text" ? "text" : "number";
-    const step = t === "int" ? "1" : "any";
-    return `<label class="field" ${tip ? `title="${esc(tip)}"` : ""}><span>${label}${tip ? ' <span class="help">?</span>' : ""}</span>
-      <input name="${k}" type="${type}" step="${step}" value="${esc(val)}" ${ph ? `placeholder="ex.: ${esc(ph)}"` : ""}></label>`;
-  }).join("");
-}
-
-function readScenarioForm() {
-  const f = $("#scenario-form"), out = {};
-  for (const [k, , t] of SCN_FIELDS) {
-    const el = f.elements[k];
-    if (t === "bool") out[k] = el.checked;
-    else if (t === "text" || t === "mode") out[k] = el.value || (k === "description" ? null : el.value);
-    else if (t === "month") out[k] = fromMonthInput(el.value);
-    else if (el.value === "") out[k] = ["bonus_month", "ir_month", "vacation_month", "thirteenth_first_year", "thirteenth_last_year"].includes(k) ? null : 0;
-    else out[k] = t === "pct" ? Number(el.value) / 100 : t === "int" ? parseInt(el.value, 10) : Number(el.value);
-  }
-  return out;
-}
-
-async function renderPremissas() {
-  const sc = currentScenario();
-  if (!sc) {
-    $("#scenario-form").innerHTML = '<p class="hint">Nenhum cenário. Clique em “Novo cenário”.</p>';
-    return;
-  }
-  $("#scenario-form").innerHTML = scenarioFormHTML(sc);
-  const [sal, infl, ms] = await Promise.all([
-    api("GET", `/api/scenarios/${sc.id}/salary-changes`), api("GET", `/api/scenarios/${sc.id}/inflation`),
-    api("GET", `/api/scenarios/${sc.id}/month-settings`),
-  ]);
-  renderSalary(sal);
-  renderInflation(infl);
-  const byMonth = Object.fromEntries(ms.map((m) => [m.month, m]));
-  const months = state.projection.months;
-  let h = `<thead><tr><th>Mês</th><th>% a investir</th><th>Saldo mínimo</th><th>Rentab. % a.m.</th><th>Salário bruto</th><th>Resgate manual</th>
-    <th>Efetivo: % · mín · rentab.</th></tr></thead><tbody>`;
-  months.forEach((m, i) => {
-    const r = byMonth[m] || {};
-    const s = state.projection.series;
-    const inp = (k, scale = 1) => `<input data-k="${k}" type="number" step="any" style="width:110px" value="${r[k] != null ? +(r[k] * scale).toFixed(4) : ""}">`;
-    h += `<tr data-month="${m}"><td>${mlabel(m)}</td><td>${inp("invest_pct", 100)}</td><td>${inp("min_balance")}</td>
-      <td>${inp("invest_return", 100)}</td><td>${inp("gross_salary")}</td><td>${inp("manual_redemption")}</td>
-      <td class="muted">${pct(s.pct_investir[i], 0)} · ${fmt(s.saldo_minimo[i])} · ${pct(s.inv_rentabilidade[i], 2)}</td></tr>`;
-  });
-  $("#month-table").innerHTML = h + "</tbody>";
-}
-
-function renderSalary(items) {
-  $("#salary-table").innerHTML = `<thead><tr><th>A partir de</th><th>Novo salário (R$)</th><th>ou reajuste (%)</th><th></th></tr></thead><tbody>` +
-    items.map((s) => `<tr><td><input type="month" data-k="start_month" value="${toMonthInput(s.start_month)}"></td>
-      <td><input type="number" step="any" data-k="amount" value="${s.amount ?? ""}"></td>
-      <td><input type="number" step="any" data-k="pct" value="${s.pct != null ? +(s.pct * 100).toFixed(4) : ""}"></td>
-      <td><button class="ghost sm danger" data-del>Remover</button></td></tr>`).join("") + "</tbody>";
-}
-
-function renderInflation(items) {
-  $("#inflation-table").innerHTML = `<thead><tr><th>Ano</th><th>Fixas (% a.a.)</th><th>Variáveis (% a.a.)</th><th></th></tr></thead><tbody>` +
-    items.map((r) => `<tr><td><input type="number" data-k="year" value="${r.year}"></td>
-      <td><input type="number" step="any" data-k="fixed_pct" value="${+(r.fixed_pct * 100).toFixed(4)}"></td>
-      <td><input type="number" step="any" data-k="variable_pct" value="${+(r.variable_pct * 100).toFixed(4)}"></td>
-      <td><button class="ghost sm danger" data-del>Remover</button></td></tr>`).join("") + "</tbody>";
-}
-
-["#salary-table", "#inflation-table"].forEach((sel) => $(sel).addEventListener("click", (e) => {
-  if (e.target.matches("[data-del]")) e.target.closest("tr").remove();
-}));
-$("#btn-add-salary").onclick = () =>
-  renderSalary([...readSalary(), { start_month: state.projection?.months[0], amount: null, pct: null }]);
-$("#btn-add-infl").onclick = () => renderInflation([...readInflation(), { year: new Date().getFullYear() + 1, fixed_pct: 0.045, variable_pct: 0.045 }]);
-
-const rowVal = (tr, k) => tr.querySelector(`[data-k="${k}"]`).value;
-function readSalary() {
-  return $$("#salary-table tbody tr").map((tr) => ({
-    start_month: fromMonthInput(rowVal(tr, "start_month")),
-    amount: rowVal(tr, "amount") === "" ? null : Number(rowVal(tr, "amount")),
-    pct: rowVal(tr, "pct") === "" ? null : Number(rowVal(tr, "pct")) / 100,
-  })).filter((r) => r.start_month);
-}
-function readInflation() {
-  return $$("#inflation-table tbody tr").map((tr) => ({
-    year: parseInt(rowVal(tr, "year"), 10),
-    fixed_pct: Number(rowVal(tr, "fixed_pct") || 0) / 100,
-    variable_pct: Number(rowVal(tr, "variable_pct") || 0) / 100,
-  })).filter((r) => r.year);
-}
-
-$("#btn-save-salary").onclick = async () => {
-  await api("PUT", `/api/scenarios/${state.current}/salary-changes`, readSalary());
-  toast("Reajustes salvos");
-  await refresh();
-};
-$("#btn-save-infl").onclick = async () => {
-  await api("PUT", `/api/scenarios/${state.current}/inflation`, readInflation());
-  toast("Inflação salva");
-  await refresh();
-};
-$("#btn-save-months").onclick = async () => {
-  const items = $$("#month-table tbody tr").map((tr) => {
-    const g = (k, scale = 1) => { const v = rowVal(tr, k); return v === "" ? null : Number(v) / scale; };
-    return { month: tr.dataset.month, invest_pct: g("invest_pct", 100), min_balance: g("min_balance"),
-      invest_return: g("invest_return", 100), gross_salary: g("gross_salary"), manual_redemption: g("manual_redemption") };
-  });
-  await api("PUT", `/api/scenarios/${state.current}/month-settings`, items);
-  toast("Parâmetros mensais salvos");
-  await refresh();
-};
-$("#btn-save-scenario").onclick = async (e) => {
-  e.preventDefault();
-  await api("PUT", `/api/scenarios/${state.current}`, readScenarioForm());
-  toast("Premissas salvas");
-  await loadBase();
-  await refresh();
-};
-$("#btn-new-scenario").onclick = async () => {
-  const name = prompt("Nome do novo cenário:");
-  if (!name) return;
-  const d = new Date();
-  const sc = await api("POST", "/api/scenarios", { name, start_month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, months: 24 });
-  state.current = sc.id;
-  await loadBase();
-  await refresh();
-};
-$("#btn-dup-scenario").onclick = async () => {
-  const name = prompt("Nome da cópia:", `${currentScenario().name} (cópia)`);
-  if (!name) return;
-  const sc = await api("POST", `/api/scenarios/${state.current}/duplicate?name=${encodeURIComponent(name)}`);
-  state.current = sc.id;
-  toast("Cenário duplicado");
-  await loadBase();
-  await refresh();
-};
-$("#btn-del-scenario").onclick = async () => {
-  if (!confirm(`Excluir o cenário "${currentScenario().name}"? Isso apaga todos os valores planejados dele.`)) return;
-  await api("DELETE", `/api/scenarios/${state.current}`);
-  state.current = null;
-  await loadBase();
-  await refresh();
-};
-
-// ------------------------------------------------------------------ CONSIGNADOS
-const PLANNER_ROWS = [
-  ["receitas", "Receitas"], ["despesas_sem_quitacoes", "Despesas (sem quitações)"],
-  ["parcelas_consignados", "  dos quais: parcelas de consignados"], ["quitacoes", "Quitações agendadas"],
-  ["investimentos", "(−) Investido no mês"], ["resgates", "(+) Resgates"],
-  ["saldo_conta", "Saldo em conta"], ["saldo_investido", "Saldo investido"],
-  ["saldo_total", "Saldo total disponível (conta + investimentos)", "highlight"],
-];
-const NUM0 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
-
-function renderPlanner(pl) {
-  const months = pl.months;
-  const cb = '<td class="cb"></td><td class="cb"></td><td class="cb last"></td>';
-  let h = `<thead><tr><th>R$</th><th class="cb" title="Parcela descontada por mês">Parcela</th>
-    <th class="cb" title="Parcela liberada por mês para cada R$ 1.000 usados na quitação (no mês agendado ou, sem agendamento, no primeiro mês)">Libera por R$ 1 mil</th>
-    <th class="cb last" title="Economia total (parcelas evitadas − valor da quitação) ÷ valor investido">Ganho total</th>
-    ${months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>`;
-  for (const [k, label, cls] of PLANNER_ROWS) {
-    const sub = label.startsWith("  ");
-    h += `<tr class="${cls || ""}"><td class="${sub ? "muted" : ""}" style="${sub ? "padding-left:22px" : ""}">${label.trim()}</td>${cb}${pl.account[k].map((v) =>
-      `<td class="${v < -0.5 ? "neg" : ""} ${sub ? "muted" : ""}">${Math.abs(v) < 0.5 ? "" : NUM0.format(v)}</td>`).join("")}</tr>`;
-  }
-  h += `<tr class="group"><td>Valor para quitar em cada mês · clique para agendar</td><td class="cb" colspan="3">custo-benefício</td>${months.map(() => "<td></td>").join("")}</tr>`;
-  const refs = pl.contracts.map((c) => c.ref?.monthly_return || 0);
-  const best = [...refs].sort((a, b) => b - a).slice(0, 3);
-  for (const c of pl.contracts) {
-    const r = c.ref;
-    const refTip = r ? `Referência: quitar em ${mlabel(r.month)} por ${fmt2(r.value)}` : "";
-    h += `<tr><td title="Taxa ${c.monthly_rate != null ? pct(c.monthly_rate, 2) : "–"} a.m. · último desconto ${mlabel(c.last_month)}">${esc(c.name)}</td>
-      <td class="cb">${fmt(c.installment)}</td>
-      <td class="cb ${r && best.includes(r.monthly_return) ? "best-cb" : ""}" title="${refTip}: cada R$ 1.000 liberam ${r ? fmt2(r.monthly_return * 1000) : "–"} de parcela por mês">${r ? `${fmt(r.monthly_return * 1000)}<span class="muted">/mês</span>` : "–"}</td>
-      ${c.monthly_rate == null
-        ? '<td class="cb last muted" title="Informe a taxa do contrato (em Contratos) para calcular o valor presente e a economia">sem taxa</td>'
-        : `<td class="cb last" title="${refTip}: economia de ${r ? fmt2(r.total_gain * r.value) : "–"} sobre o valor investido">${r ? pct(r.total_gain) : "–"}</td>`}`;
-    const paidAt = c.cells.findIndex((x) => x && x.scheduled);
-    c.cells.forEach((cell, i) => {
-      if (!cell) return (h += "<td></td>");
-      if (paidAt >= 0 && i > paidAt) {
-        // contrato já quitado: os meses seguintes ficam zerados, mas clicar move a quitação para cá
-        return (h += `<td class="pcell after" data-contract="${c.id}" data-month="${months[i]}"
-          title="Já quitado em ${mlabel(months[paidAt])} · clique para mudar a quitação para ${mlabel(months[i])} (${fmt2(cell.value)})"></td>`);
-      }
-      const cls = cell.scheduled ? "scheduled" : cell.fits ? "fits" : "nofit";
-      const tip = `Quitar em ${mlabel(months[i])}: ${fmt2(cell.value)} · ${cell.remaining} parcelas restantes · juros evitados ${fmt2(cell.interest_saved)}` +
-        ` · cada R$ 1.000 liberam ${fmt2((c.installment / cell.value) * 1000)}/mês · ganho total ${pct(cell.interest_saved / cell.value)}` +
-        (cell.scheduled ? " · clique para desmarcar" : " · clique para agendar");
-      h += `<td class="pcell ${cls}" data-contract="${c.id}" data-month="${months[i]}" data-scheduled="${cell.scheduled ? 1 : ""}" title="${tip}">${NUM0.format(cell.value)}</td>`;
-    });
-    h += "</tr>";
-  }
-  $("#payoff-planner").innerHTML = h + "</tbody>";
-
-  chart("chart-planner").setOption({
-    ...baseOption(),
-    grid: { left: 8, right: 16, top: 30, bottom: 4, containLabel: true },
-    xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
-    series: [
-      { name: "Saldo total (conta + investimentos)", type: "line", data: pl.account.saldo_total, color: LIT(), symbol: "none", lineStyle: { width: 2 },
-        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
-      { name: "Quitações agendadas", type: "bar", data: pl.account.quitacoes, color: DIM(), barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
-    ],
-  }, true);
-}
-
-$("#payoff-planner").addEventListener("click", async (e) => {
-  const td = e.target.closest("td.pcell");
-  if (!td) return;
-  const month = td.dataset.scheduled ? null : td.dataset.month;
-  await api("PUT", `/api/scenarios/${state.current}/payoffs`, [{ contract_id: +td.dataset.contract, payoff_month: month }]);
-  toast(month ? `Quitação agendada para ${mlabel(month)}` : "Quitação desmarcada");
-  await refresh();
-});
-
-async function renderSuggestion() {
-  const months = state.projection?.months || [];
-  const sel = $("#sug-month");
-  if (!months.includes(state.sug.month)) state.sug.month = months[0];
-  sel.innerHTML = months.map((m) => `<option value="${m}" ${m === state.sug.month ? "selected" : ""}>${mlabel(m)}</option>`).join("");
-  const params = new URLSearchParams({ month: state.sug.month, min_remaining: $("#sug-min").value || "0" });
-  const budget = $("#sug-budget").value;
-  if (budget !== "") params.set("budget", budget);
-  const r = await api("GET", `/api/scenarios/${state.current}/payoff-suggestion?${params}`);
-  state.sug.result = r;
-  $("#sug-budget").placeholder = r.available != null ? `saldo do mês: ${NUM0.format(r.available)}` : "";
-  const T = r.totals;
-  $("#sug-tiles").innerHTML = [
-    ["Parcela liberada por mês", fmt(T.parcela_liberada), r.selected.length ? `a partir de ${mlabel(r.month)}` : "nenhuma quitação cabe no valor", true],
-    ["Valor das quitações", fmt(T.valor_quitacao), `de ${fmt(r.budget)} disponíveis`],
-    ["Sobra do valor", fmt(T.sobra), "fica em conta"],
-    ["Libera por R$ 1 mil", T.valor_quitacao ? `${fmt(T.por_mil)}/mês` : "–", "parcela liberada ÷ valor pago"],
-    ["Juros evitados", fmt(T.juros_evitados), "até o fim dos contratos"],
-  ].map(([l, v, s, inv]) => `<div class="tile${inv ? " inverse" : ""}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
-  const rows = [...r.candidates, ...r.skipped];
-  $("#sug-table").innerHTML = `<thead><tr><th>Contrato</th><th>Parcela liberada</th><th>Valor para quitar</th><th>Libera por R$ 1 mil</th>
-    <th>Parcelas restantes</th><th>Juros evitados</th><th>Agendado hoje</th><th>Sugestão</th></tr></thead><tbody>` +
-    rows.map((c) => {
-      const skipped = r.skipped.includes(c);
-      return `<tr class="${c.selected ? "highlight" : ""} ${skipped ? "muted" : ""}"><td>${esc(c.name)}</td><td>${fmt2(c.installment)}</td><td>${fmt2(c.value)}</td>
-        <td>${fmt(c.per_thousand)}/mês</td><td>${c.remaining}</td><td>${c.monthly_rate == null ? '<span class="muted">sem taxa</span>' : fmt2(c.interest_saved)}</td>
-        <td>${c.scheduled_month ? mlabel(c.scheduled_month) : "–"}</td>
-        <td>${c.selected ? '<span class="badge inverse">quitar</span>' : skipped ? `<span class="muted">termina em ${c.remaining} ${c.remaining === 1 ? "mês" : "meses"}</span>` : ""}</td></tr>`;
-    }).join("") + "</tbody>";
-  const btn = $("#btn-sug-apply");
-  btn.hidden = !r.selected.length;
-  btn.textContent = `Agendar ${r.selected.length === 1 ? "esta quitação" : `estas ${r.selected.length} quitações`} em ${mlabel(r.month)}`;
-  const moved = r.selected.filter((c) => c.scheduled_month && c.scheduled_month !== r.month);
-  $("#sug-note").textContent = moved.length ? `Muda o agendamento de: ${moved.map((c) => `${c.name} (hoje em ${mlabel(c.scheduled_month)})`).join(", ")}.` : "";
-}
-
-$("#sug-month").addEventListener("change", (e) => { state.sug.month = e.target.value; $("#sug-budget").value = ""; renderSuggestion(); });
-$("#sug-budget").addEventListener("change", renderSuggestion);
-$("#sug-min").addEventListener("change", renderSuggestion);
-$("#btn-sug-apply").onclick = async () => {
-  const r = state.sug.result;
-  await api("PUT", `/api/scenarios/${state.current}/payoffs`, r.selected.map((c) => ({ contract_id: c.id, payoff_month: r.month })));
-  toast(`${r.selected.length} quitação(ões) agendada(s) em ${mlabel(r.month)}: libera ${fmt(r.totals.parcela_liberada)}/mês`);
-  $("#sug-budget").value = "";
-  await refresh();
-};
-
-async function renderConsignados() {
-  if (!state.current) return;
-  const [t, cmp, pl, contracts] = await Promise.all([
-    api("GET", `/api/scenarios/${state.current}/loans`), api("GET", "/api/reports/loans-compare"),
-    api("GET", `/api/scenarios/${state.current}/payoff-planner`),
-    api("GET", `/api/scenarios/${state.current}/contracts`), renderSuggestion(),
-  ]);
-  state.loans = contracts;
-  // planejador ordenado pelo que mais libera parcela por real investido
-  pl.contracts.sort((a, b) => (b.ref?.monthly_return || 0) - (a.ref?.monthly_return || 0));
-  renderPlanner(pl);
-  const T = t.totals || {};
-  $("#loan-tiles").innerHTML = [
-    ["Desembolso com quitações", fmt(T.desembolso_quitacoes), "saída de caixa nos meses de quitação"],
-    ["Parcelas evitadas", fmt(T.parcelas_evitadas), "soma das parcelas que deixam de ser descontadas"],
-    ["Economia líquida", fmt(T.economia_liquida), "parcelas evitadas − desembolso", true],
-    ["Parcela mensal liberada", fmt(T.parcela_mensal_liberada), "folga no orçamento após quitar"],
-    ["Payback", T.mes_payback ? mlabel(T.mes_payback) : "–", "mês em que a economia cobre o desembolso"],
-  ].map(([l, v, s, inv]) => `<div class="tile${inv ? " inverse" : ""}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
-
-  let h = `<thead><tr><th>Contrato</th><th>Parcela</th><th>Taxa a.m.</th><th>1º desconto</th><th>Último</th><th>Mês de quitação</th>
-    <th>Parcelas quitadas</th><th>Valor da quitação</th><th>Parcelas evitadas</th><th>Juros evitados</th><th>Quitação ÷ parcela</th><th>Retorno mensal</th></tr></thead><tbody>`;
-  for (const c of t.contracts) {
-    h += `<tr data-id="${c.id}"><td>${esc(c.name)}</td><td>${fmt2(c.installment)}</td><td>${c.monthly_rate != null ? pct(c.monthly_rate, 2) : "–"}</td>
-      <td>${mlabel(c.first_month)}</td><td>${mlabel(c.last_month)}</td>
-      <td><input type="month" data-payoff value="${toMonthInput(c.payoff_month)}"></td>
-      <td>${c.payoff_month ? c.remaining : "–"}</td><td>${c.payoff_month ? fmt2(c.payoff_value) : "–"}</td>
-      <td>${c.payoff_month ? fmt2(c.installments_avoided) : "–"}</td>
-      <td class="${c.interest_saved > 0 ? "pos" : ""}">${c.payoff_month ? fmt2(c.interest_saved) : "–"}</td>
-      <td>${c.months_equivalent ? c.months_equivalent.toFixed(1).replace(".", ",") + " meses" : "–"}</td>
-      <td>${c.monthly_return ? pct(c.monthly_return) : "–"}</td></tr>`;
-  }
-  const sum = (k) => t.contracts.filter((c) => c.payoff_month).reduce((a, c) => a + c[k], 0);
-  h += `<tr class="total"><td>Total</td><td>${fmt2(t.contracts.reduce((a, c) => a + c.installment, 0))}</td><td></td><td></td><td></td><td></td><td></td>
-    <td>${fmt2(sum("payoff_value"))}</td><td>${fmt2(sum("installments_avoided"))}</td><td>${fmt2(sum("interest_saved"))}</td><td></td><td></td></tr></tbody>`;
-  $("#loan-table").innerHTML = h;
-
-  const months = t.months.map(mlabel);
-  chart("chart-loan-cash").setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: months },
-    series: [
-      { name: "Parcelas (com quitação)", type: "bar", stack: "c", data: t.installments_with_payoff, color: DIM(), barMaxWidth: 18 },
-      { name: "Desembolso de quitação", type: "bar", stack: "c", data: t.payoff_disbursement, color: LIT(), barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Parcelas sem quitar", type: "line", data: t.installments_without_payoff, color: css("--ink-muted"), symbol: "none", lineStyle: { width: 2, type: "dashed" } },
-    ],
-  }, true);
-  chart("chart-loan-cum").setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: months },
-    series: [{
-      name: "Economia acumulada", type: "line", data: t.cumulative_net_saving, color: LIT(), symbol: "none",
-      lineStyle: { width: 2 }, areaStyle: { opacity: 0.12 },
-      markLine: {
-        symbol: "none", silent: true, label: { color: css("--text-secondary"), formatter: (p) => p.name },
-        lineStyle: { color: css("--border-strong"), type: "dashed" },
-        data: [{ yAxis: 0, name: "" }, ...(T.mes_payback ? [{ xAxis: mlabel(T.mes_payback), name: `payback ${mlabel(T.mes_payback)}` }] : [])],
-      },
-    }],
-  }, true);
-
-  // comparação entre cenários
-  const scs = cmp.scenarios;
-  let ct = `<table><thead><tr><th>Cenário</th><th>Contratos quitados</th><th>Desembolso</th><th>Parcelas evitadas</th><th>Economia líquida</th>
-    <th>Parcela liberada/mês</th><th>Payback</th></tr></thead><tbody>`;
-  const bestEco = Math.max(...scs.map((s) => s.totals.economia_liquida || 0));
-  for (const s of scs) {
-    const n = s.contracts.filter((c) => c.payoff_month).length;
-    ct += `<tr><td><span class="dot" style="background:${scenarioColor(s.id)}"></span> ${esc(s.name)}</td><td>${n}</td>
-      <td>${fmt(s.totals.desembolso_quitacoes)}</td><td>${fmt(s.totals.parcelas_evitadas)}</td>
-      <td class="${s.totals.economia_liquida === bestEco && bestEco > 0 ? "best" : ""}">${fmt(s.totals.economia_liquida)}</td>
-      <td>${fmt(s.totals.parcela_mensal_liberada)}</td><td>${s.totals.mes_payback ? mlabel(s.totals.mes_payback) : "–"}</td></tr>`;
-  }
-  // detalhe por contrato × cenário
-  ct += `</tbody></table><p class="eyebrow" style="margin-top:20px">Mês e valor de quitação por contrato</p><table><thead><tr><th>Contrato</th>${scs.map((s) => `<th>${esc(s.name)}</th>`).join("")}</tr></thead><tbody>`;
-  // cada cenário tem os próprios contratos: casa pelo nome
-  const names = [...new Set(scs.flatMap((s) => s.contracts.map((c) => c.name)))];
-  names.forEach((name) => {
-    ct += `<tr><td>${esc(name)}</td>${scs.map((s) => {
-      const c = s.contracts.find((x) => x.name === name);
-      if (!c) return '<td><span class="muted">sem contrato</span></td>';
-      return `<td>${c.payoff_month ? `${mlabel(c.payoff_month)} · ${fmt(c.payoff_value)} <span class="muted">(economia ${fmt(c.interest_saved)})</span>` : '<span class="muted">não quita</span>'}</td>`;
-    }).join("")}</tr>`;
-  });
-  $("#loan-compare-table").innerHTML = ct + "</tbody></table>";
-
-  const allMonths = [...new Set(scs.flatMap((s) => s.months))].sort();
-  chart("chart-loan-compare").setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: allMonths.map(mlabel) },
-    series: scs.map((s) => {
-      const idx = Object.fromEntries(s.months.map((m, i) => [m, i]));
-      return { name: s.name, type: "line", symbol: "none", lineStyle: { width: 2, type: scenarioDash(s.id) }, color: scenarioColor(s.id),
-        data: allMonths.map((m) => (m in idx ? s.cumulative_net_saving[idx[m]] : null)) };
-    }),
-  }, true);
-  chart("chart-loan-bars").setOption({
-    ...baseOption(),
-    tooltip: { ...baseOption().tooltip, axisPointer: { type: "shadow" } },
-    xAxis: { ...baseOption().xAxis, data: scs.map((s) => s.name) },
-    series: [
-      { name: "Desembolso", type: "bar", data: scs.map((s) => s.totals.desembolso_quitacoes), color: DIM(), itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Parcelas evitadas", type: "bar", data: scs.map((s) => s.totals.parcelas_evitadas), color: css("--ink-subtle"), itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Economia líquida", type: "bar", data: scs.map((s) => s.totals.economia_liquida), color: LIT(), itemStyle: { borderRadius: [4, 4, 0, 0] } },
-    ],
-  }, true);
-
-  renderContracts();
-}
-
-$("#loan-table").addEventListener("change", async (e) => {
-  if (!e.target.matches("[data-payoff]")) return;
-  const id = +e.target.closest("tr").dataset.id;
-  await api("PUT", `/api/scenarios/${state.current}/payoffs`, [{ contract_id: id, payoff_month: fromMonthInput(e.target.value) }]);
-  toast("Quitação atualizada");
-  await refresh();
-});
-
-function renderContracts() {
-  $("#contracts-table").innerHTML = `<thead><tr><th>Contrato</th><th>Credor</th><th>Taxa % a.m.</th><th>Parcela</th><th>1º desconto</th><th>Último desconto</th><th></th></tr></thead><tbody>` +
-    state.loans.map((l) => `<tr data-id="${l.id}"><td><input data-k="name" value="${esc(l.name)}"></td><td><input data-k="creditor" value="${esc(l.creditor || "")}"></td>
-      <td><input data-k="monthly_rate" type="number" step="any" style="width:90px" value="${l.monthly_rate != null ? +(l.monthly_rate * 100).toFixed(4) : ""}"></td>
-      <td><input data-k="installment" type="number" step="0.01" style="width:110px" value="${l.installment}"></td>
-      <td><input data-k="first_month" type="month" value="${toMonthInput(l.first_month)}"></td>
-      <td><input data-k="last_month" type="month" value="${toMonthInput(l.last_month)}"></td>
-      <td><button class="sm" data-save>Salvar</button> <button class="ghost sm danger" data-del>Excluir</button></td></tr>`).join("") + "</tbody>";
-}
-
-$("#contracts-table").addEventListener("click", async (e) => {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
-  const id = tr.dataset.id;
-  if (e.target.matches("[data-del]")) {
-    if (!confirm("Excluir este contrato só deste cenário?")) return;
-    await api("DELETE", `/api/scenarios/${state.current}/contracts/${id}`);
-  } else if (e.target.matches("[data-save]")) {
-    const rate = rowVal(tr, "monthly_rate");
-    const body = { name: rowVal(tr, "name"), creditor: rowVal(tr, "creditor") || null,
-      monthly_rate: rate === "" ? null : Number(rate) / 100, installment: Number(rowVal(tr, "installment")),
-      first_month: fromMonthInput(rowVal(tr, "first_month")), last_month: fromMonthInput(rowVal(tr, "last_month")),
-      payoff_month: state.loans.find((l) => String(l.id) === id)?.payoff_month || null };
-    if (!body.name || !body.first_month || !body.last_month) return toast("Informe nome, 1º e último desconto");
-    const base = `/api/scenarios/${state.current}/contracts`;
-    await api(id ? "PUT" : "POST", id ? `${base}/${id}` : base, body);
-    toast("Contrato salvo neste cenário");
-  } else return;
-  await refresh();
-});
-$("#btn-add-contract").onclick = () => {
-  state.loans.push({ id: "", name: "", creditor: "", monthly_rate: null, installment: 0, first_month: null, last_month: null });
-  renderContracts();
-};
-
-// ------------------------------------------------------------------ EM ATRASO
-const ARREAR_STATUS = { aberto: "Em aberto", negociado: "Negociado", pago: "Pago" };
-
-async function renderAtrasos() {
-  if (!state.current) return;
-  const data = await api("GET", `/api/scenarios/${state.current}/arrears`);
-  state.arrears = data.items;
-  const T = data.totals;
-  $("#arrear-tiles").innerHTML = [
-    ["Em aberto", String(T.em_aberto), `mais antigo: ${T.mais_antigo_meses} ${T.mais_antigo_meses === 1 ? "mês" : "meses"}`],
-    ["Valor original", fmt(T.valor_original), "soma dos valores vencidos"],
-    ["Valor atualizado hoje", fmt(T.valor_atualizado), `encargos: ${fmt(T.valor_atualizado - T.valor_original)}`, true],
-    ["Planejado no cenário", fmt(T.planejado), "entra no fluxo como Pagamento de atrasos"],
-    ["Sem plano de pagamento", fmt(T.sem_plano), T.sem_plano > 0 ? "defina início e parcelas abaixo" : "tudo planejado"],
-  ].map(([l, v, s, inv]) => `<div class="tile${inv ? " inverse" : ""}"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
-  renderArrearTable();
-
-  const open = data.items.filter((a) => a.status !== "pago").sort((a, b) => b.updated_value - a.updated_value);
-  const label = (a) => a.creditor && a.creditor !== a.description ? `${a.description} · ${a.creditor}` : a.description;
-  chart("chart-arrear-items").setOption({
-    ...baseOption(),
-    grid: { left: 8, right: 24, top: 36, bottom: 8, containLabel: true },
-    tooltip: { ...baseOption().tooltip, axisPointer: { type: "shadow" } },
-    xAxis: { type: "value", splitLine: { lineStyle: { color: css("--chart-grid") } }, axisLabel: { color: css("--text-muted"), formatter: short } },
-    yAxis: { type: "category", inverse: true, data: open.map(label), axisTick: { show: false },
-      axisLine: { lineStyle: { color: css("--border-default") } }, axisLabel: { color: css("--text-secondary"), width: 170, overflow: "truncate" } },
-    series: [
-      { name: "Original / acordo", type: "bar", stack: "a", color: DIM(), barMaxWidth: 18,
-        data: open.map((a) => (a.negotiated_amount != null ? a.updated_value : a.amount)) },
-      { name: "Multa e juros", type: "bar", stack: "a", color: LIT(), barMaxWidth: 18, itemStyle: { borderRadius: [0, 4, 4, 0] },
-        data: open.map((a) => a.charges) },
-    ],
-  }, true);
-
-  const p = state.projection;
-  const row = p?.rows.find((r) => r.kind === "atrasos");
-  chart("chart-arrear-plan").setOption({
-    ...baseOption(),
-    xAxis: { ...baseOption().xAxis, data: (p?.months || []).map(mlabel) },
-    series: [{ name: "Pagamento de atrasos", type: "bar", color: LIT(), itemStyle: { borderRadius: [4, 4, 0, 0] }, data: row ? row.values : [] }],
-  }, true);
-}
-
-function renderArrearTable() {
-  const cats = '<option value="">–</option>' + state.categories.filter((c) => c.kind === "manual").map((c) =>
-    `<option value="${c.id}">${esc(c.name)}</option>`).join("");
-  const h = `<thead><tr><th>Descrição</th><th>Credor</th><th>Responsável</th><th>Categoria</th><th>Vencimento</th><th>Valor original</th>
-    <th>Multa %</th><th>Juros % a.m.</th><th>Acordo (R$)</th><th>Situação</th><th>Atraso</th><th>Valor atualizado</th>
-    <th>Pagar a partir de</th><th>Parcelas</th><th>Parcela</th><th></th></tr></thead><tbody>` +
-    state.arrears.map((a) => `<tr data-id="${a.id}" class="${a.status === "pago" ? "muted" : ""}">
-      <td><input data-k="description" value="${esc(a.description)}" style="width:190px"></td>
-      <td><input data-k="creditor" value="${esc(a.creditor || "")}" style="width:120px"></td>
-      <td><input data-k="owner" value="${esc(a.owner || "")}" style="width:100px"></td>
-      <td><select data-k="category_id" style="width:140px">${cats.replace(`value="${a.category_id}"`, `value="${a.category_id}" selected`)}</select></td>
-      <td><input data-k="due_date" type="date" value="${a.due_date || ""}"></td>
-      <td><input data-k="amount" type="number" step="0.01" style="width:100px" value="${a.amount ?? ""}"></td>
-      <td><input data-k="fine_pct" type="number" step="any" style="width:64px" value="${a.fine_pct ? +(a.fine_pct * 100).toFixed(4) : ""}"></td>
-      <td><input data-k="interest_monthly" type="number" step="any" style="width:64px" value="${a.interest_monthly ? +(a.interest_monthly * 100).toFixed(4) : ""}"></td>
-      <td><input data-k="negotiated_amount" type="number" step="0.01" style="width:100px" value="${a.negotiated_amount ?? ""}"></td>
-      <td><select data-k="status">${Object.entries(ARREAR_STATUS).map(([k, l]) => `<option value="${k}" ${k === a.status ? "selected" : ""}>${l}</option>`).join("")}</select></td>
-      <td>${a.id ? (a.due_date ? `${a.months_late} ${a.months_late === 1 ? "mês" : "meses"}` : "–") : ""}</td>
-      <td>${a.id ? fmt2(a.updated_value) : ""}</td>
-      <td><input data-k="plan_start" type="month" value="${toMonthInput(a.plan_start)}" ${a.status === "pago" ? "disabled" : ""}></td>
-      <td><input data-k="plan_installments" type="number" min="1" step="1" style="width:60px" value="${a.plan_installments ?? 1}" ${a.status === "pago" ? "disabled" : ""}></td>
-      <td>${a.plan_installment ? fmt2(a.plan_installment) : "–"}</td>
-      <td><button class="sm" data-save>Salvar</button> <button class="ghost sm danger" data-del>Excluir</button></td></tr>`).join("") +
-    `<tr class="total"><td colspan="5">Total em aberto</td><td>${fmt2(state.arrears.filter((a) => a.status !== "pago").reduce((s, a) => s + (a.amount || 0), 0))}</td>
-      <td colspan="5"></td><td>${fmt2(state.arrears.filter((a) => a.status !== "pago").reduce((s, a) => s + (a.updated_value || 0), 0))}</td><td colspan="4"></td></tr></tbody>`;
-  $("#arrear-table").innerHTML = h;
-}
-
-$("#arrear-table").addEventListener("click", async (e) => {
-  const tr = e.target.closest("tr[data-id]");
-  if (!tr) return;
-  const id = tr.dataset.id;
-  if (e.target.matches("[data-del]")) {
-    if (!id) {
-      state.arrears = state.arrears.filter((a) => a.id !== "");
-      return renderArrearTable();
-    }
-    if (!confirm("Excluir este atraso só deste cenário?")) return;
-    await api("DELETE", `/api/scenarios/${state.current}/arrears/${id}`);
-  } else if (e.target.matches("[data-save]")) {
-    const v = (k) => rowVal(tr, k);
-    const numOrNull = (k, scale = 1) => (v(k) === "" ? null : Number(v(k)) / scale);
-    if (!v("description") || v("amount") === "") return toast("Informe descrição e valor original");
-    const body = {
-      description: v("description"), creditor: v("creditor") || null, owner: v("owner") || null,
-      category_id: v("category_id") ? +v("category_id") : null, due_date: v("due_date") || null,
-      amount: Number(v("amount")), fine_pct: numOrNull("fine_pct", 100) || 0, interest_monthly: numOrNull("interest_monthly", 100) || 0,
-      negotiated_amount: numOrNull("negotiated_amount"), status: v("status"),
-      plan_start: v("status") === "pago" ? null : fromMonthInput(v("plan_start")),
-      plan_installments: Math.max(1, parseInt(v("plan_installments") || "1", 10)),
-    };
-    const base = `/api/scenarios/${state.current}/arrears`;
-    await api(id ? "PUT" : "POST", id ? `${base}/${id}` : base, body);
-    toast("Atraso salvo neste cenário");
-  } else return;
-  await refresh();
-});
-
-$("#btn-add-arrear").onclick = () => {
-  state.arrears.unshift({ id: "", description: "", creditor: "", owner: "", category_id: null, due_date: null, amount: null,
-    fine_pct: 0.02, interest_monthly: 0.01, negotiated_amount: null, status: "aberto", plan_start: null, plan_installments: 1 });
-  renderArrearTable();
-  $("#arrear-table tbody input").focus();
-};
-
-// ------------------------------------------------------------------ COMPARAR
-async function renderComparar() {
-  if (state.compareIds === null) state.compareIds = state.scenarios.map((s) => s.id);
-  $("#compare-picks").innerHTML = '<span class="muted">Cenários:</span>' + state.scenarios.map((s) =>
-    `<label class="pick"><input type="checkbox" value="${s.id}" ${state.compareIds.includes(s.id) ? "checked" : ""}>
-      <span class="dot" style="background:${scenarioColor(s.id)}"></span>${esc(s.name)}</label>`).join("");
-  if (!state.compareIds.length) return;
-  const data = await api("GET", `/api/reports/compare?ids=${state.compareIds.join(",")}`);
-  const scs = data.scenarios;
-
-  // maior/menor é melhor
-  const rows = [
-    ["patrimonio_final", "Conta + investimentos + FGTS", "max"], ["saldo_final_conta", "Saldo final em conta", "max"],
-    ["saldo_final_investido", "Saldo final investido", "max"], ["saldo_final_fgts", "Saldo final FGTS", "max"],
-    ["menor_saldo_conta", "Menor saldo em conta", "max"], ["mes_menor_saldo", "Mês do menor saldo", null, "m"],
-    ["meses_saldo_negativo", "Meses com saldo negativo", "min", "n"], ["receita_media", "Receita média", "max"],
-    ["despesa_media", "Despesa média", "min"], ["custo_moradia_medio", "Custo médio com moradia", "min"],
-    ["saldo_livre_medio", "Saldo livre médio", "max"], ["taxa_poupanca", "Taxa de poupança", "max", "p"],
-    ["total_dividas", "Total de dívidas pagas", "min"], ["total_quitacoes", "Total em quitações", null],
-    ["pct_renda_dividas", "% da renda com dívidas", "min", "p"], ["ultimo_mes_com_parcela", "Último mês com parcela", null, "m"],
-    ["total_investido", "Total investido", "max"],
-  ];
-  let h = `<table><thead><tr><th>Indicador</th>${scs.map((s) => `<th><span class="dot" style="background:${scenarioColor(s.id)}"></span> ${esc(s.name)}</th>`).join("")}</tr></thead><tbody>`;
-  for (const [k, label, dir, t] of rows) {
-    const vals = scs.map((s) => s.kpis[k]);
-    const best = dir && scs.length > 1 ? (dir === "max" ? Math.max(...vals) : Math.min(...vals)) : null;
-    h += `<tr><td>${label}</td>${vals.map((v) => `<td class="${best !== null && v === best ? "best" : ""} ${typeof v === "number" && v < 0 && !t ? "neg" : ""}">${kfmt(v, t)}</td>`).join("")}</tr>`;
-  }
-  $("#compare-table").innerHTML = h + '</tbody></table><p class="hint" style="margin-top:8px">● marca o melhor valor do indicador entre os cenários.</p>';
-
-  const months = data.months.map(mlabel);
-  for (const [id, key] of [["chart-cmp-total", "saldo_total"], ["chart-cmp-conta", "saldo_conta"]]) {
-    chart(id).setOption({
-      ...baseOption(),
-      xAxis: { ...baseOption().xAxis, data: months },
-      series: scs.map((s) => ({ name: s.name, type: "line", symbol: "none", lineStyle: { width: 2, type: scenarioDash(s.id) }, color: scenarioColor(s.id), data: s.aligned[key] })),
-    }, true);
-  }
-  const groupCols = [
-    ["Despesas fixas", (s) => s.groups.despesa_fixa], ["Empréstimos e dívidas", (s) => s.groups.divida],
-    ["Despesas variáveis", (s) => s.groups.despesa_variavel], ["Aportes manuais", (s) => s.groups.investimento],
-    ["Investimento automático", (s) => s.auto_investment],
-  ].filter((g) => scs.some((s) => g[1](s) > 0));
-  chart("chart-cmp-groups").setOption({
-    ...baseOption(),
-    tooltip: { ...baseOption().tooltip, axisPointer: { type: "shadow" } },
-    xAxis: { ...baseOption().xAxis, data: groupCols.map((g) => g[0]) },
-    series: scs.map((s) => ({
-      name: s.name, type: "bar", color: scenarioColor(s.id), itemStyle: { borderRadius: [4, 4, 0, 0] },
-      data: groupCols.map((g) => g[1](s)),
-    })),
-  }, true);
-
-  const box = $("#compare-sankeys");
-  box.innerHTML = scs.map((s) => `<div class="card"><p class="eyebrow"><span class="dot" style="background:${scenarioColor(s.id)}"></span> ${esc(s.name)}</p><div id="sk-${s.id}" class="chart mid"></div></div>`).join("");
-  await Promise.all(scs.map(async (s) => renderSankey(`sk-${s.id}`, await api("GET", `/api/scenarios/${s.id}/sankey`), true)));
-}
-
-$("#compare-picks").addEventListener("change", () => {
-  state.compareIds = $$("#compare-picks input:checked").map((i) => +i.value);
-  renderComparar();
-});
-
-// ------------------------------------------------------------------ LANÇAMENTOS
-function fillSelects() {
-  const f = $("#tx-form").elements, keep = [f.category_id.value, f.account_id.value];
-  const catOpts = '<option value="">(sem categoria)</option>' + Object.entries(GROUPS).map(([g, label]) =>
-    `<optgroup label="${label}">${state.categories.filter((c) => c.group === g).map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}</optgroup>`).join("");
-  $("#tx-form").elements.category_id.innerHTML = catOpts;
-  $("#tx-form").elements.account_id.innerHTML = '<option value="">(sem conta)</option>' + state.accounts.map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join("");
-  [f.category_id.value, f.account_id.value] = keep;
-}
-
-async function renderLancamentos() {
-  fillSelects();
-  const m = $("#tx-month");
-  if (!m.value) m.value = new Date().toISOString().slice(0, 7);
-  const txs = await api("GET", `/api/transactions?month=${m.value}-01`);
-  const cat = Object.fromEntries(state.categories.map((c) => [c.id, c.name]));
-  const acc = Object.fromEntries(state.accounts.map((a) => [a.id, a.name]));
-  const total = txs.reduce((a, t) => a + t.amount, 0);
-  $("#tx-table").innerHTML = `<thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Conta</th><th>Valor</th><th></th></tr></thead><tbody>` +
-    txs.map((t) => `<tr data-id="${t.id}"><td>${t.date.split("-").reverse().join("/")}</td><td>${esc(t.description)}</td>
-      <td>${esc(cat[t.category_id] || "–")}</td><td>${esc(acc[t.account_id] || "–")}</td>
-      <td class="${t.amount < 0 ? "neg" : "pos"}">${fmt2(t.amount)}</td><td><button class="ghost sm danger" data-del>Excluir</button></td></tr>`).join("") +
-    `<tr class="total"><td colspan="4">Saldo do mês (${txs.length} lançamentos)</td><td>${fmt2(total)}</td><td></td></tr></tbody>`;
-}
-
-$("#tx-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = e.target.elements;
-  await api("POST", "/api/transactions", {
-    date: f.date.value, description: f.description.value, amount: Number(f.amount.value),
-    category_id: f.category_id.value ? +f.category_id.value : null, account_id: f.account_id.value ? +f.account_id.value : null,
-  });
-  f.description.value = "";
-  f.amount.value = "";
-  toast("Lançamento adicionado");
-  renderLancamentos();
-});
-$("#tx-month").addEventListener("change", renderLancamentos);
-$("#tx-table").addEventListener("click", async (e) => {
-  if (!e.target.matches("[data-del]")) return;
-  await api("DELETE", `/api/transactions/${e.target.closest("tr").dataset.id}`);
-  renderLancamentos();
-});
-$("#tx-csv").addEventListener("change", async (e) => {
-  const fd = new FormData();
-  fd.append("file", e.target.files[0]);
-  const r = await api("POST", "/api/transactions/import-csv", fd);
-  toast(`${r.created} lançamentos importados${r.errors.length ? `, ${r.errors.length} com erro` : ""}`);
-  if (r.errors.length) console.warn(r.errors);
-  e.target.value = "";
-  renderLancamentos();
-});
-
-// ------------------------------------------------------------------ ORÇADO x REALIZADO
-async function renderOrcado() {
-  const m = $("#bva-month");
-  if (!m.value) m.value = (state.projection?.months[0] || new Date().toISOString()).slice(0, 7);
-  const base = state.scenarios.find((s) => s.is_baseline) || currentScenario();
-  if (!base) return;
-  const r = await api("GET", `/api/reports/budget-vs-actual?month=${m.value}-01&scenario_id=${base.id}`);
-  $("#bva-scenario").textContent = `planejado do cenário ${r.scenario.name}${r.in_horizon ? "" : " (mês fora do horizonte)"}`;
-  $("#bva-summary").innerHTML = Object.entries(r.summary).map(([g, v]) => {
-    const used = v.planned ? v.actual / v.planned : null;
-    return `<div class="tile"><div class="label">${GROUPS[g]}</div><div class="value">${fmt(v.actual)}</div>
-      <div class="sub">de ${fmt(v.planned)} planejado${used != null ? ` · ${pct(used, 0)}` : ""}</div></div>`;
-  }).join("");
-  $("#bva-table").innerHTML = `<thead><tr><th>Categoria</th><th>Grupo</th><th>Planejado</th><th>Realizado</th><th>Diferença</th></tr></thead><tbody>` +
-    r.rows.map((x) => {
-      const goodWhenPositive = x.group === "receita" || x.group === "investimento";
-      const cls = Math.abs(x.diff) < 0.01 ? "" : (x.diff > 0) === goodWhenPositive ? "pos" : "neg";
-      return `<tr><td>${esc(x.name)}</td><td class="muted">${GROUPS[x.group]}</td><td>${fmt2(x.planned)}</td><td>${fmt2(x.actual)}</td><td class="${cls}">${fmt2(x.diff)}</td></tr>`;
-    }).join("") + "</tbody>";
-}
-$("#bva-month").addEventListener("change", renderOrcado);
-
-// ------------------------------------------------------------------ CADASTROS
-function renderCadastros() {
-  $("#cat-table").innerHTML = `<thead><tr><th>Nome</th><th>Grupo</th><th>Tipo</th><th>Tag</th><th>Ordem</th><th>Ativa</th><th></th></tr></thead><tbody>` +
-    state.categories.map((c) => `<tr data-id="${c.id}"><td><input data-k="name" value="${esc(c.name)}"></td>
-      <td><select data-k="group">${Object.entries(GROUPS).map(([g, l]) => `<option value="${g}" ${g === c.group ? "selected" : ""}>${l}</option>`).join("")}</select></td>
-      <td><select data-k="kind">${Object.entries(KINDS).map(([k, l]) => `<option value="${k}" ${k === c.kind ? "selected" : ""}>${l}</option>`).join("")}</select></td>
-      <td><select data-k="tag">${["", "moradia", "saude"].map((t) => `<option value="${t}" ${t === (c.tag || "") ? "selected" : ""}>${t || "–"}</option>`).join("")}</select></td>
-      <td><input data-k="sort_order" type="number" style="width:70px" value="${c.sort_order}"></td>
-      <td><input data-k="active" type="checkbox" ${c.active ? "checked" : ""}></td>
-      <td><button class="sm" data-save>Salvar</button> <button class="ghost sm danger" data-del>Excluir</button></td></tr>`).join("") + "</tbody>";
-  $("#acc-table").innerHTML = `<thead><tr><th>Nome</th><th>Tipo</th><th>Saldo inicial</th><th></th></tr></thead><tbody>` +
-    state.accounts.map((a) => `<tr data-id="${a.id}"><td><input data-k="name" value="${esc(a.name)}"></td>
-      <td><select data-k="type">${["corrente", "investimento", "cartao", "dinheiro"].map((t) => `<option ${t === a.type ? "selected" : ""}>${t}</option>`).join("")}</select></td>
-      <td><input data-k="opening_balance" type="number" step="0.01" style="width:120px" value="${a.opening_balance}"></td>
-      <td><button class="sm" data-save>Salvar</button> <button class="ghost sm danger" data-del>Excluir</button></td></tr>`).join("") + "</tbody>";
-}
-
-async function crudClick(e, path, read) {
-  const tr = e.target.closest("tr");
-  if (!tr) return;
-  const id = tr.dataset.id;
-  if (e.target.matches("[data-del]")) {
-    if (!confirm("Excluir registro?")) return;
-    await api("DELETE", `/api/${path}/${id}`);
-  } else if (e.target.matches("[data-save]")) {
-    await api(id ? "PUT" : "POST", id ? `/api/${path}/${id}` : `/api/${path}`, read(tr));
-    toast("Salvo");
-  } else return;
-  await loadBase();
-  await refresh();
-}
-$("#cat-table").addEventListener("click", (e) => crudClick(e, "categories", (tr) => ({
-  name: rowVal(tr, "name"), group: rowVal(tr, "group"), kind: rowVal(tr, "kind"), tag: rowVal(tr, "tag") || null,
-  sort_order: parseInt(rowVal(tr, "sort_order") || "0", 10), active: tr.querySelector('[data-k="active"]').checked,
-})));
-$("#acc-table").addEventListener("click", (e) => crudClick(e, "accounts", (tr) => ({
-  name: rowVal(tr, "name"), type: rowVal(tr, "type"), opening_balance: Number(rowVal(tr, "opening_balance") || 0),
-})));
-$("#btn-add-cat").onclick = () => {
-  state.categories.push({ id: "", name: "", group: "despesa_variavel", kind: "manual", tag: null, sort_order: 999, active: true });
-  renderCadastros();
-};
-$("#btn-add-acc").onclick = () => {
-  state.accounts.push({ id: "", name: "", type: "corrente", opening_balance: 0 });
-  renderCadastros();
-};
-async function importXlsx(input, button, report) {
-  const f = input.files[0];
-  if (!f) return toast("Escolha o arquivo .xlsx");
-  const fd = new FormData();
-  fd.append("file", f);
-  const label = button.textContent;
-  button.disabled = true;
-  button.textContent = "Importando…";
-  try {
-    const r = await api("POST", "/api/import/xlsx", fd);
-    report.hidden = false;
-    report.textContent = r.report.join("\n");
-    toast("Planilha importada");
-    await loadBase();
-    await refresh();
-  } finally {
-    button.disabled = false;
-    button.textContent = label;
-  }
-}
-$("#btn-import").onclick = () => importXlsx($("#xlsx-file"), $("#btn-import"), $("#import-report"));
-$("#btn-empty-import").onclick = () => importXlsx($("#empty-xlsx"), $("#btn-empty-import"), $("#empty-report"));
-$("#btn-empty-new").onclick = () => $("#btn-new-scenario").click();
-
-// ------------------------------------------------------------------ MOVER VALORES ENTRE MESES
-// linhas que vêm de contratos/planos não se movem por aqui (abas Consignados e Em atraso)
-const LOCKED_KINDS = new Set(["consignados", "quitacao", "atrasos"]);
-const GRIP = '<svg viewBox="0 0 10 16" aria-hidden="true"><circle cx="3" cy="3" r="1.4"/><circle cx="7" cy="3" r="1.4"/>' +
-  '<circle cx="3" cy="8" r="1.4"/><circle cx="7" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="7" cy="13" r="1.4"/></svg>';
-
-async function moveValue({ cat, from, to, label, amount = null, mode = "move" }) {
-  const r = await api("POST", `/api/scenarios/${state.current}/entries/move`,
-    { category_id: cat, from_month: from, to_month: to, amount, mode });
-  const verb = mode === "copy" ? "Copiado" : "Movido";
-  toast(`${verb}: ${label} ${fmt(r.moved)} de ${mlabel(from)} para ${mlabel(to)}`, {
-    label: "Desfazer",
-    run: async () => {
-      await api("PUT", `/api/scenarios/${state.current}/entries`, r.undo);
-      toast("Desfeito");
-      await refresh();
-    },
-  });
-  await refresh();
-}
-
-// Arrastar com mouse (a partir de 6 px de movimento) ou toque (pela alça). Alvos: [data-drop-month];
-// na tabela o alvo precisa ser da mesma linha ([data-drop-cat]).
-const drag = { pending: null, active: null, target: null, suppressClick: false };
-
-document.addEventListener("pointerdown", (e) => {
-  const el = e.target.closest("[data-drag]");
-  if (!el || e.button > 0 || el.querySelector("input")) return;
-  const fromHandle = !!e.target.closest(".drag-handle");
-  if (e.pointerType !== "mouse" && !fromHandle) return; // no toque, só pela alça (o resto rola a tela)
-  drag.pending = { el, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse", cat: +el.dataset.cat, month: el.dataset.month,
-    value: +el.dataset.value, label: el.dataset.label };
-  if (fromHandle) {
-    e.preventDefault();
-    startDrag(e);
-  }
-});
-
-function startDrag(e) {
-  const p = drag.pending;
-  drag.active = p;
-  p.el.classList.add("drag-src");
-  document.body.classList.add("dragging");
-  const g = document.createElement("div");
-  g.className = "drag-ghost";
-  g.innerHTML = `<b>${fmt(p.value)}</b> ${esc(p.label)}<span>${mlabel(p.month)} → ?</span>`;
-  document.body.appendChild(g);
-  p.ghost = g;
-  moveGhost(e);
-}
-
-function moveGhost(e) {
-  const p = drag.active;
-  // etiqueta sempre dentro da tela; no toque fica acima do dedo para não ficar escondida
-  const gw = p.ghost.offsetWidth, gh = p.ghost.offsetHeight;
-  const gx = Math.min(Math.max(8, p.touch ? e.clientX - gw / 2 : e.clientX + 14), window.innerWidth - gw - 8);
-  const gy = Math.min(Math.max(8, p.touch ? e.clientY - gh - 28 : e.clientY + 14), window.innerHeight - gh - 8);
-  p.ghost.style.transform = `translate(${gx}px, ${gy}px)`;
-  const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-drop-month]");
-  const ok = hit && hit.dataset.dropMonth !== p.month && (!hit.dataset.dropCat || +hit.dataset.dropCat === p.cat);
-  if (drag.target && drag.target !== hit) drag.target.classList.remove("drop-ok");
-  drag.target = ok ? hit : null;
-  if (ok) hit.classList.add("drop-ok");
-  const copy = e.ctrlKey || e.altKey || e.metaKey;
-  p.ghost.querySelector("span").textContent = `${mlabel(p.month)} → ${ok ? mlabel(hit.dataset.dropMonth) : "?"}${copy && ok ? " (copiar)" : ""}`;
-  // rolagem automática perto das bordas (tabela, faixa de meses e página)
-  const box = p.el.closest(".table-wrap") || (hit && hit.closest(".month-strip")) || $("#month-strip");
-  if (box) {
-    const r = box.getBoundingClientRect();
-    if (e.clientY >= r.top - 40 && e.clientY <= r.bottom + 40) {
-      if (e.clientX > r.right - 48) box.scrollLeft += 16;
-      else if (e.clientX < r.left + 48) box.scrollLeft -= 16;
-    }
-  }
-  if (e.clientY < 70) window.scrollBy(0, -14);
-  else if (e.clientY > window.innerHeight - 90) window.scrollBy(0, 14);
-}
-
-function endDrag() {
-  const p = drag.active;
-  if (p) {
-    p.el.classList.remove("drag-src");
-    p.ghost.remove();
-    drag.suppressClick = true;
-    setTimeout(() => (drag.suppressClick = false), 50);
-  }
-  if (drag.target) drag.target.classList.remove("drop-ok");
-  document.body.classList.remove("dragging");
-  drag.pending = drag.active = drag.target = null;
-}
-
-document.addEventListener("pointermove", (e) => {
-  if (drag.pending && !drag.active && Math.hypot(e.clientX - drag.pending.x, e.clientY - drag.pending.y) > 6) startDrag(e);
-  if (drag.active) {
-    e.preventDefault();
-    moveGhost(e);
-  }
-}, { passive: false });
-
-document.addEventListener("pointerup", (e) => {
-  const p = drag.active, target = drag.target;
-  const copy = e.ctrlKey || e.altKey || e.metaKey;
-  endDrag();
-  if (p && target) moveValue({ cat: p.cat, from: p.month, to: target.dataset.dropMonth, label: p.label, mode: copy ? "copy" : "move" });
-});
-document.addEventListener("pointercancel", endDrag);
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") { endDrag(); closeSheet(); } });
-// depois de arrastar, o "click" do mesmo gesto não abre a edição
-document.addEventListener("click", (e) => {
-  if (drag.suppressClick) {
-    e.stopPropagation();
-    e.preventDefault();
-    drag.suppressClick = false;
-  }
-}, true);
-
-// ------------------------------------------------------------------ FOLHA (bottom sheet)
+// ------------------------------------------------------------------ folha inferior
 function openSheet(html) {
   $("#sheet-body").innerHTML = html;
   $("#sheet").hidden = false;
   $("#sheet-backdrop").hidden = false;
   requestAnimationFrame(() => $("#sheet").classList.add("open"));
+  const first = $("#sheet input, #sheet select");
+  if (first && !isMobile()) first.focus();
 }
 function closeSheet() {
   const s = $("#sheet");
@@ -1546,218 +126,689 @@ function closeSheet() {
   setTimeout(() => (s.hidden = true), 160);
 }
 $("#sheet-backdrop").addEventListener("click", closeSheet);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeSheet(); });
+const sheetVal = (id) => $(`#${id}`)?.value ?? "";
 
-// ------------------------------------------------------------------ FLUXO POR MÊS (celular)
-function renderFluxoMonths() {
-  const p = state.view;
-  if (!p) return;
-  const months = p.months, s = p.series;
-  if (!months.includes(state.flowMonth)) {
-    const today = new Date().toISOString().slice(0, 7) + "-01";
-    state.flowMonth = months.find((m) => m >= today) || months[0];
-  }
-  const i = months.indexOf(state.flowMonth);
-  $("#month-strip").innerHTML = months.map((m, j) => `<button class="mchip ${m === state.flowMonth ? "active" : ""}" data-pick-month="${m}" data-drop-month="${m}">
-      <span class="m">${mlabel(m)}</span><span class="v ${s.saldo_total[j] < -0.5 ? "neg" : ""}">${short(s.saldo_total[j])}</span></button>`).join("");
-  const active = $("#month-strip .mchip.active");
-  if (active && !drag.active) active.scrollIntoView({ block: "nearest", inline: "center" });
-
-  $("#month-summary").innerHTML = [
-    ["Receitas", fmt(s.receitas[i]), ""],
-    ["Despesas", fmt(s.total_despesas[i]), ""],
-    ["Sobra do mês", fmt(s.saldo_operacional[i]), s.saldo_operacional[i] < 0 ? "neg" : ""],
-    ["Conta + investido", fmt(s.saldo_total[i]), s.saldo_total[i] < 0 ? "neg" : ""],
-  ].map(([l, v, c]) => `<div class="tile"><div class="label">${l}</div><div class="value ${c}">${v}</div></div>`).join("");
-
-  let h = "";
-  for (const [g, label] of Object.entries(GROUPS)) {
-    const items = p.rows.filter((r) => r.group === g && Math.abs(r.values[i]) > 0.005);
-    const autoInv = g === "investimento" ? s.inv_automatico[i] : 0;
-    const total = g === "investimento" ? s.investimentos[i] : items.reduce((a, r) => a + r.values[i], 0);
-    h += `<div class="card mgroup"><div class="card-head"><p class="eyebrow">${label}</p><b>${fmt2(total)}</b></div>`;
-    for (const r of items) {
-      const v = r.values[i], movable = !LOCKED_KINDS.has(r.kind);
-      const dnd = movable ? ` data-drag data-cat="${r.category_id}" data-month="${state.flowMonth}" data-value="${v}" data-label="${esc(r.name)}"` : "";
-      h += `<div class="mitem" data-open="${r.category_id}"${dnd}>
-        <span class="drag-handle ${movable ? "" : "off"}" ${movable ? 'aria-label="Arrastar para outro mês"' : ""}>${movable ? GRIP : ""}</span>
-        <span class="name">${esc(r.name)}${r.kind !== "manual" ? ' <span class="badge">auto</span>' : ""}${r.overridden[i] ? ' <span class="badge accent">ajuste</span>' : ""}</span>
-        <span class="val">${fmt2(v)}</span></div>`;
-    }
-    if (autoInv) {
-      h += `<div class="mitem locked"><span class="drag-handle off"></span><span class="name">Investimento automático <span class="badge">auto</span></span>
-        <span class="val">${fmt2(autoInv)}</span></div>`;
-    }
-    if (!items.length && !autoInv) h += '<p class="hint" style="margin:0">Nada neste mês.</p>';
-    h += `<button class="ghost sm" data-add="${g}" style="margin-top:6px">+ Lançar valor</button></div>`;
-  }
-  $("#month-groups").innerHTML = h;
-}
-
-$("#flow-view").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-view]");
-  if (!b) return;
-  state.flowView = b.dataset.view;
-  renderFluxo();
-});
-$("#month-strip").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-pick-month]");
-  if (!b) return;
-  state.flowMonth = b.dataset.pickMonth;
-  renderFluxoMonths();
-});
-$("#month-groups").addEventListener("click", (e) => {
-  const add = e.target.closest("[data-add]");
-  if (add) return openAddSheet(add.dataset.add);
-  const item = e.target.closest("[data-open]");
-  if (item && !e.target.closest(".drag-handle")) openItemSheet(+item.dataset.open);
-});
-
-function openItemSheet(catId) {
-  const p = state.view, i = p.months.indexOf(state.flowMonth);
-  const r = p.rows.find((x) => x.category_id === catId);
-  const v = r.values[i], movable = !LOCKED_KINDS.has(r.kind), auto = r.kind !== "manual";
-  const others = state.projection.months.filter((m) => m !== state.flowMonth);
-  const next = others.find((m) => m > state.flowMonth) || others[0];
-  openSheet(`<p class="eyebrow">${esc(GROUPS[r.group])} · ${mlabel(state.flowMonth)}</p>
-    <h2 style="margin:0 0 12px">${esc(r.name)}</h2>
-    <label class="field">Valor em ${mlabel(state.flowMonth)}<input id="sh-value" type="number" step="0.01" inputmode="decimal" value="${+v.toFixed(2)}"></label>
-    <div class="row"><button class="primary" id="sh-save">Salvar</button>
-      <button id="sh-clear">${auto ? "Voltar ao cálculo" : "Apagar do mês"}</button></div>
-    ${movable ? `<hr class="sep"><p class="eyebrow">Levar para outro mês</p>
-    <div class="form">
-      <label class="field">Para<select id="sh-to">${others.map((m) => `<option value="${m}" ${m === next ? "selected" : ""}>${mlabel(m)}</option>`).join("")}</select></label>
-      <label class="field">Quanto<input id="sh-amount" type="number" step="0.01" inputmode="decimal" value="${+v.toFixed(2)}"></label>
-    </div>
-    <div class="row"><button class="primary" id="sh-move">Mover</button><button id="sh-copy">Copiar</button></div>`
-    : '<p class="hint">Esta linha vem dos contratos/planos: altere nas abas Consignados ou Em atraso.</p>'}`);
-  const put = async (amount) => {
-    await api("PUT", `/api/scenarios/${state.current}/entries`, [{ category_id: catId, month: state.flowMonth, amount }]);
-    closeSheet();
-    await refresh();
-  };
-  $("#sh-save").onclick = () => {
-    const n = parseNum($("#sh-value").value);
-    if (n === undefined) return toast("Valor inválido");
-    put(n === null ? 0 : n);
-  };
-  $("#sh-clear").onclick = () => put(null);
-  if (movable) {
-    const go = (mode) => {
-      const amount = parseNum($("#sh-amount").value);
-      if (!amount) return toast("Informe quanto mover");
-      closeSheet();
-      moveValue({ cat: catId, from: state.flowMonth, to: $("#sh-to").value, label: r.name, amount, mode });
-    };
-    $("#sh-move").onclick = () => go("move");
-    $("#sh-copy").onclick = () => go("copy");
-  }
-}
-
-function openAddSheet(group) {
-  const cats = state.categories.filter((c) => c.group === group && c.kind === "manual" && c.active);
-  openSheet(`<p class="eyebrow">${esc(GROUPS[group])} · ${mlabel(state.flowMonth)}</p>
-    <h2 style="margin:0 0 12px">Lançar valor</h2>
-    <div class="form">
-      <label class="field">Linha<select id="sh-cat">${cats.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("")}
-        <option value="new">+ Nova linha…</option></select></label>
-      <label class="field">Valor em ${mlabel(state.flowMonth)}<input id="sh-value" type="number" step="0.01" inputmode="decimal"></label>
-    </div>
-    <p class="hint" id="sh-current"></p>
-    <div class="row"><button class="primary" id="sh-save">Salvar</button></div>`);
-  const i = state.view.months.indexOf(state.flowMonth);
-  const showCurrent = () => {
-    const r = state.view.rows.find((x) => x.category_id === +$("#sh-cat").value);
-    $("#sh-current").textContent = r && Math.abs(r.values[i]) > 0.005 ? `Valor atual no mês: ${fmt2(r.values[i])} (será substituído)` : "";
-  };
-  $("#sh-cat").onchange = showCurrent;
-  showCurrent();
-  $("#sh-save").onclick = async () => {
-    const n = parseNum($("#sh-value").value);
-    if (n === undefined || n === null) return toast("Informe o valor");
-    let id = $("#sh-cat").value;
-    if (id === "new") {
-      const name = (prompt(`Nome da nova linha em "${GROUPS[group]}":`) || "").trim();
-      if (!name) return;
-      const order = Math.max(0, ...state.categories.filter((c) => c.group === group).map((c) => c.sort_order)) + 10;
-      id = (await api("POST", "/api/categories", { name, group, kind: "manual", sort_order: order })).id;
-      await loadBase();
-    }
-    await api("PUT", `/api/scenarios/${state.current}/entries`, [{ category_id: +id, month: state.flowMonth, amount: n }]);
-    closeSheet();
-    toast("Valor lançado");
-    await refresh();
-  };
-}
-
-// ------------------------------------------------------------------ navegação
-const RENDER = {
-  painel: renderPainel, fluxo: renderFluxo, premissas: renderPremissas, consignados: renderConsignados, atrasos: renderAtrasos,
-  comparar: renderComparar, lancamentos: renderLancamentos, orcado: renderOrcado, cadastros: renderCadastros,
+// ------------------------------------------------------------------ estado e dados base
+const state = {
+  people: [], accounts: [], categories: [], person: "all", tab: "inicio", status: null,
+  tx: { month: thisMonth(), account: "", status: "", q: "", selected: new Set(), rows: [] },
+  plan: { month: thisMonth(), scope: "padrao", suggestions: null },
+  ruleSource: "",
 };
+const KIND_LABEL = { corrente: "Conta corrente", poupanca: "Poupança", cartao: "Cartão de crédito", investimento: "Investimentos", dinheiro: "Dinheiro" };
+const DEBT_LABEL = { emprestimo: "Empréstimo", consignado: "Consignado", financiamento: "Financiamento", cheque_especial: "Cheque especial", acordo: "Acordo", outro: "Outro" };
+const TYPE_LABEL = { despesa: "Despesas", receita: "Receitas", transferencia: "Transferências (não contam como gasto)" };
+const personName = (id) => (id == null ? "Conjunta" : state.people.find((p) => p.id === id)?.name || "–");
+const catById = (id) => state.categories.find((c) => c.id === id);
+const accById = (id) => state.accounts.find((a) => a.id === id);
+
+async function loadBase() {
+  [state.people, state.accounts, state.categories] = await Promise.all([
+    api("GET", "/api/people"), api("GET", "/api/accounts?include_inactive=true"), api("GET", "/api/categories"),
+  ]);
+  const sel = $("#person");
+  const opts = [["all", "Todos"], ...state.people.map((p) => [String(p.id), p.name]), ["conjunto", "Conjunto"]];
+  if (!opts.some(([v]) => v === state.person)) state.person = "all";
+  sel.innerHTML = opts.map(([v, l]) => `<option value="${v}" ${v === state.person ? "selected" : ""}>${esc(l)}</option>`).join("");
+  sel.hidden = state.people.length === 0;
+}
+
+function categoryOptions(selected, { allowNone = true, types = ["despesa", "receita", "transferencia"] } = {}) {
+  let h = allowNone ? `<option value="">Sem categoria</option>` : "";
+  for (const t of types) {
+    const groups = {};
+    state.categories.filter((c) => c.type === t && (c.active || c.id === selected)).forEach((c) => (groups[c.group] ||= []).push(c));
+    for (const [g, cs] of Object.entries(groups)) {
+      h += `<optgroup label="${esc(t === "despesa" ? g : TYPE_LABEL[t])}">` +
+        cs.map((c) => `<option value="${c.id}" ${c.id === selected ? "selected" : ""}>${esc(c.name)}</option>`).join("") + "</optgroup>";
+    }
+  }
+  return h;
+}
+const accountOptions = (selected, { all = false, label = "Todas as contas" } = {}) =>
+  (all ? `<option value="">${label}</option>` : "") +
+  state.accounts.filter((a) => a.active || a.id === selected)
+    .map((a) => `<option value="${a.id}" ${a.id === selected ? "selected" : ""}>${esc(a.name)}</option>`).join("");
+const peopleOptions = (selected, none = "Conjunta") => `<option value="">${none}</option>` +
+  state.people.map((p) => `<option value="${p.id}" ${p.id === selected ? "selected" : ""}>${esc(p.name)}</option>`).join("");
+
+async function refresh() {
+  await (RENDER[state.tab] || (() => {}))();
+}
+
+// ------------------------------------------------------------------ INÍCIO
+async function renderInicio() {
+  const d = await api("GET", withPerson(`/api/dashboard`));
+  const empty = state.accounts.length === 0;
+  $("#home-empty").hidden = !empty;
+  $("#home-content").hidden = empty;
+  $("#home-crumb").textContent = mlong(d.month);
+  if (empty) return;
+  if (!state.monthSynced) {
+    // na primeira visita com dados, Lançamentos e Planejamento abrem no mesmo mês que o Início mostra
+    state.monthSynced = true;
+    state.tx.month = state.plan.month = d.month;
+  }
+  const T = d.month_totals;
+  $("#h-saldo").textContent = fmt2(d.saldo_contas);
+  const net = T.receitas - T.despesas;
+  const arrow = net >= 0 ? '<path d="M7 17 17 7M9 7h8v8"/>' : '<path d="M7 7l10 10M17 9v8H9"/>';
+  $("#h-trend").hidden = false;
+  $("#h-trend").innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${arrow}</svg>${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))} no mês`;
+  $("#h-caption").textContent = `receitas ${fmt(T.receitas)} · despesas ${fmt(T.despesas)}${d.investido ? ` · investido ${fmt(d.investido)}` : ""}`;
+
+  $("#home-alert").innerHTML = d.uncategorized
+    ? `<div class="card alert-row"><span><b>${d.uncategorized}</b> ${d.uncategorized === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}</span>
+        <button class="primary" data-review>Revisar agora</button></div>` : "";
+
+  const budgetLeft = T.despesas_orcadas ? T.despesas_orcadas - T.despesas : null;
+  const DT = d.debts_totals;
+  const tiles = [
+    ["Gastos do mês", fmt(T.despesas), T.despesas_orcadas ? `de ${fmt(T.despesas_orcadas)} orçados` : "sem orçamento definido"],
+    ["Ainda pode gastar", budgetLeft == null ? "–" : fmt(budgetLeft), budgetLeft == null ? "defina em Planejamento" : budgetLeft < 0 ? "acima do orçamento" : "até o fim do mês"],
+    ["Faturas abertas", fmt(DT.faturas_abertas), `parcelas futuras ${fmt(DT.parcelas_cartao_futuras)}`],
+    ["Dívidas", fmt(DT.saldo_devedor), DT.comprometimento != null ? `parcelas ${fmt(DT.parcelas_mes)}/mês · ${pct(DT.comprometimento)} da renda` : `parcelas ${fmt(DT.parcelas_mes)}/mês`],
+  ];
+  $("#home-tiles").innerHTML = tiles.map(([l, v, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+
+  $("#home-groups").innerHTML = d.groups.length ? d.groups.map((g) => {
+    const max = Math.max(...g.values, 1), cur = g.values[g.values.length - 1];
+    const [whole, cents] = BRL2.format(cur).split(",");
+    const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(4, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
+    return `<div class="mf-cat" data-group="${esc(g.group)}"><div class="mf-cat__icon">${esc(initials(g.group))}</div>
+      <div class="mf-spark">${bars}</div><div><div class="mf-cat__label">${esc(g.group)}</div>
+      <div class="mf-cat__amount">${whole}<small>,${cents}</small></div><div class="mf-cat__meta">neste mês · 6 meses no gráfico</div></div></div>`;
+  }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
+
+  $("#home-accounts").innerHTML = d.accounts.filter((a) => a.kind !== "cartao").map((a) => `
+    <div class="mf-tx"><div class="mf-tx__icon">${esc(initials(a.name))}</div>
+      <div class="mf-tx__text"><div class="mf-tx__title">${esc(a.name)}</div><div class="mf-tx__meta">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}</div></div>
+      <div class="mf-tx__amount">${fmt2(a.balance)}</div></div>`).join("") || '<p class="hint">Nenhuma conta.</p>';
+  $("#home-cards").innerHTML = d.cards.map((c) => `
+    <div class="mf-tx"><div class="mf-tx__icon">${esc(initials(c.name))}</div>
+      <div class="mf-tx__text"><div class="mf-tx__title">${esc(c.name)}</div>
+        <div class="mf-tx__meta">${c.configured ? `fatura de ${mlabel(c.invoice.month)} · vence ${dlabel(c.invoice.due)}` : "configure fechamento e vencimento"}</div></div>
+      <div class="mf-tx__amount">${fmt2(c.invoice.amount)}</div></div>`).join("") || '<p class="hint">Nenhum cartão importado.</p>';
+}
+$("#home-alert").addEventListener("click", (e) => {
+  if (e.target.closest("[data-review]")) {
+    state.tx.status = "revisar";
+    goTab("lancamentos");
+  }
+});
+
+// ------------------------------------------------------------------ LANÇAMENTOS
+async function renderLancamentos() {
+  const f = state.tx;
+  $("#tx-month").value = f.month.slice(0, 7);
+  $("#tx-account").innerHTML = accountOptions(f.account ? +f.account : null, { all: true });
+  $$("#tx-status button").forEach((b) => b.classList.toggle("active", b.dataset.s === f.status));
+  $("#tx-q").value = f.q;
+  const pending = f.status !== "";
+  $(".filters .month-nav", $("#tab-lancamentos")).classList.toggle("dim", pending);
+  $("#tx-status-hint").textContent = pending ? "mostrando todos os meses" : "";
+  const params = new URLSearchParams();
+  if (!pending) params.set("month", f.month);
+  if (f.account) params.set("account_id", f.account);
+  if (f.status) params.set("status", f.status);
+  if (f.q) params.set("q", f.q);
+  f.rows = await api("GET", withPerson(`/api/transactions?${params}`));
+  const ins = f.rows.filter((t) => t.amount > 0 && catById(t.category_id)?.type !== "transferencia").reduce((s, t) => s + t.amount, 0);
+  const outs = f.rows.filter((t) => t.amount < 0 && catById(t.category_id)?.type !== "transferencia").reduce((s, t) => s - t.amount, 0);
+  $("#tx-summary").innerHTML = [["Entradas", fmt2(ins)], ["Saídas", fmt2(outs)], ["Lançamentos", String(f.rows.length)]]
+    .map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("");
+  renderTxList();
+}
+
+function txBadge(t) {
+  if (!t.category_id) return '<span class="badge">sem categoria</span>';
+  if (t.categorized_by === "ia" && !t.reviewed) return `<span class="badge accent" title="Sugerido pela IA">IA ${pct(t.confidence)}</span>`;
+  return "";
+}
+
+function renderTxList() {
+  const f = state.tx;
+  if (!f.rows.length) {
+    $("#tx-list").innerHTML = `<p class="hint" style="margin:0">${f.status ? "Nada pendente. Tudo categorizado." : "Nenhum lançamento neste mês. Importe um extrato em Importar extrato."}</p>`;
+    updateBulk();
+    return;
+  }
+  let h = "", last = null;
+  for (const t of f.rows) {
+    if (t.date !== last) {
+      h += `<div class="day-head">${dlabel(t.date)}</div>`;
+      last = t.date;
+    }
+    const cat = catById(t.category_id), acc = accById(t.account_id);
+    const inst = t.installment ? ` · parcela ${t.installment[0]}/${t.installment[1]}` : "";
+    h += `<div class="mf-tx tx-row" data-id="${t.id}">
+      <label class="tx-check" title="Selecionar"><input type="checkbox" data-sel="${t.id}" ${f.selected.has(t.id) ? "checked" : ""}></label>
+      <div class="mf-tx__icon">${esc(initials(cat ? cat.group : "?"))}</div>
+      <div class="mf-tx__text"><div class="mf-tx__title">${esc(t.description)}</div>
+        <div class="mf-tx__meta">${esc(cat ? cat.name : "Sem categoria")} · ${esc(acc ? acc.name : "")}${inst} ${txBadge(t)}</div></div>
+      <div class="mf-tx__amount">${t.amount < 0 ? "−" : ""}${fmt2(Math.abs(t.amount))}</div></div>`;
+  }
+  $("#tx-list").innerHTML = h;
+  updateBulk();
+}
+
+function updateBulk() {
+  const n = state.tx.selected.size;
+  $("#bulkbar").hidden = n === 0;
+  $("#bulk-count").textContent = `${n} ${n === 1 ? "selecionado" : "selecionados"}`;
+  if (n && !$("#bulk-cat").options.length) $("#bulk-cat").innerHTML = categoryOptions(null, { allowNone: false });
+}
+
+$("#tx-list").addEventListener("click", (e) => {
+  const sel = e.target.closest("[data-sel]");
+  if (sel) {
+    const id = +sel.dataset.sel;
+    sel.checked ? state.tx.selected.add(id) : state.tx.selected.delete(id);
+    return updateBulk();
+  }
+  if (e.target.closest(".tx-check")) return;
+  const row = e.target.closest(".tx-row");
+  if (row) openTxSheet(state.tx.rows.find((t) => t.id === +row.dataset.id));
+});
+
+function openTxSheet(t) {
+  const acc = accById(t.account_id);
+  const ia = t.categorized_by === "ia" && !t.reviewed;
+  openSheet(`<p class="eyebrow">${dlabel(t.date)}/${t.date.slice(0, 4)} · ${esc(acc ? acc.name : "")}</p>
+    <h2 style="margin:0 0 4px">${t.amount < 0 ? "−" : ""}${fmt2(Math.abs(t.amount))}</h2>
+    <p class="hint">${esc(t.description)}${t.installment ? ` · parcela ${t.installment[0]} de ${t.installment[1]}` : ""}</p>
+    ${ia ? `<p class="hint">Sugestão da IA com ${pct(t.confidence)} de confiança. Confirme ou troque.</p>` : ""}
+    <label class="field">Categoria<select id="sh-cat">${categoryOptions(t.category_id)}</select></label>
+    <label class="pick" style="margin-top:12px"><input type="checkbox" id="sh-learn" checked> Lembrar para “${esc(t.merchant)}” e corrigir os parecidos</label>
+    <label class="field" style="margin-top:12px">Observação<input id="sh-notes" value="${esc(t.notes || "")}"></label>
+    <div class="row" style="margin-top:16px"><button class="primary" id="sh-save">Salvar</button>
+      <button class="danger" id="sh-del">Excluir</button></div>`);
+  $("#sh-save").onclick = async () => {
+    const cid = sheetVal("sh-cat") ? +sheetVal("sh-cat") : null;
+    const body = { notes: sheetVal("sh-notes") || null, learn: $("#sh-learn").checked };
+    if (cid !== t.category_id || ia) body.category_id = cid;
+    if (cid) body.reviewed = true;
+    const r = await api("PATCH", `/api/transactions/${t.id}`, body);
+    closeSheet();
+    toast(r.similar_updated ? `Salvo e ${r.similar_updated} parecido(s) corrigido(s)` : "Salvo");
+    await renderLancamentos();
+  };
+  $("#sh-del").onclick = async () => {
+    if (!confirm("Excluir este lançamento?")) return;
+    await api("DELETE", `/api/transactions/${t.id}`);
+    closeSheet();
+    await renderLancamentos();
+  };
+}
+
+$("#tx-status").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-s]");
+  if (!b) return;
+  state.tx.status = b.dataset.s;
+  state.tx.selected.clear();
+  renderLancamentos();
+});
+$("#tx-month").addEventListener("change", (e) => { if (e.target.value) { state.tx.month = e.target.value + "-01"; state.tx.status = ""; renderLancamentos(); } });
+$("#tx-prev").onclick = () => { state.tx.month = addMonths(state.tx.month, -1); state.tx.status = ""; renderLancamentos(); };
+$("#tx-next").onclick = () => { state.tx.month = addMonths(state.tx.month, 1); state.tx.status = ""; renderLancamentos(); };
+$("#tx-account").addEventListener("change", (e) => { state.tx.account = e.target.value; renderLancamentos(); });
+let qTimer;
+$("#tx-q").addEventListener("input", (e) => {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => { state.tx.q = e.target.value.trim(); renderLancamentos(); }, 300);
+});
+$("#bulk-apply").onclick = async () => {
+  const ids = [...state.tx.selected];
+  const r = await api("POST", "/api/transactions/bulk-category", { ids, category_id: +$("#bulk-cat").value });
+  state.tx.selected.clear();
+  toast(`${r.updated} categorizado(s)${r.similar_updated ? ` e ${r.similar_updated} parecido(s)` : ""}`);
+  await renderLancamentos();
+};
+$("#bulk-clear").onclick = () => { state.tx.selected.clear(); renderTxList(); };
+$("#tx-add").onclick = () => {
+  if (!state.accounts.length) return toast("Cadastre uma conta em Ajustes ou importe um extrato");
+  openSheet(`<p class="eyebrow">Novo lançamento</p><h2 style="margin:0 0 12px">Lançar à mão</h2>
+    <div class="form">
+      <label class="field">Data<input id="sh-date" type="date" value="${new Date().toISOString().slice(0, 10)}"></label>
+      <label class="field">Valor (− saída, + entrada)<input id="sh-amount" inputmode="decimal" placeholder="-50,00"></label>
+    </div>
+    <label class="field">Descrição<input id="sh-desc"></label>
+    <div class="form"><label class="field">Conta<select id="sh-acc">${accountOptions(state.accounts[0].id)}</select></label>
+      <label class="field">Categoria<select id="sh-cat">${categoryOptions(null)}</select></label></div>
+    <div class="row" style="margin-top:16px"><button class="primary" id="sh-save">Salvar</button></div>`);
+  $("#sh-save").onclick = async () => {
+    const amount = parseNum(sheetVal("sh-amount"));
+    if (amount == null || amount === undefined || !sheetVal("sh-desc")) return toast("Informe valor e descrição");
+    await api("POST", "/api/transactions", { account_id: +sheetVal("sh-acc"), date: sheetVal("sh-date"), amount,
+      description: sheetVal("sh-desc"), category_id: sheetVal("sh-cat") ? +sheetVal("sh-cat") : null });
+    closeSheet();
+    toast("Lançamento salvo");
+    await renderLancamentos();
+  };
+};
+
+// ------------------------------------------------------------------ IMPORTAR
+async function renderImportar() {
+  $("#imp-account").innerHTML = `<option value="">Reconhecer pelo arquivo</option>` + accountOptions(null);
+  $("#imp-owner").innerHTML = peopleOptions(null);
+  const hist = await api("GET", "/api/imports");
+  $("#imp-history").innerHTML = hist.length ? `<thead><tr><th>Arquivo</th><th>Conta</th><th>Período</th><th>Novos</th><th>Repetidos</th><th>Regra</th><th>IA</th><th>Sem cat.</th><th></th></tr></thead><tbody>` +
+    hist.map((b) => `<tr><td>${esc(b.filename)}</td><td>${esc(b.account || "–")}</td><td>${dlabel(b.period[0])} a ${dlabel(b.period[1])}</td>
+      <td>${b.new}</td><td>${b.duplicates}</td><td>${b.by_rule}</td><td>${b.by_ai}</td><td>${b.uncategorized}</td>
+      <td><button class="ghost sm danger" data-undo="${b.id}">Desfazer</button></td></tr>`).join("") + "</tbody>"
+    : '<tbody><tr><td class="muted">Nenhuma importação ainda.</td></tr></tbody>';
+}
+
+async function importFiles(files) {
+  const out = $("#imp-results");
+  for (const file of files) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<p class="hint" style="margin:0">Importando ${esc(file.name)}…</p>`;
+    out.prepend(card);
+    const fd = new FormData();
+    fd.append("file", file);
+    if ($("#imp-account").value) fd.append("account_id", $("#imp-account").value);
+    if ($("#imp-owner").value) fd.append("owner_id", $("#imp-owner").value);
+    try {
+      const r = await api("POST", "/api/imports", fd);
+      card.innerHTML = `<div class="mf-section"><h3>${esc(file.name)}</h3><span class="badge ${r.account.created ? "accent" : ""}">${r.account.created ? "conta criada" : "conta reconhecida"}</span></div>
+        <p class="hint" style="margin:4px 0 12px">${esc(r.account.name)} · ${KIND_LABEL[r.account.kind]} · ${dlabel(r.period[0])} a ${dlabel(r.period[1])}</p>
+        <div class="tiles">${[["Novos", r.new], ["Repetidos (ignorados)", r.duplicates], ["Por regra", r.by_rule],
+          ["Pela IA", r.ai_enabled ? r.by_ai : "desligada"], ["Sem categoria", r.uncategorized]]
+          .map(([l, v]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div></div>`).join("")}</div>
+        ${r.uncategorized ? `<button class="primary" data-review>Revisar ${r.uncategorized} sem categoria</button>` : ""}
+        ${r.account.kind === "cartao" && r.account.created ? `<p class="hint">Cartão novo: informe o dia de fechamento e de vencimento em Ajustes para o app calcular as faturas.</p>` : ""}`;
+    } catch (err) {
+      card.innerHTML = `<h3>${esc(file.name)}</h3><p class="hint">Não foi possível importar: ${esc(err.message)}</p>`;
+    }
+  }
+  await loadBase();
+  await renderImportar();
+}
+$("#ofx-files").addEventListener("change", (e) => { importFiles([...e.target.files]); e.target.value = ""; });
+const dz = $("#dropzone");
+["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("over"); }));
+["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, () => dz.classList.remove("over")));
+dz.addEventListener("drop", (e) => { e.preventDefault(); importFiles([...e.dataTransfer.files]); });
+$("#imp-results").addEventListener("click", (e) => { if (e.target.closest("[data-review]")) { state.tx.status = "sem_categoria"; goTab("lancamentos"); } });
+$("#imp-history").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-undo]");
+  if (!b || !confirm("Desfazer esta importação? Os lançamentos que ela trouxe serão apagados.")) return;
+  await api("DELETE", `/api/imports/${b.dataset.undo}`);
+  toast("Importação desfeita");
+  await renderImportar();
+});
+
+// ------------------------------------------------------------------ PLANEJAMENTO
+const srcTag = (src) => (src === "orçamento" ? "" : ` <span class="muted">(${src})</span>`);
+async function renderPlanejamento() {
+  const p = state.plan;
+  $("#bud-month").value = p.month.slice(0, 7);
+  $$("#bud-scope button").forEach((b) => b.classList.toggle("active", b.dataset.scope === p.scope));
+  const [v, proj] = await Promise.all([api("GET", withPerson(`/api/budget?month=${p.month}`)), api("GET", withPerson(`/api/projection?months=6`))]);
+  const T = v.totals;
+  $("#bud-tiles").innerHTML = [
+    ["Receitas", fmt(T.receitas), T.receitas_previstas ? `previstas ${fmt(T.receitas_previstas)}` : "sem previsão"],
+    ["Despesas", fmt(T.despesas), T.despesas_orcadas ? `orçadas ${fmt(T.despesas_orcadas)}` : "sem orçamento"],
+    ["Sobra do mês", fmt(T.receitas - T.despesas), T.receitas_previstas ? `prevista ${fmt(T.receitas_previstas - T.despesas_orcadas)}` : ""],
+    ["Sem categoria", fmt(T.sem_categoria), T.sem_categoria ? "categorize em Lançamentos" : "tudo categorizado"],
+  ].map(([l, val, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${val}</div><div class="sub">${s}</div></div>`).join("");
+
+  const byCat = Object.fromEntries(v.rows.map((r) => [r.category_id, r]));
+  const sug = p.suggestions ? Object.fromEntries(p.suggestions.map((s) => [s.category_id, s.amount])) : {};
+  let h = `<thead><tr><th>Categoria</th><th>Orçado</th><th>Realizado</th><th>Restante</th><th class="bar-col"></th></tr></thead><tbody>`;
+  for (const type of ["despesa", "receita"]) {
+    const groups = {};
+    state.categories.filter((c) => c.type === type && c.active).forEach((c) => (groups[c.group] ||= []).push(c));
+    h += `<tr class="group"><td colspan="5">${TYPE_LABEL[type]}</td></tr>`;
+    for (const [g, cs] of Object.entries(groups)) {
+      const sumP = cs.reduce((s, c) => s + (byCat[c.id]?.planned || 0), 0), sumA = cs.reduce((s, c) => s + (byCat[c.id]?.actual || 0), 0);
+      if (type === "despesa") h += `<tr class="subgroup"><td>${esc(g)}</td><td>${fmt(sumP)}</td><td>${fmt(sumA)}</td><td>${sumP ? fmt(sumP - sumA) : ""}</td><td></td></tr>`;
+      for (const c of cs) {
+        const r = byCat[c.id] || { planned: 0, actual: 0 };
+        const value = c.id in sug ? sug[c.id] : r.planned || "";
+        const ratio = r.planned ? r.actual / r.planned : 0;
+        const over = r.planned && r.actual > r.planned;
+        h += `<tr><td class="cat-name">${esc(c.name)}</td>
+          <td><input class="bud-in ${c.id in sug ? "suggested" : ""}" data-cat="${c.id}" inputmode="decimal" value="${value}" placeholder="–"></td>
+          <td>${r.actual ? fmt2(r.actual) : ""}</td><td>${r.planned ? `${over ? "−" : ""}${fmt(Math.abs(r.planned - r.actual))}${over ? " acima" : ""}` : ""}</td>
+          <td class="bar-col">${r.planned ? `<div class="meter ${over ? "over" : ""}"><i style="width:${Math.min(100, ratio * 100)}%"></i></div>` : ""}</td></tr>`;
+      }
+    }
+  }
+  const unc = byCat["null"] || v.rows.find((r) => r.category_id === null);
+  if (unc) h += `<tr><td class="cat-name muted">Sem categoria</td><td></td><td>${fmt2(unc.actual)}</td><td></td><td></td></tr>`;
+  $("#bud-table").innerHTML = h + "</tbody>";
+
+  // projeção
+  $("#proj-hint").innerHTML = `Começa no próximo mês com <b>${fmt(proj.saldo_inicial)}</b> (saldo em contas ${fmt(proj.saldo_atual)}
+    menos faturas abertas ${fmt(proj.faturas_abertas)}). Cada categoria usa o orçamento; as que não têm orçamento usam a média dos últimos meses (até 3).
+    Somam-se as parcelas das dívidas e as parcelas de cartão já compradas.`;
+  const ms = proj.months;
+  chart("chart-proj").setOption({
+    ...baseOption(),
+    xAxis: { ...baseOption().xAxis, data: ms.map((m) => mlabel(m.month)) },
+    series: [
+      { name: "Saldo projetado", type: "line", data: ms.map((m) => m.saldo), color: LIT(), symbol: "circle", symbolSize: 6, lineStyle: { width: 2.5 },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
+      { name: "Dívidas + parcelas de cartão", type: "bar", data: ms.map((m) => m.dividas + m.parcelas_cartao), color: DIM(), barMaxWidth: 22, itemStyle: { borderRadius: [4, 4, 0, 0] } },
+    ],
+  }, true);
+  $("#proj-table").innerHTML = `<thead><tr><th>Mês</th><th>Receitas</th><th>Despesas</th><th>Dívidas</th><th>Parcelas cartão</th><th>Saldo</th></tr></thead><tbody>` +
+    ms.map((m) => `<tr><td>${mlabel(m.month)}</td><td>${fmt(m.receitas)}${srcTag(m.fonte_receitas)}</td>
+      <td>${fmt(m.despesas)}${srcTag(m.fonte_despesas)}</td><td>${fmt(m.dividas)}</td><td>${fmt(m.parcelas_cartao)}</td>
+      <td class="${m.saldo < 0 ? "neg" : ""}"><b>${m.saldo < 0 ? "−" : ""}${fmt(Math.abs(m.saldo))}</b></td></tr>`).join("") + "</tbody>";
+}
+
+$("#bud-month").addEventListener("change", (e) => { if (e.target.value) { state.plan.month = e.target.value + "-01"; state.plan.suggestions = null; renderPlanejamento(); } });
+$("#bud-prev").onclick = () => { state.plan.month = addMonths(state.plan.month, -1); state.plan.suggestions = null; renderPlanejamento(); };
+$("#bud-next").onclick = () => { state.plan.month = addMonths(state.plan.month, 1); state.plan.suggestions = null; renderPlanejamento(); };
+$("#bud-scope").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-scope]");
+  if (!b) return;
+  state.plan.scope = b.dataset.scope;
+  $$("#bud-scope button").forEach((x) => x.classList.toggle("active", x === b));
+});
+$("#bud-suggest").onclick = async () => {
+  state.plan.suggestions = await api("GET", withPerson(`/api/budget/suggest?month=${state.plan.month}`));
+  await renderPlanejamento();
+  toast(state.plan.suggestions.length ? "Sugestões preenchidas (em destaque). Ajuste e salve." : "Sem histórico suficiente para sugerir");
+};
+$("#bud-save").onclick = async () => {
+  const month = state.plan.scope === "mes" ? state.plan.month : null;
+  const items = $$("#bud-table .bud-in").map((i) => ({ category_id: +i.dataset.cat, month, amount: parseNum(i.value) ?? null }))
+    .filter((it) => it.amount !== undefined);
+  await api("PUT", "/api/budgets", items);
+  state.plan.suggestions = null;
+  toast(month ? `Orçamento de ${mlabel(month)} salvo` : "Orçamento padrão salvo (vale para todo mês)");
+  await renderPlanejamento();
+};
+
+// ------------------------------------------------------------------ DÍVIDAS
+async function renderDividas() {
+  const d = await api("GET", withPerson("/api/debts/overview"));
+  const T = d.totals;
+  $("#debt-tiles").innerHTML = [
+    ["Saldo devedor", fmt(T.saldo_devedor), "empréstimos e acordos"],
+    ["Faturas abertas", fmt(T.faturas_abertas), "cartões, fatura atual"],
+    ["Parcelas futuras no cartão", fmt(T.parcelas_cartao_futuras), "compras parceladas a cair"],
+    ["Parcelas por mês", fmt(T.parcelas_mes), T.comprometimento != null ? `${pct(T.comprometimento)} da renda média` : "sem renda registrada"],
+  ].map(([l, v, s]) => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div><div class="sub">${s}</div></div>`).join("");
+
+  $("#debt-cards").innerHTML = d.cards.length ? d.cards.map((c) => {
+    const used = c.limit ? Math.min(1, c.limit_used / c.limit) : null;
+    const hist = c.history.map((h) => `<span><b>${fmt(h.amount)}</b> ${mlabel(h.month)}</span>`).join("");
+    const fut = c.future_installments.slice(0, 6).map((f) => `<span>${mlabel(f.month)} <b>${fmt(f.amount)}</b></span>`).join("");
+    return `<div class="card"><div class="mf-section"><h3>${esc(c.name)}</h3><button class="mf-link" data-card="${c.account_id}">${c.configured ? "Editar" : "Configurar"}</button></div>
+      ${c.configured ? `<div class="amount-row"><span class="big">${fmt2(c.current_invoice.amount)}</span><span class="muted">fatura de ${mlabel(c.current_invoice.month)} · vence ${dlabel(c.current_invoice.due)}</span></div>`
+        : `<p class="hint">Informe o dia de fechamento e de vencimento para calcular as faturas.</p>`}
+      ${used != null ? `<div class="meter" title="Limite usado"><i style="width:${used * 100}%"></i></div><p class="hint">${fmt(c.limit_used)} usados de ${fmt(c.limit)} · disponível ${fmt(c.limit_available)}</p>` : ""}
+      ${hist ? `<p class="eyebrow">Últimas faturas</p><div class="chips">${hist}</div>` : ""}
+      ${fut ? `<p class="eyebrow">Parcelas a cair · total ${fmt(c.future_total)}</p><div class="chips">${fut}</div>` : ""}</div>`;
+  }).join("") : '<p class="hint">Nenhum cartão. Importe o OFX da fatura em Importar extrato.</p>';
+
+  $("#debt-list").innerHTML = d.debts.length ? d.debts.map((x) => {
+    const prog = x.total_installments ? x.paid / x.total_installments : null;
+    return `<div class="card debt"><div class="mf-section"><h3>${esc(x.name)}</h3><button class="mf-link" data-debt="${x.id}">Editar</button></div>
+      <p class="hint" style="margin:0 0 8px">${DEBT_LABEL[x.kind]}${x.creditor ? ` · ${esc(x.creditor)}` : ""} · ${esc(personName(x.owner_id))}</p>
+      <div class="amount-row"><span class="big">${fmt2(x.balance)}</span><span class="muted">saldo devedor${x.total_installments ? " (valor para quitar hoje)" : ""}</span></div>
+      ${prog != null ? `<div class="meter"><i style="width:${prog * 100}%"></i></div>
+        <p class="hint">${x.paid} de ${x.total_installments} parcelas pagas · ${x.remaining} restantes de ${fmt2(x.installment)} · termina ${mlabel(x.end_month)}</p>`
+        : x.remaining ? `<p class="hint">Pagando ${fmt2(x.installment)} por mês, faltam cerca de ${x.remaining} parcelas · termina ${mlabel(x.end_month)}</p>` : ""}
+      <div class="kv">${[["Juros a.m.", x.monthly_rate != null ? pct(x.monthly_rate, 2) : "–"], ["Juros que faltam", x.total_installments ? fmt(x.interest_remaining) : "–"],
+        ["Próxima parcela", x.next_due ? dlabel(x.next_due) : "–"], ["Último pagamento", x.last_payment ? `${dlabel(x.last_payment.date)} · ${fmt(Math.abs(x.last_payment.amount))}` : "–"]]
+        .map(([k, v]) => `<span>${k}</span><b>${v}</b>`).join("")}</div></div>`;
+  }).join("") : '<p class="hint">Nenhuma dívida cadastrada. Cadastre empréstimos, consignados, financiamentos e acordos para acompanhar saldo e parcelas.</p>';
+
+  const name = (id) => esc(d.debts.find((x) => x.id === id)?.name || "");
+  const list = (ids, why) => ids.length ? `<ol class="steps">${ids.map((id) => `<li>${name(id)}</li>`).join("")}</ol><p class="hint">${why}</p>` : '<p class="hint">–</p>';
+  $("#debt-strategy-card").hidden = d.debts.filter((x) => x.balance > 0).length < 2;
+  $("#debt-strategy").innerHTML = `<div><p class="eyebrow">Maior juro primeiro (avalanche)</p>${list(d.avalanche, "Paga menos juros no total.")}</div>
+    <div><p class="eyebrow">Menor saldo primeiro (bola de neve)</p>${list(d.snowball, "Elimina dívidas mais rápido e libera parcelas antes.")}</div>`;
+  state.debts = d.debts;
+}
+
+$("#debt-cards").addEventListener("click", (e) => { const b = e.target.closest("[data-card]"); if (b) openAccountSheet(accById(+b.dataset.card)); });
+$("#debt-list").addEventListener("click", (e) => { const b = e.target.closest("[data-debt]"); if (b) openDebtSheet(state.debts.find((x) => x.id === +b.dataset.debt)); });
+$("#debt-add").onclick = () => openDebtSheet(null);
+
+function openDebtSheet(x) {
+  const v = x || { kind: "emprestimo" };
+  openSheet(`<p class="eyebrow">${x ? "Editar dívida" : "Nova dívida"}</p><h2 style="margin:0 0 12px">${x ? esc(x.name) : "Dívida"}</h2>
+    <div class="form">
+      <label class="field">Nome<input id="dv-name" value="${esc(v.name || "")}" placeholder="Consignado Banco X"></label>
+      <label class="field">Tipo<select id="dv-kind">${Object.entries(DEBT_LABEL).map(([k, l]) => `<option value="${k}" ${k === v.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label class="field">Credor<input id="dv-creditor" value="${esc(v.creditor || "")}"></label>
+      <label class="field">De quem<select id="dv-owner">${peopleOptions(v.owner_id ?? null)}</select></label>
+      <label class="field">Parcela (R$)<input id="dv-inst" inputmode="decimal" value="${v.installment || ""}"></label>
+      <label class="field">Juros ao mês (%)<input id="dv-rate" inputmode="decimal" value="${v.monthly_rate != null ? +(v.monthly_rate * 100).toFixed(4) : ""}"></label>
+      <label class="field">1ª parcela<input id="dv-first" type="date" value="${v.first_due || ""}"></label>
+      <label class="field">Nº de parcelas<input id="dv-total" inputmode="numeric" value="${v.total_installments || ""}"></label>
+      <label class="field">Saldo devedor (sem prazo)<input id="dv-balance" inputmode="decimal" value="${v.informed_balance ?? ""}" placeholder="rotativo, acordo"></label>
+      <label class="field">Texto no extrato<input id="dv-match" value="${esc(v.match_pattern || "")}" placeholder="ex.: CONSIGNADO"></label>
+    </div>
+    <p class="hint">Com parcela, 1ª parcela e número de parcelas o app calcula quantas foram pagas, o saldo devedor e o valor para quitar
+      hoje. “Texto no extrato” localiza o último pagamento nos lançamentos.</p>
+    <div class="row"><button class="primary" id="dv-save">Salvar</button>${x ? '<button class="danger" id="dv-del">Excluir</button>' : ""}</div>`);
+  $("#dv-save").onclick = async () => {
+    const rate = parseNum(sheetVal("dv-rate"));
+    const body = {
+      name: sheetVal("dv-name"), kind: sheetVal("dv-kind"), creditor: sheetVal("dv-creditor") || null,
+      owner_id: sheetVal("dv-owner") ? +sheetVal("dv-owner") : null, installment: parseNum(sheetVal("dv-inst")) || 0,
+      monthly_rate: rate == null ? null : rate / 100, first_due: sheetVal("dv-first") || null,
+      total_installments: parseInt(sheetVal("dv-total"), 10) || null, balance: parseNum(sheetVal("dv-balance")) ?? null,
+      match_pattern: sheetVal("dv-match") || null,
+    };
+    if (!body.name) return toast("Informe o nome");
+    await api(x ? "PUT" : "POST", x ? `/api/debts/${x.id}` : "/api/debts", body);
+    closeSheet();
+    toast("Dívida salva");
+    await renderDividas();
+  };
+  if (x) $("#dv-del").onclick = async () => {
+    if (!confirm("Excluir esta dívida?")) return;
+    await api("DELETE", `/api/debts/${x.id}`);
+    closeSheet();
+    await renderDividas();
+  };
+}
+
+// ------------------------------------------------------------------ AJUSTES
+async function renderAjustes() {
+  $("#set-people").innerHTML = state.people.map((p) => `<div class="mf-tx"><div class="mf-tx__icon">${esc(initials(p.name))}</div>
+    <div class="mf-tx__text"><div class="mf-tx__title">${esc(p.name)}</div></div>
+    <button class="ghost sm" data-ren-person="${p.id}">Renomear</button><button class="ghost sm danger" data-del-person="${p.id}">Excluir</button></div>`).join("")
+    || '<p class="hint">Cadastre quem usa o app (ex.: vocês dois). Cada conta, cartão e dívida pode ter um titular; sem titular fica como conjunta.</p>';
+  const st = await api("GET", "/api/status");
+  state.status = st;
+  $("#set-ai").innerHTML = st.ai
+    ? `<p><span class="badge accent">ligada</span> Os lançamentos que nenhuma regra reconhece são categorizados pela IA do Claude. Respostas muito confiantes viram regras.</p>
+       <button id="ai-run">Categorizar pendentes com IA</button>`
+    : `<p><span class="badge">desligada</span> Para ligar, crie uma chave em console.anthropic.com e configure a variável
+       <code>ANTHROPIC_API_KEY</code> nas variáveis de ambiente do Vercel (depois faça Redeploy). O custo é de centavos por mês.</p>
+       <p class="hint">Sem a chave, o app categoriza só pelas regras, que aprendem com as suas correções.</p>`;
+  const accs = state.accounts;
+  $("#set-accounts").innerHTML = accs.length ? accs.map((a) => `<div class="mf-tx ${a.active ? "" : "muted"}"><div class="mf-tx__icon">${esc(initials(a.name))}</div>
+    <div class="mf-tx__text"><div class="mf-tx__title">${esc(a.name)}${a.active ? "" : " (inativa)"}</div>
+      <div class="mf-tx__meta">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}${a.kind === "cartao" ? (a.closing_day ? ` · fecha dia ${a.closing_day}, vence dia ${a.due_day}` : " · sem fechamento/vencimento") : ""}</div></div>
+    <div class="mf-tx__amount">${a.kind === "cartao" ? "" : fmt2(a.balance)}</div><button class="ghost sm" data-acc="${a.id}">Editar</button></div>`).join("")
+    : '<p class="hint">As contas são criadas sozinhas ao importar o OFX. Também dá para criar à mão (ex.: dinheiro, investimentos).</p>';
+  const groups = {};
+  state.categories.forEach((c) => (groups[`${c.type}|${c.group}`] ||= []).push(c));
+  $("#set-categories").innerHTML = Object.entries(groups).map(([k, cs]) => {
+    const [type, g] = k.split("|");
+    return `<div class="cat-group"><p class="eyebrow">${esc(type === "despesa" ? g : TYPE_LABEL[type])}</p><div class="chips">${cs.map((c) =>
+      `<button class="chip ${c.active ? "" : "off"}" data-cat="${c.id}">${esc(c.name)}</button>`).join("")}</div></div>`;
+  }).join("");
+  await renderRules();
+}
+
+async function renderRules() {
+  const rules = await api("GET", "/api/rules");
+  const shown = rules.filter((r) => (state.ruleSource === "padrao" ? r.source === "padrao" : r.source !== "padrao"));
+  $$("#rule-filter button").forEach((b) => b.classList.toggle("active", b.dataset.src === state.ruleSource));
+  const SRC = { aprendida: "aprendida", manual: "manual", ia: "da IA", padrao: "padrão" };
+  $("#set-rules").innerHTML = shown.length ? `<thead><tr><th>Quando a descrição</th><th>Categoria</th><th>Origem</th><th>Usos</th><th></th></tr></thead><tbody>` +
+    shown.map((r) => `<tr><td>${r.match === "exact" ? "é" : "contém"} <b>${esc(r.pattern)}</b></td><td>${esc(catById(r.category_id)?.name || "–")}</td>
+      <td>${SRC[r.source]}</td><td>${r.hits}</td><td><button class="ghost sm danger" data-del-rule="${r.id}">Excluir</button></td></tr>`).join("") + "</tbody>"
+    : '<tbody><tr><td class="muted">Nenhuma regra sua ainda. Elas aparecem quando você corrige categorias em Lançamentos.</td></tr></tbody>';
+}
+
+$("#add-person").onclick = async () => {
+  const name = $("#new-person").value.trim();
+  if (!name) return;
+  await api("POST", "/api/people", { name });
+  $("#new-person").value = "";
+  await loadBase();
+  await renderAjustes();
+};
+$("#set-people").addEventListener("click", async (e) => {
+  const ren = e.target.closest("[data-ren-person]"), del = e.target.closest("[data-del-person]");
+  if (ren) {
+    const p = state.people.find((x) => x.id === +ren.dataset.renPerson);
+    const name = prompt("Novo nome:", p.name);
+    if (!name) return;
+    await api("PUT", `/api/people/${p.id}`, { name });
+  } else if (del) {
+    if (!confirm("Excluir esta pessoa? As contas e dívidas dela passam a ser conjuntas.")) return;
+    await api("DELETE", `/api/people/${del.dataset.delPerson}`);
+  } else return;
+  await loadBase();
+  await renderAjustes();
+});
+$("#set-ai").addEventListener("click", async (e) => {
+  if (!e.target.closest("#ai-run")) return;
+  e.target.disabled = true;
+  e.target.textContent = "Categorizando…";
+  const r = await api("POST", "/api/transactions/categorize-ai");
+  toast(`${r.categorized} de ${r.checked} pendentes categorizados pela IA`);
+  await renderAjustes();
+});
+$("#set-accounts").addEventListener("click", (e) => { const b = e.target.closest("[data-acc]"); if (b) openAccountSheet(accById(+b.dataset.acc)); });
+$("#add-account").onclick = () => openAccountSheet(null);
+
+function openAccountSheet(a) {
+  const v = a || { kind: "corrente", active: true, opening_balance: 0 };
+  openSheet(`<p class="eyebrow">${a ? "Editar conta" : "Nova conta"}</p><h2 style="margin:0 0 12px">${a ? esc(a.name) : "Conta"}</h2>
+    <div class="form">
+      <label class="field">Nome<input id="ac-name" value="${esc(v.name || "")}"></label>
+      <label class="field">Tipo<select id="ac-kind">${Object.entries(KIND_LABEL).map(([k, l]) => `<option value="${k}" ${k === v.kind ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label class="field">Instituição<input id="ac-inst" value="${esc(v.institution || "")}"></label>
+      <label class="field">Titular<select id="ac-owner">${peopleOptions(v.owner_id ?? null)}</select></label>
+      <label class="field">Saldo inicial (R$)<input id="ac-open" inputmode="decimal" value="${v.opening_balance ?? 0}"></label>
+      <label class="field">Dia de fechamento (cartão)<input id="ac-close" inputmode="numeric" value="${v.closing_day ?? ""}"></label>
+      <label class="field">Dia de vencimento (cartão)<input id="ac-due" inputmode="numeric" value="${v.due_day ?? ""}"></label>
+      <label class="field">Limite (cartão)<input id="ac-limit" inputmode="decimal" value="${v.credit_limit ?? ""}"></label>
+    </div>
+    <label class="pick" style="margin-top:12px"><input type="checkbox" id="ac-active" ${v.active ? "checked" : ""}> Conta ativa</label>
+    <p class="hint">Contas importadas por OFX acertam o saldo sozinhas pelo saldo que o banco informa no arquivo.</p>
+    <div class="row"><button class="primary" id="ac-save">Salvar</button>${a ? '<button class="danger" id="ac-del">Excluir conta e lançamentos</button>' : ""}</div>`);
+  $("#ac-save").onclick = async () => {
+    const body = {
+      name: sheetVal("ac-name"), kind: sheetVal("ac-kind"), institution: sheetVal("ac-inst") || null,
+      owner_id: sheetVal("ac-owner") ? +sheetVal("ac-owner") : null, opening_balance: parseNum(sheetVal("ac-open")) || 0,
+      closing_day: parseInt(sheetVal("ac-close"), 10) || null, due_day: parseInt(sheetVal("ac-due"), 10) || null,
+      credit_limit: parseNum(sheetVal("ac-limit")) ?? null, active: $("#ac-active").checked,
+    };
+    if (!body.name) return toast("Informe o nome");
+    await api(a ? "PUT" : "POST", a ? `/api/accounts/${a.id}` : "/api/accounts", body);
+    closeSheet();
+    toast("Conta salva");
+    await loadBase();
+    await refresh();
+  };
+  if (a) $("#ac-del").onclick = async () => {
+    if (!confirm(`Excluir "${a.name}" e todos os lançamentos dela?`)) return;
+    await api("DELETE", `/api/accounts/${a.id}`);
+    closeSheet();
+    await loadBase();
+    await refresh();
+  };
+}
+
+$("#set-categories").addEventListener("click", (e) => { const b = e.target.closest("[data-cat]"); if (b) openCategorySheet(catById(+b.dataset.cat)); });
+$("#add-category").onclick = () => openCategorySheet(null);
+function openCategorySheet(c) {
+  const v = c || { type: "despesa", group: "", active: true };
+  const groups = [...new Set(state.categories.map((x) => x.group))];
+  openSheet(`<p class="eyebrow">${c ? "Editar categoria" : "Nova categoria"}</p><h2 style="margin:0 0 12px">${c ? esc(c.name) : "Categoria"}</h2>
+    <div class="form">
+      <label class="field">Nome<input id="ct-name" value="${esc(v.name || "")}"></label>
+      <label class="field">Grupo<input id="ct-group" list="ct-groups" value="${esc(v.group)}"><datalist id="ct-groups">${groups.map((g) => `<option value="${esc(g)}">`).join("")}</datalist></label>
+      <label class="field">Tipo<select id="ct-type">${Object.entries({ despesa: "Despesa", receita: "Receita", transferencia: "Transferência" }).map(([k, l]) => `<option value="${k}" ${k === v.type ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+    </div>
+    <label class="pick" style="margin-top:12px"><input type="checkbox" id="ct-active" ${v.active ? "checked" : ""}> Ativa</label>
+    <div class="row" style="margin-top:12px"><button class="primary" id="ct-save">Salvar</button>${c ? '<button class="danger" id="ct-del">Excluir</button>' : ""}</div>`);
+  $("#ct-save").onclick = async () => {
+    const body = { name: sheetVal("ct-name"), group: sheetVal("ct-group") || "Outros", type: sheetVal("ct-type"), active: $("#ct-active").checked, sort_order: c ? c.sort_order : 9999 };
+    if (!body.name) return toast("Informe o nome");
+    await api(c ? "PUT" : "POST", c ? `/api/categories/${c.id}` : "/api/categories", body);
+    closeSheet();
+    await loadBase();
+    await renderAjustes();
+  };
+  if (c) $("#ct-del").onclick = async () => {
+    if (!confirm("Excluir a categoria? Os lançamentos dela ficam sem categoria.")) return;
+    await api("DELETE", `/api/categories/${c.id}`);
+    closeSheet();
+    await loadBase();
+    await renderAjustes();
+  };
+}
+
+$("#rule-filter").addEventListener("click", (e) => { const b = e.target.closest("button[data-src]"); if (b) { state.ruleSource = b.dataset.src; renderRules(); } });
+$("#set-rules").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-del-rule]");
+  if (!b) return;
+  await api("DELETE", `/api/rules/${b.dataset.delRule}`);
+  await renderRules();
+});
+$("#reapply-rules").onclick = async () => {
+  const r = await api("POST", "/api/rules/apply");
+  toast(`${r.categorized} de ${r.checked} pendentes categorizados pelas regras`);
+};
+$("#add-rule").onclick = () => {
+  openSheet(`<p class="eyebrow">Nova regra</p><h2 style="margin:0 0 12px">Quando a descrição…</h2>
+    <div class="form"><label class="field">Tipo<select id="rl-match"><option value="contains">contém</option><option value="exact">é exatamente</option></select></label>
+      <label class="field">Texto<input id="rl-pattern" placeholder="ex.: POSTO"></label></div>
+    <label class="field">…categorizar como<select id="rl-cat">${categoryOptions(null, { allowNone: false })}</select></label>
+    <div class="row" style="margin-top:12px"><button class="primary" id="rl-save">Criar regra</button></div>`);
+  $("#rl-save").onclick = async () => {
+    if (sheetVal("rl-pattern").trim().length < 2) return toast("Texto muito curto");
+    await api("POST", "/api/rules", { pattern: sheetVal("rl-pattern"), match: sheetVal("rl-match"), category_id: +sheetVal("rl-cat") });
+    closeSheet();
+    state.ruleSource = "";
+    await renderRules();
+  };
+};
+
+// ------------------------------------------------------------------ navegação, tema e início
+const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, dividas: renderDividas, ajustes: renderAjustes };
 
 function showTab(tab) {
   state.tab = tab;
   $$("#nav button, #bottomnav button[data-tab]").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
-  const inMore = !["painel", "fluxo", "consignados", "atrasos"].includes(tab);
-  $("#bottomnav [data-more]").classList.toggle("active", inMore);
   $$("section.tab").forEach((s) => s.classList.toggle("active", s.id === `tab-${tab}`));
   history.replaceState(null, "", `#${tab}`);
 }
-
 async function goTab(tab) {
   closeSheet();
   showTab(tab);
   window.scrollTo({ top: 0 });
-  await RENDER[state.tab]();
+  await RENDER[tab]();
   Object.values(charts).forEach((c) => c.resize());
 }
-
-$("#nav").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-tab]");
-  if (b) goTab(b.dataset.tab);
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("#nav button[data-tab], #bottomnav button[data-tab], [data-goto]");
+  if (b) goTab(b.dataset.tab || b.dataset.goto);
 });
-$("#bottomnav").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  if (b.dataset.tab) return goTab(b.dataset.tab);
-  const more = [["premissas", "Premissas do cenário"], ["comparar", "Comparar cenários"], ["lancamentos", "Lançamentos realizados"],
-    ["orcado", "Orçado × realizado"], ["cadastros", "Cadastros e importação"]];
-  openSheet(`<p class="eyebrow">Mais</p><div class="sheet-list">${more.map(([t, l]) =>
-    `<button data-goto="${t}" class="${state.tab === t ? "active" : ""}">${l}</button>`).join("")}</div>`);
+window.addEventListener("hashchange", () => {
+  const tab = location.hash.slice(1);
+  if (RENDER[tab] && tab !== state.tab) goTab(tab);
 });
-$("#sheet").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-goto]");
-  if (b) goTab(b.dataset.goto);
-});
-let lastWide = !isMobile();
-window.addEventListener("resize", () => {
-  // ao girar o celular / redimensionar entre celular e desktop, redesenha a tela atual
-  if (lastWide !== !isMobile()) {
-    lastWide = !isMobile();
-    (RENDER[state.tab] || (() => {}))();
-  }
-});
-$("#scenario").addEventListener("change", async (e) => {
-  state.current = +e.target.value;
-  await refresh();
-});
-$("#sankey-mode").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  $$("#sankey-mode button").forEach((x) => x.classList.toggle("active", x === b));
-  drawPainelSankey();
-});
-$("#sankey-month").addEventListener("change", drawPainelSankey);
-
-async function checkStatus() {
-  const st = await api("GET", "/api/status");
-  const warn = [];
-  if (st.hosted && !st.auth) warn.push("Este endereço está público e sem senha: qualquer pessoa com o link vê seus dados. Defina FINANCI_PASSWORD nas variáveis de ambiente do Vercel e faça um novo deploy.");
-  if (st.hosted && st.database === "sqlite") warn.push("DATABASE_URL não está definida: os dados não ficam salvos. Configure a connection string do Neon no Vercel.");
-  const el = $("#security-banner");
-  el.hidden = !warn.length;
-  el.innerHTML = warn.map((w) => `<div><span class="badge negative">atenção</span> ${esc(w)}</div>`).join("");
-}
+$("#person").addEventListener("change", (e) => { state.person = e.target.value; refresh(); });
 
 const THEME_ICONS = {
   dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
@@ -1766,14 +817,24 @@ const THEME_ICONS = {
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   try { localStorage.setItem("financi-theme", theme); } catch (_) { /* navegação privada */ }
-  // no escuro mostra o sol (ir para o claro) e vice-versa
   $("#theme-btn").innerHTML = THEME_ICONS[theme];
 }
 $("#theme-btn").addEventListener("click", async () => {
   applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
-  await (RENDER[state.tab] || (() => {}))(); // gráficos leem as cores dos tokens ao desenhar
+  await refresh();
 });
 applyTheme(document.documentElement.dataset.theme || "dark");
+
+async function checkStatus() {
+  const st = await api("GET", "/api/status");
+  state.status = st;
+  const warn = [];
+  if (st.hosted && !st.auth) warn.push("Este endereço está público e sem senha: qualquer pessoa com o link vê seus dados. Defina FINANCI_PASSWORD nas variáveis de ambiente do Vercel e faça um novo deploy.");
+  if (st.hosted && st.database === "sqlite") warn.push("DATABASE_URL não está definida: os dados não ficam salvos. Configure a connection string do Neon no Vercel.");
+  const el = $("#security-banner");
+  el.hidden = !warn.length;
+  el.innerHTML = warn.map((w) => `<div><span class="badge negative">atenção</span> ${esc(w)}</div>`).join("");
+}
 
 (async function init() {
   checkStatus();

@@ -1,0 +1,9 @@
+line-length = 145
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP", "BLE", "DTZ"]
+
+[lint.flake8-bugbear]
+# padrão do FastAPI: dependências e campos de formulário declarados como valor padrão
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form"]

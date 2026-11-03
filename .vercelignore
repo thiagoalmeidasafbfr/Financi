@@ -6,3 +6,4 @@ tests
 Dockerfile
 docker-compose.yml
 requirements-dev.txt
+*.ofx

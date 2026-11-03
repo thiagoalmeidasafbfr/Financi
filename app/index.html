@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Financi</title>
   <script>
     // tema antes do primeiro desenho (escuro é o tema principal do Modern Finance)
@@ -14,303 +14,166 @@
 </head>
 <body>
 <header class="topbar">
-  <div class="wordmark">Financi <span>controle financeiro</span></div>
-  <nav class="rail" id="nav">
-    <button data-tab="painel" class="active">Painel</button>
-    <button data-tab="fluxo">Fluxo mensal</button>
-    <button data-tab="premissas">Premissas</button>
-    <button data-tab="consignados">Consignados</button>
-    <button data-tab="atrasos">Em atraso</button>
-    <button data-tab="comparar">Comparar cenários</button>
+  <div class="wordmark">Financi <span>finanças da família</span></div>
+  <nav class="rail" id="nav" aria-label="Navegação">
+    <button data-tab="inicio" class="active">Início</button>
     <button data-tab="lancamentos">Lançamentos</button>
-    <button data-tab="orcado">Orçado × realizado</button>
-    <button data-tab="cadastros">Cadastros</button>
+    <button data-tab="importar">Importar extrato</button>
+    <button data-tab="planejamento">Planejamento</button>
+    <button data-tab="dividas">Dívidas</button>
+    <button data-tab="ajustes">Ajustes</button>
   </nav>
   <div class="scenario-pick">
-    <select id="scenario" aria-label="Cenário" title="Cenário"></select>
+    <select id="person" aria-label="De quem" title="De quem"></select>
+    <button class="mf-icon-btn mf-icon-btn--sm mobile-only" data-goto="ajustes" aria-label="Ajustes" title="Ajustes">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
     <button class="mf-icon-btn mf-icon-btn--sm theme-btn" id="theme-btn" aria-label="Alternar tema claro/escuro" title="Alternar tema claro/escuro"></button>
   </div>
 </header>
 
 <div class="banner" id="security-banner" hidden></div>
+
 <main>
-  <!-- PAINEL -->
-  <section class="tab active" id="tab-painel">
-    <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Painel do cenário</h1></div>
-    <div class="period-bar card"></div>
-    <div class="card onboarding" id="empty-state" hidden>
-      <p class="eyebrow">Primeiro acesso</p>
-      <h2 class="two-part"><span>O banco ainda está vazio.</span><b>Comece importando sua planilha.</b></h2>
-      <p class="hint">Cada aba “Fluxo Mensal - …” vira um cenário, com os consignados e as quitações. Ao final aparece a conferência com os totais da planilha.</p>
-      <div class="row">
-        <input type="file" id="empty-xlsx" accept=".xlsx" aria-label="Planilha .xlsx">
-        <button class="primary" id="btn-empty-import">Importar planilha</button>
-        <span class="muted">ou</span>
-        <button id="btn-empty-new">Criar cenário do zero</button>
-      </div>
-      <pre class="report" id="empty-report" hidden></pre>
+  <!-- INÍCIO -->
+  <section class="tab active" id="tab-inicio">
+    <div class="page-title"><div class="crumb" id="home-crumb"></div><h1>Início</h1></div>
+    <div class="card onboarding" id="home-empty" hidden>
+      <h2 class="two-part"><span>Vamos começar.</span><b>Importe seu primeiro extrato.</b></h2>
+      <ol class="steps">
+        <li>Em <b>Ajustes</b>, cadastre quem usa (vocês dois).</li>
+        <li>No app ou internet banking, exporte o extrato da conta e a fatura do cartão em <b>OFX</b>.</li>
+        <li>Em <b>Importar extrato</b>, envie os arquivos: as contas são criadas e os gastos categorizados sozinhos.</li>
+      </ol>
+      <div class="row"><button class="primary" data-goto="importar">Importar extrato</button><button data-goto="ajustes">Cadastrar pessoas</button></div>
     </div>
-    <div id="painel-content">
-    <div class="hero-stage">
-      <div class="mf-balance">
-        <span class="mf-balance__label" id="hero-eyebrow">Patrimônio</span>
-        <span class="mf-balance__value" id="hero-value">–</span>
-        <div class="hero-row"><span class="mf-trend" id="hero-trend" hidden></span><span class="mf-muted caption" id="hero-caption"></span></div>
-        <div id="hero-insight"></div>
-      </div>
-    </div>
-    <div class="cat-grid" id="cat-cards"></div>
-    <div class="tiles" id="kpi-tiles"></div>
-    <div class="card">
-      <div class="card-head">
-        <p class="eyebrow">Para onde vai o dinheiro</p>
-        <div class="row" style="margin:0">
-          <div class="segmented" id="sankey-mode">
-            <button data-mode="all" class="active">Período selecionado</button>
-            <button data-mode="month">Mês</button>
-          </div>
-          <select id="sankey-month" hidden aria-label="Mês do Sankey"></select>
+    <div id="home-content">
+      <div class="hero-stage">
+        <div class="mf-balance">
+          <span class="mf-balance__label">Saldo em contas</span>
+          <span class="mf-balance__value" id="h-saldo">–</span>
+          <div class="hero-row"><span class="mf-trend" id="h-trend" hidden></span><span class="mf-muted caption" id="h-caption"></span></div>
         </div>
       </div>
-      <p class="hint">Fontes → entradas → grupos de gasto → categorias. Resgates de investimentos (dinheiro que volta para cobrir saldo negativo)
-        e saldo de meses anteriores aparecem apagados: são fontes de caixa, não receita. O rendimento fica nos investimentos e não passa por aqui.</p>
-      <div id="chart-sankey" class="chart tall"></div>
-    </div>
-    <div class="grid2">
-      <div class="card"><p class="eyebrow">Ponte do saldo no período · conta + investimentos</p>
-        <p class="hint">Do saldo inicial ao final: investir e resgatar só movem dinheiro entre conta e investimentos, por isso não aparecem.</p>
-        <div id="chart-waterfall" class="chart"></div></div>
-      <div class="card"><p class="eyebrow">Receitas, despesas, saldo (conta + investido) e FGTS</p>
-        <p class="hint">Receitas e despesas são do mês; saldo e FGTS são acumulados no fim de cada mês.</p>
-        <div id="chart-lines" class="chart"></div></div>
-    </div>
-    <div class="card"><p class="eyebrow">Indicadores detalhados</p><div class="table-wrap" id="kpi-table"></div></div>
-    </div>
-  </section>
-
-  <!-- FLUXO -->
-  <section class="tab" id="tab-fluxo">
-    <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Fluxo mensal</h1></div>
-    <div class="period-bar card"></div>
-    <div class="row" style="margin:0 0 12px">
-      <div class="segmented" id="flow-view">
-        <button data-view="tabela">Tabela</button>
-        <button data-view="mes">Por mês</button>
+      <div id="home-alert"></div>
+      <div class="tiles" id="home-tiles"></div>
+      <div class="mf-section"><h2 class="mf-section__title">Gastos por grupo</h2><button class="mf-link" data-goto="planejamento">Ver orçamento</button></div>
+      <div class="cat-grid" id="home-groups"></div>
+      <div class="grid2">
+        <div class="card"><div class="mf-section"><h3>Contas</h3><button class="mf-link" data-goto="ajustes">Gerenciar</button></div><div id="home-accounts"></div></div>
+        <div class="card"><div class="mf-section"><h3>Cartões</h3><button class="mf-link" data-goto="dividas">Ver dívidas</button></div><div id="home-cards"></div></div>
       </div>
     </div>
-    <div class="card" id="flow-table-view">
-      <p class="hint"><b>Arraste</b> uma célula para outro mês da mesma linha para mover o valor (segure Ctrl ou ⌥ ao soltar para copiar).
-        Clique para editar. Linhas cinza são calculadas pelas premissas; um valor digitado nelas vira
-        <span class="badge accent">ajuste</span> daquele mês (apague para voltar ao cálculo). “Repetir” lança um valor em vários meses.</p>
-      <div class="row"><label class="pick"><input type="checkbox" id="flow-empty"> Mostrar linhas sem valores</label></div>
-      <div class="table-wrap"><table class="flow" id="flow-table"></table></div>
-    </div>
-    <div id="flow-month-view" hidden>
-      <div class="month-strip" id="month-strip"></div>
-      <p class="hint" style="margin:8px 0 12px">Segure a alça de um lançamento e solte num mês acima para mover o valor. Toque no lançamento para editar,
-        mover só uma parte ou copiar.</p>
-      <div class="tiles" id="month-summary"></div>
-      <div id="month-groups"></div>
-    </div>
-  </section>
-
-  <!-- PREMISSAS -->
-  <section class="tab" id="tab-premissas">
-    <div class="page-title"><div class="crumb">Planejamento / <span data-scn></span></div><h1>Premissas do cenário</h1></div>
-    <div class="card">
-      <div class="card-head">
-        <p class="eyebrow">Cenário</p>
-        <div class="row" style="margin:0">
-          <button id="btn-new-scenario">Novo cenário</button>
-          <button id="btn-dup-scenario">Duplicar</button>
-          <button id="btn-del-scenario" class="danger">Excluir</button>
-        </div>
-      </div>
-      <form id="scenario-form" class="form"></form>
-      <div class="row" style="margin-top:16px"><button class="primary" id="btn-save-scenario">Salvar premissas</button></div>
-    </div>
-    <div class="grid2">
-      <div class="card">
-        <p class="eyebrow">Reajustes do salário líquido</p>
-        <p class="hint">Informe o novo salário <b>ou</b> o % de reajuste sobre o anterior.</p>
-        <table id="salary-table"></table>
-        <div class="row"><button id="btn-add-salary">Adicionar reajuste</button><button class="primary" id="btn-save-salary">Salvar</button></div>
-      </div>
-      <div class="card">
-        <p class="eyebrow">Inflação anual das despesas</p>
-        <p class="hint">Aplicada no mês do reajuste quando “Aplicar inflação” estiver marcado.</p>
-        <table id="inflation-table"></table>
-        <div class="row"><button id="btn-add-infl">Adicionar ano</button><button class="primary" id="btn-save-infl">Salvar</button></div>
-      </div>
-    </div>
-    <div class="card">
-      <p class="eyebrow">Parâmetros mês a mês</p>
-      <p class="hint">Campo vazio mantém o valor do mês anterior. Resgate manual vale só no mês informado.</p>
-      <div class="table-wrap"><table id="month-table"></table></div>
-      <div class="row"><button class="primary" id="btn-save-months">Salvar</button></div>
-    </div>
-  </section>
-
-  <!-- CONSIGNADOS -->
-  <section class="tab" id="tab-consignados">
-    <div class="page-title"><div class="crumb">Dívidas / <span data-scn></span></div><h1>Quitação de consignados</h1></div>
-    <div class="tiles" id="loan-tiles"></div>
-    <div class="card">
-      <div class="card-head">
-        <p class="eyebrow">Desafogar o caixa · quais quitações liberam a maior parcela</p>
-      </div>
-      <p class="hint">Informe o mês e quanto você tem para quitar: o app testa todas as combinações de contratos e escolhe a que
-        <b>libera a maior parcela mensal</b> sem passar do valor. Sem valor informado, usa o saldo total (conta + investimentos) do mês.</p>
-      <div class="row">
-        <label class="field">Mês da quitação<select id="sug-month"></select></label>
-        <label class="field">Valor disponível (R$)<input id="sug-budget" type="number" step="100" min="0" style="width:160px"></label>
-        <label class="field">Ignorar contratos que terminam em até<span class="row" style="margin:0"><input id="sug-min" type="number" min="0" max="24" value="3" style="width:70px"> parcelas</span></label>
-      </div>
-      <div class="tiles" id="sug-tiles" style="margin-top:12px"></div>
-      <div class="table-wrap"><table id="sug-table"></table></div>
-      <div class="row" style="margin-top:12px"><button class="primary" id="btn-sug-apply" hidden></button><span class="hint" id="sug-note" style="margin:0"></span></div>
-    </div>
-    <div class="card">
-      <div class="card-head">
-        <p class="eyebrow">Planejador de quitações · mês a mês da conta</p>
-        <div class="legend">
-          <span><span class="swatch-cell scheduled"></span>quitação agendada</span>
-          <span><span class="swatch-cell fits"></span>cabe no saldo do mês</span>
-          <span><span class="swatch-cell nofit"></span>não cabe (riscado)</span>
-        </div>
-      </div>
-      <p class="hint">Em cima, o caixa do cenário em cada mês (já com as quitações agendadas). Embaixo, quanto custa quitar cada contrato
-        em cada mês: <b>clique na célula para agendar</b> a quitação naquele mês; clique de novo para desmarcar.
-        “Cabe” compara o valor com o saldo total (conta + investimentos) do fim do mês.<br>
-        <b>Custo-benefício</b> (no mês agendado ou, sem agendamento, no primeiro mês): “libera por R$ 1 mil” é quanto de parcela cada R$ 1.000
-        usados na quitação deixam de sair por mês (os 3 maiores em destaque); “ganho total” é a economia sobre o valor investido até o fim do contrato.
-        Contratos perto do fim liberam muito por real, mas por poucos meses: olhe as duas medidas juntas.</p>
-      <div id="chart-planner" class="chart" style="height:240px"></div>
-      <div class="table-wrap"><table class="flow planner" id="payoff-planner"></table></div>
-    </div>
-    <div class="card">
-      <p class="eyebrow">Quitação de cada contrato · cenário selecionado</p>
-      <p class="hint">Escolha o mês de quitação de cada contrato. Valor da quitação = valor presente das parcelas restantes à taxa do contrato.</p>
-      <div class="table-wrap"><table id="loan-table"></table></div>
-    </div>
-    <div class="grid2">
-      <div class="card"><p class="eyebrow">Desembolso de caixa: parcelas e quitações</p><div id="chart-loan-cash" class="chart"></div></div>
-      <div class="card"><p class="eyebrow">Economia acumulada líquida · parcelas evitadas − desembolso</p><div id="chart-loan-cum" class="chart"></div></div>
-    </div>
-    <div class="card">
-      <p class="eyebrow">Comparação entre cenários</p>
-      <div class="table-wrap" id="loan-compare-table"></div>
-      <div class="grid2" style="margin-top:16px">
-        <div><p class="eyebrow">Economia acumulada líquida por cenário</p><div id="chart-loan-compare" class="chart"></div></div>
-        <div><p class="eyebrow">Desembolso, parcelas evitadas e economia por cenário</p><div id="chart-loan-bars" class="chart"></div></div>
-      </div>
-    </div>
-    <div class="card">
-      <p class="eyebrow">Contratos deste cenário</p>
-      <p class="hint">Cada cenário tem a sua lista: incluir, editar ou excluir aqui não muda os outros cenários.</p>
-      <div class="table-wrap"><table id="contracts-table"></table></div>
-      <div class="row"><button id="btn-add-contract">Adicionar contrato</button></div>
-    </div>
-  </section>
-
-  <!-- EM ATRASO -->
-  <section class="tab" id="tab-atrasos">
-    <div class="page-title"><div class="crumb">Dívidas / <span data-scn></span></div><h1>Contas em atraso</h1></div>
-    <div class="tiles" id="arrear-tiles"></div>
-    <div class="card">
-      <div class="card-head">
-        <p class="eyebrow">Atrasos e plano de pagamento · cenário selecionado</p>
-        <button class="primary" id="btn-add-arrear">Adicionar atraso</button>
-      </div>
-      <p class="hint">Valor atualizado = original + multa + juros de mora simples desde o vencimento (ou o valor do acordo, se negociado).
-        Cada cenário tem a sua lista de atrasos (duplicar o cenário copia tudo); o plano entra no fluxo como “Pagamento de atrasos”.</p>
-      <div class="table-wrap"><table id="arrear-table"></table></div>
-    </div>
-    <div class="grid2">
-      <div class="card"><p class="eyebrow">Valor atualizado por atraso · original e encargos</p><div id="chart-arrear-items" class="chart"></div></div>
-      <div class="card"><p class="eyebrow">Pagamentos planejados por mês</p><div id="chart-arrear-plan" class="chart"></div></div>
-    </div>
-  </section>
-
-  <!-- COMPARAR -->
-  <section class="tab" id="tab-comparar">
-    <div class="page-title"><div class="crumb">Planejamento</div><h1>Comparar cenários</h1></div>
-    <div class="card">
-      <div class="row" id="compare-picks"></div>
-      <div class="table-wrap" id="compare-table"></div>
-    </div>
-    <div class="grid2">
-      <div class="card"><p class="eyebrow">Saldo total · conta + investimentos</p><div id="chart-cmp-total" class="chart"></div></div>
-      <div class="card"><p class="eyebrow">Saldo em conta</p><div id="chart-cmp-conta" class="chart"></div></div>
-    </div>
-    <div class="card"><p class="eyebrow">Destino do dinheiro no período · totais por grupo</p><div id="chart-cmp-groups" class="chart"></div></div>
-    <h2>Sankey por cenário</h2>
-    <div class="grid2 wide" id="compare-sankeys"></div>
   </section>
 
   <!-- LANÇAMENTOS -->
   <section class="tab" id="tab-lancamentos">
-    <div class="page-title"><div class="crumb">Controle</div><h1>Lançamentos realizados</h1></div>
-    <div class="card">
-      <p class="eyebrow">Novo lançamento</p>
-      <form id="tx-form" class="form">
-        <label class="field">Data<input type="date" name="date" required></label>
-        <label class="field">Descrição<input name="description" required></label>
-        <label class="field">Valor (− saída, + entrada)<input name="amount" type="number" step="0.01" required></label>
-        <label class="field">Categoria<select name="category_id"></select></label>
-        <label class="field">Conta<select name="account_id"></select></label>
-        <label class="field">&nbsp;<button class="primary" type="submit">Adicionar</button></label>
-      </form>
-    </div>
-    <div class="card">
+    <div class="page-title"><div class="crumb">Extrato</div><h1>Lançamentos</h1></div>
+    <div class="card filters">
       <div class="row">
-        <label class="field">Mês<input type="month" id="tx-month"></label>
-        <label class="field">Importar CSV<input type="file" id="tx-csv" accept=".csv"></label>
-        <span class="hint" style="margin:18px 0 0">Colunas: data;descricao;valor;categoria;conta</span>
+        <div class="month-nav"><button class="ghost sm icon" id="tx-prev" aria-label="Mês anterior">‹</button>
+          <input type="month" id="tx-month" aria-label="Mês"><button class="ghost sm icon" id="tx-next" aria-label="Próximo mês">›</button></div>
+        <select id="tx-account" aria-label="Conta"></select>
+        <input id="tx-q" type="search" placeholder="Buscar descrição" aria-label="Buscar">
+        <button class="primary" id="tx-add">Novo lançamento</button>
       </div>
-      <div class="table-wrap"><table id="tx-table"></table></div>
+      <div class="row"><div class="segmented" id="tx-status">
+        <button data-s="" class="active">Do mês</button><button data-s="revisar">Para revisar</button><button data-s="sem_categoria">Sem categoria</button>
+      </div><span class="hint" id="tx-status-hint" style="margin:0"></span></div>
+    </div>
+    <div class="tiles" id="tx-summary"></div>
+    <div class="bulkbar card" id="bulkbar" hidden>
+      <span id="bulk-count"></span><select id="bulk-cat" aria-label="Categoria"></select>
+      <button class="primary" id="bulk-apply">Categorizar</button><button class="ghost" id="bulk-clear">Limpar seleção</button>
+    </div>
+    <div class="card" id="tx-list"></div>
+  </section>
+
+  <!-- IMPORTAR -->
+  <section class="tab" id="tab-importar">
+    <div class="page-title"><div class="crumb">Extratos e faturas</div><h1>Importar extrato</h1></div>
+    <div class="card">
+      <label class="dropzone" id="dropzone">
+        <input type="file" id="ofx-files" accept=".ofx,.OFX,application/x-ofx" multiple>
+        <span class="dz-title">Arraste os arquivos OFX aqui</span>
+        <span class="hint" style="margin:0">ou toque para escolher · extrato da conta e fatura do cartão · vários de uma vez</span>
+      </label>
+      <div class="form" style="margin-top:16px">
+        <label class="field">Conta<select id="imp-account"></select></label>
+        <label class="field">Titular, se a conta for nova<select id="imp-owner"></select></label>
+      </div>
+      <p class="hint">A conta é reconhecida pelo número que vem no arquivo; na primeira vez ela é criada. Lançamentos que já
+        foram importados são ignorados, então pode reenviar períodos que se sobrepõem.</p>
+    </div>
+    <div id="imp-results"></div>
+    <div class="card"><h3>Importações</h3><div class="table-wrap"><table id="imp-history"></table></div></div>
+    <div class="card">
+      <h3>Como exportar o OFX</h3>
+      <p class="hint">No app ou internet banking, procure <b>Extrato</b> (ou <b>Fatura</b>, no cartão) → <b>Exportar</b> ou
+        <b>Salvar como</b> → formato <b>OFX</b> (às vezes aparece como “Money” ou “Quicken”). Escolha o período (por exemplo,
+        o mês) e envie o arquivo aqui.</p>
     </div>
   </section>
 
-  <!-- ORÇADO x REALIZADO -->
-  <section class="tab" id="tab-orcado">
-    <div class="page-title"><div class="crumb">Controle / <span id="bva-scenario"></span></div><h1>Orçado × realizado</h1></div>
+  <!-- PLANEJAMENTO -->
+  <section class="tab" id="tab-planejamento">
+    <div class="page-title"><div class="crumb">Orçamento e projeção</div><h1>Planejamento</h1></div>
+    <div class="card filters">
+      <div class="row">
+        <div class="month-nav"><button class="ghost sm icon" id="bud-prev" aria-label="Mês anterior">‹</button>
+          <input type="month" id="bud-month" aria-label="Mês"><button class="ghost sm icon" id="bud-next" aria-label="Próximo mês">›</button></div>
+        <div class="segmented" id="bud-scope"><button data-scope="padrao" class="active">Valer todo mês</button><button data-scope="mes">Só este mês</button></div>
+        <button id="bud-suggest">Sugerir pela média</button>
+        <button class="primary" id="bud-save">Salvar orçamento</button>
+      </div>
+    </div>
+    <div class="tiles" id="bud-tiles"></div>
+    <div class="card"><div class="table-wrap"><table id="bud-table"></table></div></div>
     <div class="card">
-      <div class="row"><label class="field">Mês<input type="month" id="bva-month"></label></div>
-      <div class="tiles" id="bva-summary" style="margin-top:12px"></div>
-      <div class="table-wrap"><table id="bva-table"></table></div>
+      <h3>Projeção de caixa</h3>
+      <p class="hint" id="proj-hint"></p>
+      <div id="chart-proj" class="chart"></div>
+      <div class="table-wrap"><table id="proj-table"></table></div>
     </div>
   </section>
 
-  <!-- CADASTROS -->
-  <section class="tab" id="tab-cadastros">
-    <div class="page-title"><div class="crumb">Configurações</div><h1>Cadastros</h1></div>
-    <div class="card">
-      <p class="eyebrow">Importar planilha .xlsx</p>
-      <p class="hint">Cada aba “Fluxo Mensal - …” vira um cenário (cenários com o mesmo nome são substituídos). Contratos vêm de CLT1/CLT2 e as quitações da aba Quitações.</p>
-      <div class="row"><input type="file" id="xlsx-file" accept=".xlsx"><button class="primary" id="btn-import">Importar</button></div>
-      <pre class="report" id="import-report" hidden></pre>
-    </div>
+  <!-- DÍVIDAS -->
+  <section class="tab" id="tab-dividas">
+    <div class="page-title"><div class="crumb">Cartões, empréstimos e acordos</div><h1>Dívidas</h1></div>
+    <div class="tiles" id="debt-tiles"></div>
+    <div class="mf-section"><h2 class="mf-section__title">Cartões</h2></div>
+    <div class="grid2" id="debt-cards"></div>
+    <div class="mf-section"><h2 class="mf-section__title">Empréstimos e outras dívidas</h2><button class="primary" id="debt-add">Nova dívida</button></div>
+    <div class="grid2" id="debt-list"></div>
+    <div class="card" id="debt-strategy-card"><h3>Ordem sugerida para quitar</h3><div class="grid2" id="debt-strategy"></div></div>
+  </section>
+
+  <!-- AJUSTES -->
+  <section class="tab" id="tab-ajustes">
+    <div class="page-title"><div class="crumb">Configurações</div><h1>Ajustes</h1></div>
     <div class="grid2">
-      <div class="card">
-        <p class="eyebrow">Categorias</p>
-        <div class="table-wrap"><table id="cat-table"></table></div>
-        <div class="row"><button id="btn-add-cat">Adicionar categoria</button></div>
-      </div>
-      <div class="card">
-        <p class="eyebrow">Contas</p>
-        <table id="acc-table"></table>
-        <div class="row"><button id="btn-add-acc">Adicionar conta</button></div>
-      </div>
+      <div class="card"><h3>Pessoas</h3><div id="set-people"></div>
+        <div class="row"><input id="new-person" placeholder="Nome" aria-label="Nome"><button id="add-person">Adicionar</button></div></div>
+      <div class="card"><h3>Categorização por IA</h3><div id="set-ai"></div></div>
+    </div>
+    <div class="card"><div class="mf-section"><h3>Contas e cartões</h3><button id="add-account">Nova conta</button></div><div id="set-accounts"></div></div>
+    <div class="card"><div class="mf-section"><h3>Categorias</h3><button id="add-category">Nova categoria</button></div><div id="set-categories"></div></div>
+    <div class="card">
+      <div class="mf-section"><h3>Regras de categorização</h3><div class="row" style="margin:0"><button id="add-rule">Nova regra</button><button id="reapply-rules">Reaplicar às pendentes</button></div></div>
+      <p class="hint">Cada vez que você corrige a categoria de um lançamento, o app cria uma regra para aquele estabelecimento.
+        As regras “padrão” são palavras-chave de partida; as suas sempre têm prioridade.</p>
+      <div class="row"><div class="segmented" id="rule-filter"><button data-src="" class="active">Suas</button><button data-src="padrao">Padrão</button></div></div>
+      <div class="table-wrap"><table id="set-rules"></table></div>
     </div>
   </section>
 </main>
+
 <nav class="bottomnav" id="bottomnav" aria-label="Navegação">
-  <button data-tab="painel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 3v6h8V3z"/></svg><span>Painel</span></button>
-  <button data-tab="fluxo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-6"/></svg><span>Fluxo</span></button>
-  <button data-tab="consignados"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg><span>Consignados</span></button>
-  <button data-tab="atrasos"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Atrasos</span></button>
-  <button data-more><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg><span>Mais</span></button>
+  <button data-tab="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Início</span></button>
+  <button data-tab="lancamentos"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg><span>Lançamentos</span></button>
+  <button data-tab="importar"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg><span>Importar</span></button>
+  <button data-tab="planejamento"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-6"/></svg><span>Planejar</span></button>
+  <button data-tab="dividas"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg><span>Dívidas</span></button>
 </nav>
 <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden><div class="sheet-grip"></div><div id="sheet-body"></div></div>

@@ -1,19 +1,17 @@
 import base64
 import os
 import secrets
-import tempfile
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 
-from .db import engine, get_session
-from .importer import import_workbook
+from . import ai
+from .db import engine
 from .migrations import init_db
-from .routers import arrears, catalog, reports, scenarios, transactions
+from .routers import core, planning, transactions
 
 ROOT = Path(__file__).resolve().parent.parent
 # Arquivos estáticos ficam em public/: no Vercel a CDN os serve direto em /static/...;
@@ -28,7 +26,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Financi", description="Controle financeiro pessoal, planejamento e fluxo de caixa",
+app = FastAPI(title="Financi", description="Finanças pessoais: extratos OFX, categorização, planejamento e dívidas",
               lifespan=lifespan)
 
 
@@ -64,22 +62,13 @@ def status():
         "database": engine.dialect.name,
         "auth": bool(os.environ.get("FINANCI_PASSWORD")),
         "hosted": bool(os.environ.get("VERCEL")),
+        "ai": ai.available(),
     }
 
 
-app.include_router(scenarios.router)
-app.include_router(catalog.router)
+app.include_router(core.router)
 app.include_router(transactions.router)
-app.include_router(reports.router)
-app.include_router(arrears.router)
-
-
-@app.post("/api/import/xlsx", tags=["importação"])
-async def import_xlsx(file: UploadFile = File(...), db: Session = Depends(get_session)):
-    with tempfile.NamedTemporaryFile(suffix=".xlsx") as tmp:
-        tmp.write(await file.read())
-        tmp.flush()
-        return {"report": import_workbook(db, tmp.name)}
+app.include_router(planning.router)
 
 
 if STATIC.is_dir():

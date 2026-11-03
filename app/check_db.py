@@ -15,8 +15,7 @@ def main() -> None:
     query = "select 'SQLite ' || sqlite_version()" if engine.dialect.name == "sqlite" else "select version()"
     with engine.connect() as conn:
         print("Conectado:", conn.execute(text(query)).scalar())
-    for line in init_db():
-        print("Migração:", line)
+    init_db()
     print("Tabelas:", ", ".join(sorted(inspect(engine).get_table_names())))
 
 

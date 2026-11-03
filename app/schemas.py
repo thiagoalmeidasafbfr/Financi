@@ -7,11 +7,36 @@ class ORM(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PersonIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class PersonOut(PersonIn, ORM):
+    id: int
+
+
+class AccountIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    institution: str | None = None
+    kind: str = Field("corrente", pattern="^(corrente|poupanca|cartao|investimento|dinheiro)$")
+    owner_id: int | None = None
+    opening_balance: float = 0
+    closing_day: int | None = Field(None, ge=1, le=31)
+    due_day: int | None = Field(None, ge=1, le=31)
+    credit_limit: float | None = None
+    active: bool = True
+
+
+class AccountOut(AccountIn, ORM):
+    id: int
+    acct_id: str | None = None
+    balance: float | None = None
+
+
 class CategoryIn(BaseModel):
-    name: str
-    group: str = Field(pattern="^(receita|despesa_fixa|divida|despesa_variavel|investimento)$")
-    kind: str = "manual"
-    tag: str | None = None
+    name: str = Field(min_length=1, max_length=80)
+    group: str = Field(min_length=1, max_length=60)
+    type: str = Field("despesa", pattern="^(despesa|receita|transferencia)$")
     sort_order: int = 0
     active: bool = True
 
@@ -20,141 +45,63 @@ class CategoryOut(CategoryIn, ORM):
     id: int
 
 
-class ScenarioBase(BaseModel):
-    name: str
-    description: str | None = None
-    is_baseline: bool = False
-    start_month: date
-    months: int = Field(26, ge=1, le=240)
-    initial_balance: float = 0
-    debt_limit_pct: float = 0.30
-    fgts_initial: float = 0
-    fgts_rate_yearly: float = 0.03
-    fgts_aliquot: float = 0.08
-    gross_salary: float = 0
-    bonus_salaries: float = 0
-    bonus_month: int | None = Field(None, ge=1, le=12)
-    ir_amount: float = 0
-    ir_month: int | None = Field(None, ge=1, le=12)
-    vacation_month: int | None = Field(None, ge=1, le=12)
-    thirteenth_first_year: int | None = None
-    thirteenth_last_year: int | None = None
-    thirteenth_month_1: int = Field(11, ge=1, le=12)
-    thirteenth_month_2: int = Field(12, ge=1, le=12)
-    apply_inflation: bool = False
-    inflation_month: int = Field(6, ge=1, le=12)
-    invest_mode: str = Field("excedente", pattern="^(excedente|saldo_mes)$")
-    invest_pct: float = 0
-    min_balance: float = 0
-    invest_return_monthly: float = 0.01
-    initial_invested: float = 0
-
-
-class ScenarioOut(ScenarioBase, ORM):
-    id: int
-
-
-class EntryIn(BaseModel):
+class RuleIn(BaseModel):
+    pattern: str = Field(min_length=2, max_length=120)
+    match: str = Field("contains", pattern="^(exact|contains)$")
     category_id: int
-    month: date
-    amount: float | None  # None remove o valor (linha automática volta a ser calculada)
 
 
-class MoveIn(BaseModel):
-    category_id: int
-    from_month: date
-    to_month: date
-    amount: float | None = None  # None = o valor inteiro do mês de origem
-    mode: str = Field("move", pattern="^(move|copy)$")  # copy = mantém o valor na origem
-
-
-class FillIn(BaseModel):
-    category_id: int
-    from_month: date
-    to_month: date
-    amount: float | None
-
-
-class SalaryChangeIn(BaseModel):
-    start_month: date
-    amount: float | None = None
-    pct: float | None = None
-
-
-class InflationIn(BaseModel):
-    year: int
-    fixed_pct: float = 0
-    variable_pct: float = 0
-
-
-class MonthSettingIn(BaseModel):
-    month: date
-    invest_pct: float | None = None
-    min_balance: float | None = None
-    invest_return: float | None = None
-    gross_salary: float | None = None
-    manual_redemption: float | None = None
-
-
-class LoanIn(BaseModel):
-    name: str
-    creditor: str | None = None
-    monthly_rate: float | None = None
-    installment: float
-    first_month: date
-    last_month: date
-    payoff_month: date | None = None
-    notes: str | None = None
-
-
-class LoanOut(LoanIn, ORM):
+class RuleOut(ORM):
     id: int
-
-
-class PayoffIn(BaseModel):
-    contract_id: int
-    payoff_month: date | None  # None = não quitar neste cenário
-
-
-class AccountIn(BaseModel):
-    name: str
-    type: str = "corrente"
-    opening_balance: float = 0
-
-
-class AccountOut(AccountIn, ORM):
-    id: int
+    pattern: str
+    match: str
+    category_id: int
+    source: str
+    hits: int
 
 
 class TransactionIn(BaseModel):
+    account_id: int
     date: date
-    description: str
     amount: float
+    description: str = Field(min_length=1, max_length=255)
     category_id: int | None = None
-    account_id: int | None = None
     notes: str | None = None
 
 
-class TransactionOut(TransactionIn, ORM):
-    id: int
+class TransactionPatch(BaseModel):
+    category_id: int | None = None
+    notes: str | None = None
+    reviewed: bool | None = None
+    learn: bool = True  # corrigir a categoria cria regra e corrige os parecidos
 
 
-class ArrearIn(BaseModel):
-    description: str
+class BulkCategory(BaseModel):
+    ids: list[int]
+    category_id: int
+    learn: bool = True
+
+
+class BudgetIn(BaseModel):
+    category_id: int
+    month: date | None = None  # vazio = padrão para todo mês
+    amount: float | None = Field(None, ge=0)  # None remove
+
+
+class DebtIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    kind: str = Field("emprestimo", pattern="^(emprestimo|consignado|financiamento|cheque_especial|acordo|outro)$")
     creditor: str | None = None
-    owner: str | None = None
-    category_id: int | None = None
-    due_date: date | None = None
-    amount: float = Field(ge=0)
-    fine_pct: float = 0
-    interest_monthly: float = 0
-    negotiated_amount: float | None = None
-    status: str = Field("aberto", pattern="^(aberto|negociado|pago)$")
-    paid_date: date | None = None
-    plan_start: date | None = None  # mês em que começa o pagamento (None = sem plano)
-    plan_installments: int = Field(1, ge=1, le=120)
+    owner_id: int | None = None
+    installment: float = Field(0, ge=0)
+    monthly_rate: float | None = Field(None, ge=0, le=1)
+    first_due: date | None = None
+    total_installments: int | None = Field(None, ge=1, le=600)
+    balance: float | None = None
+    match_pattern: str | None = None
     notes: str | None = None
+    active: bool = True
 
 
-class ArrearOut(ArrearIn, ORM):
+class DebtOut(DebtIn, ORM):
     id: int

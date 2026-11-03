@@ -1,47 +1,70 @@
 # Financi
 
-Controle financeiro pessoal, planejamento por cenários e fluxo de caixa, com banco de dados.
-Nasceu da planilha "Fluxo de Caixa Pessoal" e reproduz a lógica dela (aba "Fluxo Mensal - BR")
-de forma que cada cenário fica guardado no banco e pode ser editado, duplicado e comparado.
+Plataforma de finanças pessoais da família: recebe os extratos do banco (OFX), categoriza os gastos sozinha,
+ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consignados, financiamentos e acordos).
 
 ## O que tem
 
-| Tela | O que faz |
-| --- | --- |
-| **Painel** | **Seletor de período** (de X a Y, ano, próximos 12 meses), patrimônio e KPIs do período, **Sankey** de para onde vai o dinheiro, **waterfall** do saldo (inicial → receitas → despesas → rendimentos → final) e linhas de receitas, despesas, saldo conta + investido e FGTS |
-| **Fluxo mensal** | Grade editável mês a mês (ou visão **por mês**, padrão no celular). **Arraste um valor para outro mês** para movê-lo (Ctrl/⌥ copia; sempre com "Desfazer"); no celular, pela alça do lançamento até a faixa de meses, ou mova só uma parte pela folha de edição. **+ Nova linha** em cada grupo; renomear e remover linhas |
-| **Premissas** | Parâmetros do cenário, reajustes de salário, inflação, % a investir / saldo mínimo / rentabilidade mês a mês |
-| **Consignados** | **Desafogar o caixa**: informe mês e valor disponível e o app escolhe a combinação de quitações que libera a maior parcela mensal (todas as combinações testadas). Planejador mês a mês da conta com clique para agendar. Quitação de cada contrato por cenário: valor de quitação (VP), **desembolso de caixa**, parcelas evitadas, juros evitados, payback e **comparação de economia entre cenários** |
-| **Em atraso** | Contas vencidas (aluguel, cartão, condomínio...): valor atualizado com multa e juros de mora, acordo negociado, situação, e **plano de pagamento por cenário** que entra no fluxo como "Pagamento de atrasos" |
-| **Comparar cenários** | KPIs lado a lado com o melhor destacado, saldos no tempo, totais por grupo e **um Sankey por cenário** |
-| **Lançamentos** | Realizado do dia a dia (manual ou importação CSV) |
-| **Orçado × realizado** | Planejado do cenário base contra os lançamentos do mês, por categoria |
-| **Cadastros** | Importar a planilha .xlsx, categorias e contas |
+- **Importar extrato**: envie o OFX da conta corrente e da fatura do cartão (vários de uma vez, arrastando).
+  A conta é reconhecida pelo número que vem no arquivo e criada na primeira vez. Lançamentos repetidos são
+  ignorados, então dá para reenviar períodos que se sobrepõem. Cada importação pode ser desfeita.
+- **Categorização automática**, em camadas:
+  1. **Regras aprendidas**: quando você corrige a categoria de um lançamento, o app cria uma regra para aquele
+     estabelecimento e corrige os parecidos. As suas regras sempre têm prioridade.
+  2. **Palavras-chave padrão** (UBER, IFOOD, POSTO, DROGA, NETFLIX, SALARIO, TARIFA…).
+  3. **IA (Claude)** para o que sobrar, se `ANTHROPIC_API_KEY` estiver configurada. Respostas muito confiantes
+     viram regras; as pouco confiantes ficam na fila **Para revisar**.
+- **Lançamentos**: extrato por mês, busca, filtro por conta, fila de revisão, categorização em massa e
+  lançamento manual.
+- **Planejamento**: orçamento por categoria (valendo todo mês ou só um mês), sugestão pela média dos últimos
+  meses, orçado × realizado e **projeção de caixa** dos próximos 6 meses (orçamento ou média, menos parcelas
+  das dívidas e parcelas de cartão já compradas).
+- **Dívidas**: faturas por cartão (com dia de fechamento e vencimento), limite usado, parcelas futuras; empréstimos
+  com parcelas pagas, saldo devedor, valor para quitar hoje e juros restantes; ordem sugerida para quitar
+  (maior juro primeiro ou menor saldo primeiro).
+- **Casal**: cadastre as pessoas em **Ajustes**. Contas, cartões e dívidas têm titular (ou são conjuntos) e o
+  seletor no topo filtra tudo por pessoa.
 
-Funciona no desktop e no celular (barra de navegação inferior, visão por mês, folhas de edição e arrastar pelo toque).
-Visual no design system **Modern Finance** (`public/static/mf/`: tokens, componentes `mf-*` e `adapter.css`, que traduz os nomes de token usados no app). Tema escuro por padrão e claro pelo botão no topo; monocromático: ganhos e perdas pelo sinal e pela seta, gráficos em tons "aceso/apagado" com traços diferentes por série.
+Funciona no desktop e no celular. Visual no design system **Modern Finance** (`public/static/mf/`), tema escuro
+por padrão e claro pelo botão no topo.
 
 ## Publicando no Vercel + Neon
 
 1. **Neon**: no painel do projeto, clique em **Connect**, marque **Connection pooling** e copie a connection
-   string (começa com `postgresql://` e tem `-pooler` no host). Pode usar como está: o app converte para o driver psycopg.
-2. **Vercel**: *Add New → Project*, importe este repositório do GitHub. O Vercel detecta o FastAPI pelo `index.py`
-   (não precisa mudar build nem framework).
-3. Em *Environment Variables*, antes do primeiro deploy:
+   string (começa com `postgresql://` e tem `-pooler` no host). Pode usar como está.
+2. **Vercel**: *Add New → Project*, importe este repositório. O Vercel detecta o FastAPI pelo `index.py`.
+3. Em *Settings → Environment Variables*:
 
    | Variável | Valor |
    | --- | --- |
    | `DATABASE_URL` | a connection string do Neon |
    | `FINANCI_PASSWORD` | uma senha forte: o app passa a pedir usuário e senha |
    | `FINANCI_USER` | opcional, padrão `financi` |
+   | `ANTHROPIC_API_KEY` | opcional: liga a categorização por IA (crie em console.anthropic.com) |
 
-4. *Deploy*. As tabelas são criadas no Neon no primeiro acesso. Abra o endereço do projeto, entre com
-   o usuário e a senha e importe a planilha em **Cadastros**.
+4. *Deploy* (ou *Redeploy* depois de mudar uma variável). As tabelas são criadas no primeiro acesso.
 
-Detalhes: `vercel.json` coloca a função em São Paulo (`gru1`), na mesma região do Neon (`sa-east-1`);
-os arquivos de `public/` são servidos pela CDN; `/healthz` responde sem senha.
+`vercel.json` coloca a função em São Paulo (`gru1`), na mesma região do Neon (`sa-east-1`); `/healthz`
+responde sem senha. O limite de upload no Vercel é de 4 MB por arquivo: para extratos grandes, exporte um
+período menor.
 
-> Sem `FINANCI_PASSWORD` o app fica aberto: qualquer pessoa com o link vê seus dados.
+> Sem `FINANCI_PASSWORD` o app fica aberto: qualquer pessoa com o link vê seus dados. O app avisa no topo.
+
+### Tabelas antigas
+
+A plataforma usa tabelas com prefixo `fin_` (`fin_accounts`, `fin_transactions`…). As tabelas da versão
+anterior (planilha de cenários: `scenarios`, `accounts`, `categories`, `transactions`…) continuam no banco,
+sem uso. Se não precisar mais delas, apague-as pelo SQL Editor do Neon. A versão anterior do app está no
+histórico do git (commit `a182305`).
+
+## Exportando o OFX
+
+No app ou internet banking, procure **Extrato** (na conta) ou **Fatura** (no cartão) → **Exportar** /
+**Salvar como** → formato **OFX** (às vezes aparece como "Money" ou "Quicken"). O app lê OFX 1.x (SGML) e 2.x
+(XML), em qualquer codificação usada pelos bancos brasileiros.
+
+Depois de importar o primeiro OFX de um cartão, informe em **Dívidas → Configurar** o dia de fechamento e o
+de vencimento: é o que permite separar as compras por fatura.
 
 ## Rodando localmente
 
@@ -52,128 +75,62 @@ uvicorn app.main:app --reload
 # abra http://localhost:8000  (documentação da API em /docs)
 ```
 
-Importe sua planilha pela tela **Cadastros** ou pela linha de comando:
-
-```bash
-python -m app.importer Fluxo_de_Caixa_Pessoal.xlsx            # todas as abas "Fluxo Mensal - …"
-python -m app.importer Fluxo_de_Caixa_Pessoal.xlsx --only BR "BR > MEI"
-```
-
-O importador compara a projeção do app com os totais calculados pela planilha e imprime o resultado
-(receitas, despesas, saldo em conta, saldo total e FGTS, mês a mês).
-
-> Planilhas (`*.xlsx`) e o banco local (`*.db`) estão no `.gitignore`: são dados pessoais e não vão para o GitHub.
-
-## Banco de dados
-
-Configurado por `DATABASE_URL` (variável de ambiente ou arquivo `.env`, veja `.env.example`):
+Configuração por variáveis de ambiente ou arquivo `.env` (veja `.env.example`):
 
 | Banco | `DATABASE_URL` |
 | --- | --- |
 | SQLite local (padrão) | `sqlite:///./financi.db` |
 | PostgreSQL | `postgresql+psycopg://usuario:senha@host:5432/financi` |
-| Neon / Supabase | a connection string do provedor (`postgresql://…`, convertida automaticamente) |
-
-As tabelas são criadas automaticamente na primeira execução. Para conferir a conexão:
+| Neon | a connection string do painel (`postgresql://…`, convertida automaticamente) |
 
 ```bash
-python -m app.check_db      # mostra o banco (sem a senha), a versão e cria as tabelas
+python -m app.check_db      # mostra o banco (sem a senha) e cria as tabelas
+docker compose up --build   # app + PostgreSQL 16 em http://localhost:8000
 ```
 
-### Neon (rodando localmente)
+> O banco local (`*.db`), extratos e o `.env` estão no `.gitignore`: são dados pessoais.
 
-1. No painel do projeto, clique em **Connect**, escolha o branch `production`, o banco `neondb`
-   e copie a connection string (aba `.env`). Ela começa com `postgresql://` e termina com
-   `?sslmode=require&channel_binding=require`. Pode colar como está: o app converte para o driver psycopg
-   e aceita as aspas.
-2. Crie o arquivo `.env` na raiz do projeto (ele está no `.gitignore`):
-   ```
-   DATABASE_URL='postgresql://neondb_owner:SENHA@ep-xxxx.sa-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
-   ```
-3. `python -m app.check_db`, depois `python -m app.importer Fluxo_de_Caixa_Pessoal.xlsx` para carregar os cenários
-   e `uvicorn app.main:app` para abrir o app.
+## Como os números são calculados
 
-O plano gratuito do Neon suspende a compute após alguns minutos sem uso. O app testa a conexão antes de
-usar (`pool_pre_ping`), então a primeira requisição depois de uma pausa só demora um pouco mais.
-Para testar mudanças sem mexer nos dados reais, crie um branch filho no Neon (**Create child branch**)
-e aponte o `.env` para ele.
-
-### Docker
-
-```bash
-docker compose up --build    # app + PostgreSQL 16 em http://localhost:8000
-```
-
-### Modelo de dados
-
-Tudo o que é planejamento pertence ao cenário: **duplicar copia tudo** e editar ou excluir num cenário
-não afeta os outros.
-
-```
-Scenario ─┬─ PlanEntry       valor planejado por categoria × mês (ou ajuste de linha automática)
-          ├─ SalaryChange    reajustes do salário líquido
-          ├─ InflationRate   inflação anual das despesas
-          ├─ MonthSetting    % a investir, saldo mínimo, rentabilidade, salário bruto, resgate manual
-          ├─ LoanContract    consignados (parcela, taxa, 1º e último desconto, mês de quitação)
-          └─ Arrear          contas em atraso (valor, vencimento, multa, juros, acordo, situação, plano)
-Compartilhado:
-  Category                 nomes das linhas do fluxo (os valores são de cada cenário)
-  Account ─ Transaction    realizado (o que de fato aconteceu é um só)
-```
-
-Migrações ficam em `app/migrations.py` e rodam sozinhas na inicialização (idempotentes). Bancos criados
-antes desta versão, com consignados e atrasos compartilhados, são convertidos copiando cada registro para
-todos os cenários com o mês de quitação e o plano que cada um tinha.
-
-## Regras de cálculo (motor em `app/engine.py`)
-
-- **Salário**: último reajuste com início ≤ mês (valor ou % sobre o anterior). **13º** = salário/2 nos meses
-  das parcelas, entre o primeiro e o último ano. **1/3 de férias** = salário/3. **Bônus** = nº de salários × salário.
-- Linhas calculadas aceitam **ajuste** mês a mês: o valor digitado substitui o cálculo naquele mês.
-- **Consignados**: parcela entre o 1º e o último desconto, até o mês da quitação.
-  **Quitação** = valor presente das parcelas restantes à taxa do contrato (mesma fórmula da aba Quitações).
-- **Saldo**: disponível = saldo anterior + receitas − despesas. Investimento automático = % × (disponível −
-  aportes manuais − saldo mínimo). Se faltar caixa, o resgate automático recompõe o saldo mínimo.
-  As abas antigas usam "% da sobra do mês", disponível como regra alternativa do cenário.
-- **FGTS** (referência, fora do saldo): depósito = alíquota × salário bruto; rendimento mensal = (1 + taxa a.a.)^(1/12) − 1.
-- **Inflação** (opcional): fator acumulado aplicado às despesas fixas/variáveis no mês do reajuste.
-- **Atrasos**: valor atualizado = original × (1 + multa) + original × juros a.m. × meses desde o vencimento
-  (ou o valor do acordo). O plano divide o valor do mês de início em parcelas iguais; atrasos pagos saem do fluxo.
-  A importação traz a coluna "Em atraso" das abas de fluxo e a aba "Dívidas".
-
-### Conferência com a planilha
-
-O importador confere cada cenário contra os totais da própria planilha e aponta os meses que divergem.
-Foi assim que apareceu uma falha na planilha original: na aba "Fluxo Mensal - BR" a linha de resumo
-"(–) Empréstimos e dívidas" está vazia em três meses, então as dívidas desses meses ficam fora do total
-de despesas. O app considera esses valores; reproduzindo a falha da planilha, os números batem centavo
-a centavo. As demais abas batem sem ajuste.
+- **Saldo da conta**: o OFX traz o saldo informado pelo banco; o app ajusta o saldo inicial da conta para que
+  a soma dos lançamentos bata com ele.
+- **Repetidos**: cada lançamento ganha uma chave com data, valor, descrição e ordem no dia. Não usa o FITID,
+  porque alguns bancos mudam esse código entre exportações.
+- **Parcelas no cartão**: "PARC 03/10" ou um "03/10" no fim da descrição (só em cartão). As parcelas futuras
+  entram na fatura do mês em que vão cair.
+- **Fatura**: compra até o dia de fechamento entra na fatura do mês; depois dele, na do mês seguinte. O
+  vencimento é no mesmo mês se o dia de vencimento for depois do fechamento, senão no mês seguinte.
+- **Empréstimo**: com parcela, 1ª parcela e número de parcelas, o app conta as pagas pela data; o saldo
+  devedor é o valor presente das parcelas restantes à taxa do contrato (é o valor para quitar hoje). Sem
+  prazo (acordo, rotativo), usa o saldo informado e estima quantas parcelas faltam.
+- **Projeção**: começa no saldo das contas menos as faturas abertas. Cada categoria usa o orçamento; as sem
+  orçamento usam a média dos últimos meses com extrato (até 3). Transferências e pagamentos de fatura não
+  contam como gasto; o grupo Dívidas sai do orçamento porque as parcelas vêm do módulo de dívidas.
 
 ## Testes
 
 ```bash
-pytest                                                    # motor + API (SQLite temporário)
-TEST_DATABASE_URL=postgresql+psycopg://… pytest           # mesma suíte contra PostgreSQL
-FINANCI_XLSX=/caminho/planilha.xlsx pytest tests/test_import_xlsx.py   # confere a importação
+pytest                                                   # SQLite temporário
+TEST_DATABASE_URL=postgresql+psycopg://… pytest           # contra um PostgreSQL
+ruff check .
 ```
 
 ## Estrutura
 
 ```
 app/
-  engine.py        motor de projeção, quitações e Sankey (puro, sem banco)
-  models.py        tabelas (SQLAlchemy 2)
-  services.py      banco → motor, categorias padrão, duplicação de cenário
-  importer.py      importação da planilha .xlsx
-  routers/         API REST (cenários, cadastros, lançamentos, relatórios)
-  index.html       interface
-public/static/     JS, CSS, tokens do design system e ECharts embutido
-index.py           entrada do Vercel
-tests/
+  main.py          FastAPI, senha (Basic auth), /healthz, /api/status
+  models.py        tabelas fin_*: pessoas, contas, categorias, lançamentos, regras, orçamentos, dívidas
+  ofx.py           leitura de OFX (SGML e XML)
+  text.py          normalização de descrições, estabelecimento e parcelas
+  importing.py     importação: contas, repetidos, regras e IA
+  categorize.py    regras e aprendizado
+  ai.py            categorização com Claude (saída estruturada)
+  finance.py       cálculos puros: faturas, parcelas, empréstimos
+  services.py      orçamento, projeção, cartões e dívidas
+  seed.py          categorias e palavras-chave iniciais
+  routers/         API: core (cadastros), transactions (lançamentos e importação), planning
+  index.html       a página
+public/static/     app.js, style.css, design system e ECharts
+tests/             testes e extratos OFX de exemplo
 ```
-
-## Próximos passos sugeridos
-
-- Migrações com Alembic, antes de alterar o schema com dados reais em produção.
-- Login com contas de usuário (hoje é uma senha única via `FINANCI_PASSWORD`).
-- Conciliação automática do realizado (OFX/extrato bancário) e regras de categorização.
