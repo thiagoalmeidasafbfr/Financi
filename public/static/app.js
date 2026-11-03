@@ -60,6 +60,12 @@ const listRow = ({ icon, title, desc = "", amount = "", extra = "", cls = "" }) 
   `<div class="az-insight ${cls}">${well(icon)}<div class="az-insight__text"><div class="az-insight__title">${title}</div>` +
   `${desc ? `<div class="az-insight__desc">${desc}</div>` : ""}</div>${amount ? `<span class="amount">${amount}</span>` : ""}${extra}</div>`;
 const signed = (v) => `${v < 0 ? "−" : ""}${fmt2(Math.abs(v))}`;
+// valor com centavos discretos: "R$ 3.577" + ",36" menor (sinal opcional: "+" para entradas)
+const money = (v, { plus = false } = {}) => {
+  const [whole, cents] = fmt2(Math.abs(v)).split(",");
+  const sign = v < 0 ? "−" : plus && v > 0 ? "+" : "";
+  return `<span class="money">${sign}${whole}<small>,${cents}</small></span>`;
+};
 
 function toast(msg, action) {
   const t = $("#toast");
@@ -201,6 +207,18 @@ async function refresh() {
 }
 
 // ------------------------------------------------------------------ INÍCIO
+// olho do saldo: esconde os valores do topo do Início (fica salvo neste aparelho)
+let hideValues = false;
+try { hideValues = localStorage.getItem("financi-ocultar") === "1"; } catch (_) { /* navegação privada */ }
+function applyHidden() {
+  $("#tab-inicio").classList.toggle("values-hidden", hideValues);
+  $("#h-eye").setAttribute("aria-label", hideValues ? "Mostrar valores" : "Ocultar valores");
+}
+$("#h-eye").addEventListener("click", () => {
+  hideValues = !hideValues;
+  try { localStorage.setItem("financi-ocultar", hideValues ? "1" : "0"); } catch (_) { /* navegação privada */ }
+  applyHidden();
+});
 async function renderInicio() {
   const d = await api("GET", withPerson(`/api/dashboard`));
   const empty = state.accounts.length === 0;
@@ -213,8 +231,9 @@ async function renderInicio() {
     state.monthSynced = true;
     state.tx.month = state.plan.month = d.month;
   }
+  if (state.tab === "inicio") screenHead("inicio");
   const T = d.month_totals, DT = d.debts_totals;
-  $("#h-saldo").textContent = fmt2(d.saldo_contas);
+  $("#h-saldo").innerHTML = money(d.saldo_contas);
   const net = T.receitas - T.despesas;
   const arrow = svg(net >= 0 ? '<path d="M12 19V5M6 11l6-6 6 6"/>' : '<path d="M12 5v14M6 13l6 6 6-6"/>', "i");
   $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> em ${MESES_LONGOS[+d.month.slice(5, 7) - 1]}`;
@@ -255,26 +274,48 @@ async function renderInicio() {
     <div class="az-insight__text"><div class="az-insight__title">${esc(i.title)}${i.badge ? `<span class="az-badge">${i.badge}</span>` : ""}</div>
     <div class="az-insight__desc">${esc(i.desc)}</div></div>${CHEV}</a>`).join("");
 
-  const accRows = d.accounts.filter((a) => a.kind !== "cartao").map((a) => listRow({ icon: esc(initials(a.name)), title: esc(a.name),
-    desc: `${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}`, amount: signed(a.balance) }));
-  const cardRows = d.cards.map((c) => listRow({ icon: ICON.card, title: esc(c.name),
-    desc: c.configured ? `Fatura de ${mlabel(c.invoice.month)} · vence ${dlabel(c.invoice.due)}` : "Configure fechamento e vencimento",
-    amount: fmt2(c.invoice.amount) }));
-  $("#home-accounts").innerHTML = [...accRows, ...cardRows].join("") || '<p class="hint">Nenhuma conta.</p>';
+  const liquid = d.accounts.filter((a) => a.kind !== "cartao");
+  const total = liquid.reduce((sum, a) => sum + Math.max(0, a.balance), 0);
+  $("#home-accounts").innerHTML = liquid.map((a) => `<div class="az-insight">${well(esc(initials(a.name)))}
+    <div class="az-insight__text"><div class="az-insight__title">${esc(a.name)}</div><div class="az-insight__desc">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}</div></div>
+    <div class="tx-right"><span class="amount">${money(a.balance)}</span><span class="tx-date share">${total > 0 && a.balance > 0 ? pct(a.balance / total) : ""}</span></div></div>`).join("")
+    || '<p class="hint">Nenhuma conta.</p>';
+
+  // cartões desenhados sob o saldo (como o cartão da foto de referência)
+  $("#home-cardviz").innerHTML = d.cards.map((c) => {
+    const last4 = (c.name.match(/(\d{4})\s*$/) || [, "••••"])[1];
+    const label = c.name.replace(/\s*\d{4}\s*$/, "").replace(/^Cartão\s+/i, "");
+    return `<button class="cardviz" data-goto="dividas" aria-label="Fatura do ${esc(c.name)}">
+      <span class="cardviz__brand">${esc(label)}</span><span class="cardviz__chip"></span>
+      <span class="cardviz__num">•••• ${esc(last4)}</span>
+      <span class="cardviz__foot"><span><small>${c.configured ? `Fatura ${mlabel(c.invoice.month)}` : "Fatura atual"}</small>${money(c.invoice.amount)}</span>
+        <span><small>Vence</small>${c.configured ? dlabel(c.invoice.due) : "–"}</span></span></button>`;
+  }).join("");
+  $("#home-cardviz").hidden = !d.cards.length;
+  applyHidden();
+
+  const recent = await api("GET", withPerson("/api/transactions?limit=5"));
+  $("#home-recent").innerHTML = recent.map((t) => txRow(t)).join("") || '<p class="hint">Nenhum lançamento ainda.</p>';
 
   $("#home-groups").innerHTML = d.groups.length ? d.groups.map((g) => {
     const max = Math.max(...g.values, 1), cur = g.values[g.values.length - 1];
     const withData = g.values.filter((v) => v > 0);
     const avg = withData.length ? withData.reduce((a, b) => a + b, 0) / withData.length : 0;
     const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(6, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
-    return `<div class="cat-card">${well(esc(initials(g.group)))}<div class="cat-card__text"><div class="cat-card__label">${esc(g.group)}</div>
-      <div class="cat-card__meta">média ${fmt(avg)} por mês</div></div><div class="cat-card__right"><div class="cat-card__amount">${fmt2(cur)}</div>
-      <div class="spark">${bars}</div></div></div>`;
+    return `<div class="az-insight cat-row">${well(esc(initials(g.group)))}<div class="az-insight__text"><div class="az-insight__title">${esc(g.group)}</div>
+      <div class="az-insight__desc">média ${fmt(avg)} por mês</div></div><div class="spark">${bars}</div>
+      <div class="tx-right"><span class="amount">${money(cur)}</span></div></div>`;
   }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
 }
 document.addEventListener("click", (e) => {
   const review = e.target.closest(".home-actions [data-review], #home-insights [data-go=review]");
   const go = e.target.closest("#home-insights [data-go]");
+  const recent = e.target.closest("#home-recent .tx-row");
+  if (recent) {
+    state.tx.status = "";
+    goTab("lancamentos");
+    return;
+  }
   if (review) {
     e.preventDefault();
     state.tx.status = "revisar";
@@ -314,6 +355,19 @@ function txBadge(t) {
   return "";
 }
 
+// linha de lançamento: monograma, descrição, categoria · conta, valor e a data embaixo do valor
+function txRow(t, { select = false } = {}) {
+  const cat = catById(t.category_id), acc = accById(t.account_id);
+  const inst = t.installment ? ` · parcela ${t.installment[0]}/${t.installment[1]}` : "";
+  return `<div class="az-insight tx-row" data-id="${t.id}">
+    ${select ? `<label class="tx-check" title="Selecionar"><input type="checkbox" data-sel="${t.id}" ${state.tx.selected.has(t.id) ? "checked" : ""}></label>` : ""}
+    ${well(esc(initials(t.merchant || t.description)))}
+    <div class="az-insight__text"><div class="az-insight__title">${esc(t.description)}</div>
+      <div class="az-insight__desc">${esc(cat ? cat.name : "Sem categoria")} · ${esc(acc ? acc.name : "")}${inst} ${txBadge(t)}</div></div>
+    <div class="tx-right"><span class="amount ${t.amount > 0 ? "in" : ""}">${money(t.amount, { plus: true })}</span>
+      <span class="tx-date">${dlabel(t.date)}</span></div></div>`;
+}
+
 function renderTxList() {
   const f = state.tx;
   if (!f.rows.length) {
@@ -321,22 +375,7 @@ function renderTxList() {
     updateBulk();
     return;
   }
-  let h = "", last = null;
-  for (const t of f.rows) {
-    if (t.date !== last) {
-      h += `<div class="day-head">${dlabel(t.date)}</div>`;
-      last = t.date;
-    }
-    const cat = catById(t.category_id), acc = accById(t.account_id);
-    const inst = t.installment ? ` · parcela ${t.installment[0]}/${t.installment[1]}` : "";
-    h += `<div class="az-insight tx-row" data-id="${t.id}">
-      <label class="tx-check" title="Selecionar"><input type="checkbox" data-sel="${t.id}" ${f.selected.has(t.id) ? "checked" : ""}></label>
-      ${well(esc(initials(cat ? cat.group : "?")))}
-      <div class="az-insight__text"><div class="az-insight__title">${esc(t.description)}</div>
-        <div class="az-insight__desc">${esc(cat ? cat.name : "Sem categoria")} · ${esc(acc ? acc.name : "")}${inst} ${txBadge(t)}</div></div>
-      <span class="amount">${signed(t.amount)}</span></div>`;
-  }
-  $("#tx-list").innerHTML = h;
+  $("#tx-list").innerHTML = f.rows.map((t) => txRow(t, { select: true })).join("");
   updateBulk();
 }
 
@@ -435,7 +474,7 @@ function openNewTx() {
   };
 }
 $("#tx-add").onclick = openNewTx;
-$("#tx-fab").onclick = openNewTx;
+$("#tx-add-m").onclick = openNewTx;
 
 // ------------------------------------------------------------------ IMPORTAR
 async function renderImportar() {
@@ -630,17 +669,21 @@ async function renderDividas() {
   ].map(([l, v, sub]) => tile(l, v, sub)).join("");
   // ScoreRing: quanto da renda média vai para parcelas (o número sempre impresso; o anel só reforça)
   const c = T.comprometimento, C = 2 * Math.PI * 58, shown = c == null ? 0 : Math.min(1, c);
-  $("#debt-ring").innerHTML = `<div class="az-score"><div class="az-score__ring"><svg viewBox="0 0 128 128"><circle class="az-score__track" cx="64" cy="64" r="58"/>
+  const word = c == null ? "Sem dados" : c <= 0.3 ? "Saudável" : c <= 0.4 ? "Atenção" : "Alto";
+  const desc = c == null ? "Importe extratos com receitas para calcular"
+    : c <= 0.3 ? "As parcelas cabem bem na renda deste mês" : c <= 0.4 ? "Evite novas parcelas até reduzir as atuais" : "As parcelas pesam na renda; priorize quitar";
+  $("#debt-ring").innerHTML = `<div class="health"><div class="health__head"><span>Comprometimento da renda</span></div>
+    <div class="az-score"><div class="az-score__ring"><svg viewBox="0 0 128 128"><circle class="az-score__track" cx="64" cy="64" r="58"/>
       <circle class="az-score__value" cx="64" cy="64" r="58" stroke-dasharray="${(C * shown).toFixed(1)} ${C.toFixed(1)}"/></svg>
-      <div class="az-score__num">${c == null ? "–" : Math.round(c * 100)}<small>% da renda</small></div></div>
-    <div class="az-score__title">Comprometimento</div><div class="az-score__desc">${c == null ? "Importe extratos com receitas para calcular" : "Parcelas por mês sobre a renda média"}</div></div>`;
+      <div class="az-score__num">${c == null ? "–" : Math.round(c * 100)}<small>%</small></div></div>
+    <div class="az-score__title">${word}</div><div class="az-score__desc">${desc}</div></div></div>`;
 
   $("#debt-cards").innerHTML = d.cards.length ? d.cards.map((c) => {
     const used = c.limit ? Math.min(1, c.limit_used / c.limit) : null;
     const hist = c.history.map((h) => `<span><b>${fmt(h.amount)}</b> ${mlabel(h.month)}</span>`).join("");
     const fut = c.future_installments.slice(0, 6).map((f) => `<span>${mlabel(f.month)} <b>${fmt(f.amount)}</b></span>`).join("");
     return `<div class="card"><div class="card-head"><h3>${esc(c.name)}</h3><button class="link" data-card="${c.account_id}">${c.configured ? "Editar" : "Configurar"}</button></div>
-      ${c.configured ? `<div class="amount-row"><span class="big">${fmt2(c.current_invoice.amount)}</span><span class="muted">fatura de ${mlabel(c.current_invoice.month)} · vence ${dlabel(c.current_invoice.due)}</span></div>`
+      ${c.configured ? `<div class="amount-row"><span class="big">${money(c.current_invoice.amount)}</span><span class="muted">fatura de ${mlabel(c.current_invoice.month)} · vence ${dlabel(c.current_invoice.due)}</span></div>`
         : `<p class="hint">Informe o dia de fechamento e de vencimento para calcular as faturas.</p>`}
       ${used != null ? `<div class="meter" title="Limite usado"><i style="width:${used * 100}%"></i></div><p class="hint">${fmt(c.limit_used)} usados de ${fmt(c.limit)} · disponível ${fmt(c.limit_available)}</p>` : ""}
       ${hist ? `<p class="overline">Últimas faturas</p><div class="chips">${hist}</div>` : ""}
@@ -651,7 +694,7 @@ async function renderDividas() {
     const prog = x.total_installments ? x.paid / x.total_installments : null;
     return `<div class="card debt"><div class="card-head"><h3>${esc(x.name)}</h3><button class="link" data-debt="${x.id}">Editar</button></div>
       <p class="hint" style="margin:0 0 8px">${DEBT_LABEL[x.kind]}${x.creditor ? ` · ${esc(x.creditor)}` : ""} · ${esc(personName(x.owner_id))}</p>
-      <div class="amount-row"><span class="big">${fmt2(x.balance)}</span><span class="muted">saldo devedor${x.total_installments ? " (valor para quitar hoje)" : ""}</span></div>
+      <div class="amount-row"><span class="big">${money(x.balance)}</span><span class="muted">saldo devedor${x.total_installments ? " (valor para quitar hoje)" : ""}</span></div>
       ${prog != null ? `<div class="meter"><i style="width:${prog * 100}%"></i></div>
         <p class="hint">${x.paid} de ${x.total_installments} parcelas pagas · ${x.remaining} restantes de ${fmt2(x.installment)} · termina ${mlabel(x.end_month)}</p>`
         : x.remaining ? `<p class="hint">Pagando ${fmt2(x.installment)} por mês, faltam cerca de ${x.remaining} parcelas · termina ${mlabel(x.end_month)}</p>` : ""}
@@ -886,10 +929,24 @@ $("#add-rule").onclick = () => {
 // ------------------------------------------------------------------ navegação, tema e início
 const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, dividas: renderDividas, ajustes: renderAjustes };
 
-const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importar extrato", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
+const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importar", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
+const SUBTITLES = {
+  inicio: "", lancamentos: "Encontre e categorize qualquer gasto", importar: "Envie extratos e faturas em OFX",
+  planejamento: "Orçamento do mês e projeção de caixa", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
+};
+function screenHead(tab) {
+  if (tab === "inicio") {
+    const who = state.person !== "all" && state.person !== "conjunto" ? personName(+state.person) : "família";
+    $("#screen-title").textContent = `Olá, ${who}`;
+    $("#screen-sub").textContent = mlong(state.tx.month || thisMonth());
+  } else {
+    $("#screen-title").textContent = TITLES[tab];
+    $("#screen-sub").textContent = SUBTITLES[tab];
+  }
+}
 function showTab(tab) {
   state.tab = tab;
-  $("#screen-title").textContent = TITLES[tab];
+  screenHead(tab);
   $$("#nav button").forEach((x) => x.classList.toggle("active", x.dataset.tab === tab));
   $$("#bottomnav button[data-tab]").forEach((x) => (x.dataset.tab === tab ? x.setAttribute("aria-current", "page") : x.removeAttribute("aria-current")));
   $$("section.tab").forEach((s) => s.classList.toggle("active", s.id === `tab-${tab}`));
@@ -910,21 +967,21 @@ window.addEventListener("hashchange", () => {
   const tab = location.hash.slice(1);
   if (RENDER[tab] && tab !== state.tab) goTab(tab);
 });
-$("#person").addEventListener("change", (e) => { state.person = e.target.value; refresh(); });
+$("#person").addEventListener("change", (e) => { state.person = e.target.value; screenHead(state.tab); refresh(); });
 
-// tema claro (páginas brancas) ou navy; o cabeçalho do Início é sempre navy
+// tema navy (padrão, como as telas de referência) ou claro
 function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
-  $('meta[name="theme-color"]').setAttribute("content", theme === "navy" ? "#072061" : "#fafafa");
+  $('meta[name="theme-color"]').setAttribute("content", theme === "navy" ? "#0b2a86" : "#fafafa");
   $$("#theme-seg button").forEach((b) => b.classList.toggle("active", b.dataset.themeSet === theme));
-  try { localStorage.setItem("financi-theme", theme); } catch (_) { /* navegação privada */ }
+  try { localStorage.setItem("financi-tema", theme); } catch (_) { /* navegação privada */ }
   $("#theme-btn").innerHTML = theme === "navy" ? ICON.sun : ICON.moon;
 }
 $("#theme-btn").addEventListener("click", async () => {
   applyTheme(document.documentElement.dataset.theme === "navy" ? "light" : "navy");
   await refresh();
 });
-applyTheme(document.documentElement.dataset.theme === "navy" ? "navy" : "light");
+applyTheme(document.documentElement.dataset.theme === "light" ? "light" : "navy");
 $("#theme-seg").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-theme-set]");
   if (!b) return;

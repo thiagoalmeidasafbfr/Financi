@@ -4,18 +4,18 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Financi</title>
-  <meta name="theme-color" content="#fafafa">
+  <meta name="theme-color" content="#072061">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Financi">
   <link rel="manifest" href="/static/manifest.webmanifest" crossorigin="use-credentials">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
   <script>
     // tema antes do primeiro desenho: claro (páginas brancas) ou navy, como no Azure Finance
-    try { var t = localStorage.getItem("financi-theme"); document.documentElement.dataset.theme = t === "navy" ? "navy" : "light"; }
-    catch (e) { document.documentElement.dataset.theme = "light"; }
+    try { var t = localStorage.getItem("financi-tema"); document.documentElement.dataset.theme = t === "light" ? "light" : "navy"; }
+    catch (e) { document.documentElement.dataset.theme = "navy"; }
   </script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/vendor/echarts.min.js"></script>
@@ -23,7 +23,7 @@
 <body class="az">
 <header class="topbar">
   <div class="brand">Financi<span>finanças da família</span></div>
-  <h1 class="screen-title" id="screen-title">Início</h1>
+  <div class="screen-head"><h1 id="screen-title">Início</h1><p id="screen-sub"></p></div>
   <nav class="rail" id="nav" aria-label="Navegação">
     <button data-tab="inicio" class="active">Início</button>
     <button data-tab="lancamentos">Lançamentos</button>
@@ -58,29 +58,33 @@
       <div class="row"><button class="primary" data-goto="importar">Importar extrato</button><button data-goto="ajustes">Cadastrar pessoas</button></div>
     </div>
     <div id="home-content">
-      <div class="hero" data-theme="navy">
+      <div class="home-top" data-theme="navy">
         <div class="az-balance">
-          <span class="az-balance__label">Saldo em contas</span>
+          <span class="az-balance__label">Saldo em contas
+            <button class="eye" id="h-eye" aria-label="Ocultar valores"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span>
           <div class="az-balance__row">
             <span class="az-balance__value" id="h-saldo">–</span>
-            <button class="az-topup desktop-only" data-goto="importar">Importar<i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></i></button>
+            <button class="az-topup" data-goto="importar">Importar<i><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></i></button>
           </div>
           <span class="az-trend" id="h-trend"></span>
           <span class="hero-detail" id="h-detail"></span>
         </div>
+        <div class="cardviz-row" id="home-cardviz"></div>
       </div>
-      <nav class="az-actions home-actions" aria-label="Atalhos">
-        <button class="az-action" data-goto="importar"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span><b>Importar</b><span>Enviar extrato</span></button>
-        <button class="az-action" data-review><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h11"/></svg></span><b>Revisar</b><span id="qa-review">Nada pendente</span></button>
-        <button class="az-action" data-goto="planejamento"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 20V10M12 20V4M17 20v-7"/></svg></span><b>Orçar</b><span>Planejar mês</span></button>
-        <button class="az-action" data-goto="dividas"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span><b>Dívidas</b><span>Ver parcelas</span></button>
-      </nav>
-      <div class="grid2">
-        <div class="card"><div class="card-head"><h3>Destaques do mês</h3></div><div class="insight-list" id="home-insights"></div></div>
-        <div class="card"><div class="card-head"><h3>Contas e cartões</h3><button class="link" data-goto="ajustes">Gerenciar</button></div><div class="list" id="home-accounts"></div></div>
+      <div class="home-sheet" data-theme="light">
+        <nav class="az-actions home-actions" aria-label="Atalhos">
+          <button class="az-action" data-goto="importar"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span><b>Importar</b><span>Enviar extrato</span></button>
+          <button class="az-action" data-review><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h11"/></svg></span><b>Revisar</b><span id="qa-review">Nada pendente</span></button>
+          <button class="az-action" data-goto="planejamento"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l5.5 5.5"/></svg></span><b>Orçar</b><span>Planejar mês</span></button>
+          <button class="az-action" data-goto="dividas"><span class="az-well"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18" cy="12" r="1.2"/></svg></span><b>Dívidas</b><span>Ver parcelas</span></button>
+        </nav>
+        <div class="sheet-grid">
+          <div class="card"><div class="card-head"><h3>Destaques do mês</h3></div><div class="insight-list" id="home-insights"></div></div>
+          <div class="card"><div class="card-head"><h3>Minhas contas</h3><button class="link" data-goto="ajustes">Ver todas</button></div><div class="list" id="home-accounts"></div></div>
+          <div class="card"><div class="card-head"><h3>Últimos lançamentos</h3><button class="link" data-goto="lancamentos">Ver todos</button></div><div class="list" id="home-recent"></div></div>
+          <div class="card"><div class="card-head"><h3>Gastos por grupo</h3><button class="link" data-goto="planejamento">Ver orçamento</button></div><div class="list" id="home-groups"></div></div>
+        </div>
       </div>
-      <div class="section-head"><h2>Gastos por grupo</h2><button class="link" data-goto="planejamento">Ver orçamento</button></div>
-      <div class="cat-grid" id="home-groups"></div>
     </div>
   </section>
 
@@ -93,6 +97,7 @@
           <input type="month" id="tx-month" aria-label="Mês"><button class="ghost icon" id="tx-next" aria-label="Próximo mês">›</button></div>
         <select id="tx-account" aria-label="Conta"></select>
         <input id="tx-q" type="search" placeholder="Buscar descrição" aria-label="Buscar">
+        <button class="az-icon-btn mobile-only" id="tx-add-m" aria-label="Novo lançamento" title="Novo lançamento"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <button class="primary desktop-only" id="tx-add">Novo lançamento</button>
       </div>
       <div class="row"><div class="segmented scroll-x" id="tx-status">
@@ -105,7 +110,6 @@
       <button class="primary" id="bulk-apply">Categorizar</button><button class="ghost" id="bulk-clear">Limpar</button>
     </div>
     <div class="card list" id="tx-list"></div>
-    <button class="fab mobile-only" id="tx-fab" aria-label="Novo lançamento"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
   </section>
 
   <!-- IMPORTAR -->
@@ -198,7 +202,7 @@
 <nav class="bottomnav" id="bottomnav" aria-label="Navegação">
   <button class="az-tab" data-tab="inicio" aria-current="page"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7v9H4z"/><path d="M10 20v-5h4v5"/></svg></span>Início</button>
   <button class="az-tab" data-tab="lancamentos"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg></span>Extrato</button>
-  <button class="az-tab" data-tab="importar"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>Importar</button>
+  <button class="az-tab az-tab--ai tab-main" data-tab="importar"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>Importar</button>
   <button class="az-tab" data-tab="planejamento"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 20V10M12 20V4M17 20v-7"/></svg></span>Planejar</button>
   <button class="az-tab" data-tab="dividas"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span>Dívidas</button>
 </nav>

@@ -25,9 +25,14 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
 - **Casal**: cadastre as pessoas em **Ajustes**. Contas, cartões e dívidas têm titular (ou são conjuntos) e o
   seletor no topo filtra tudo por pessoa.
 
-Funciona no desktop e no celular. Visual no design system **Azure Finance** (`public/static/az/`: `tokens.css` e
-componentes `az-*` em `bundle.css`): páginas brancas com o cabeçalho do Início em navy, tema navy pelo botão no
-topo, Helvetica Neue, direção dos valores pelo sinal e pela seta (sem verde e vermelho).
+Pensado para o celular (funciona também no computador). Visual no design system **Azure Finance**
+(`public/static/az/`: `tokens.css` e componentes `az-*` em `bundle.css`), seguindo as telas de referência do app:
+fundo navy em degradê com cartões de vidro, saldo e cartões desenhados no topo do Início com a folha branca por
+baixo, título grande com subtítulo e barra inferior com o botão central elevado (Importar). Tema claro em Ajustes.
+Valores com centavos discretos; direção pelo sinal e pela seta (sem verde e vermelho).
+
+**Instalar no celular:** abra o endereço no Safari (iPhone) ou Chrome (Android) → Compartilhar / menu →
+**Adicionar à Tela de Início**. O Financi abre em tela cheia, como um app.
 
 ## Publicando no Vercel + Neon
 
