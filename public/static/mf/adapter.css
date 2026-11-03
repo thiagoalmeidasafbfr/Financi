@@ -1,0 +1,119 @@
+/* Ponte entre os nomes de token usados no app e o design system Modern Finance (mf/tokens.css).
+   Tudo aqui aponta para tokens do MF, então o tema claro ([data-theme="light"] no <html>) funciona sozinho.
+   Regras do MF: monocromático (sem cor para ganho/perda), controles em pílula, cartões radius-md com linha. */
+:root {
+  color-scheme: dark;
+
+  /* superfícies (uma camada por nível: página → cartão → controle → bolha/tab bar → selecionado) */
+  --surface-page: var(--surface-000);
+  --surface-card: var(--surface-100);
+  --surface-sunken: var(--surface-200);
+  --surface-raised: var(--surface-200);
+  --surface-inverse: var(--ink);
+  --surface-inverse-soft: var(--ink-muted);
+  --surface-accent: var(--surface-400);
+  --surface-accent-soft: var(--surface-200);
+  --surface-negative-soft: var(--surface-300);
+  --surface-glass: var(--glass);
+  --surface-scrim: rgba(0, 0, 0, 0.6);
+
+  /* texto e linhas */
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-muted);
+  --text-muted: var(--ink-subtle);
+  --text-inverse: var(--on-ink);
+  --text-negative: var(--ink);
+  --text-positive: var(--ink);
+  --border-subtle: var(--line);
+  --border-default: var(--line);
+  --border-strong: var(--line-strong);
+  --border-inverse: var(--glass-edge);
+  --border-focus: var(--focus-ring);
+
+  /* ações */
+  --accent: var(--surface-300);
+  --accent-hover: var(--surface-400);
+  --accent-line: var(--line-strong);
+  --action-inverse: var(--ink);
+  --action-inverse-hover: var(--ink-muted);
+  --action-ghost-hover: var(--surface-200);
+
+  /* nomes antigos de cor → tons de cinza do MF */
+  --ink-900: var(--ink);
+  --white: var(--surface-100);
+  --gray-150: var(--surface-300);
+  --gray-300: var(--line-strong);
+  --gray-500: var(--ink-subtle);
+  --sand-400: var(--ink);
+  --sand-500: var(--surface-400);
+  --sand-700: var(--ink-muted);
+  --red-400: var(--ink);
+  --red-500: var(--ink);
+
+  /* gráficos: só tons (aceso/apagado e passos intermediários); séries se distinguem também pelo traço */
+  --chart-grid: var(--line);
+  --series-1: var(--chart-lit);
+  --series-2: var(--ink-muted);
+  --series-3: var(--ink-subtle);
+  --series-4: var(--line-strong);
+  --series-5: var(--chart-dim);
+  --series-other: var(--chart-dim);
+
+  /* profundidade */
+  --shadow-card: none;
+  --shadow-raised: var(--shadow-control);
+  --shadow-pop: var(--shadow-glass);
+
+  /* raios */
+  --radius-xs: 8px;
+  --radius-control: var(--radius-pill);
+  --radius-card: var(--radius-md);
+  --radius-tile: var(--radius-md);
+  --radius-sheet: var(--radius-lg);
+
+  /* tipografia (Lato; Manrope só para a marca/título de abertura) */
+  --font-core: var(--font-sans);
+  --font-numeric: var(--font-sans);
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-weight-light: 400;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 700;
+  --text-overline-size: 13px;
+  --text-overline-tracking: 0;
+  --text-body-size: 15px;
+  --text-body-line: 20px;
+  --text-body-sm-size: 13px;
+  --text-subtitle-size: 17px;
+  --text-title-size: 22px;
+  --text-title-weight: 500;
+  --text-title-tracking: 0;
+  --text-h2-size: 22px;
+  --text-h2-line: 28px;
+  --text-h2-tracking: 0;
+  --text-hero-size: 48px;
+  --text-metric-line: 1.16;
+  --text-metric-tracking: -0.01em;
+
+  /* espaços, layout e controles */
+  --space-7: 28px;
+  --space-9: 56px;
+  --gutter-card: var(--space-4);
+  --gutter-screen: var(--space-6);
+  --gutter-screen-mobile: var(--space-4);
+  --layout-topbar: 64px;
+  --layout-bottombar: 72px;
+  --control-h-sm: 32px;
+  --control-h-md: 40px;
+  --control-h-lg: 52px;
+
+  /* movimento */
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+  --duration-fast: 140ms;
+  --duration-base: 200ms;
+  --transition-control: background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+  --press-scale: .97;
+  --gradient-mint: radial-gradient(120% 140% at 50% 0%, var(--surface-300) 0%, var(--surface-100) 60%);
+}
+[data-theme="light"] { color-scheme: light; }

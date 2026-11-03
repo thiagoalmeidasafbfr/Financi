@@ -4,6 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Financi</title>
+  <script>
+    // tema antes do primeiro desenho (escuro é o tema principal do Modern Finance)
+    try { document.documentElement.dataset.theme = localStorage.getItem("financi-theme") || "dark"; }
+    catch (e) { document.documentElement.dataset.theme = "dark"; }
+  </script>
   <link rel="stylesheet" href="/static/style.css">
   <script src="/static/vendor/echarts.min.js"></script>
 </head>
@@ -22,8 +27,8 @@
     <button data-tab="cadastros">Cadastros</button>
   </nav>
   <div class="scenario-pick">
-    <span class="muted">Cenário</span>
-    <select id="scenario" aria-label="Cenário"></select>
+    <select id="scenario" aria-label="Cenário" title="Cenário"></select>
+    <button class="mf-icon-btn mf-icon-btn--sm theme-btn" id="theme-btn" aria-label="Alternar tema claro/escuro" title="Alternar tema claro/escuro"></button>
   </div>
 </header>
 
@@ -46,16 +51,15 @@
       <pre class="report" id="empty-report" hidden></pre>
     </div>
     <div id="painel-content">
-    <div class="card">
-      <div class="hero">
-        <div>
-          <p class="eyebrow" id="hero-eyebrow">Patrimônio ao fim do período · conta + investimentos + FGTS</p>
-          <div class="metric" id="hero-value">–</div>
-          <div class="caption" id="hero-caption"></div>
-        </div>
+    <div class="hero-stage">
+      <div class="mf-balance">
+        <span class="mf-balance__label" id="hero-eyebrow">Patrimônio</span>
+        <span class="mf-balance__value" id="hero-value">–</span>
+        <div class="hero-row"><span class="mf-trend" id="hero-trend" hidden></span><span class="mf-muted caption" id="hero-caption"></span></div>
         <div id="hero-insight"></div>
       </div>
     </div>
+    <div class="cat-grid" id="cat-cards"></div>
     <div class="tiles" id="kpi-tiles"></div>
     <div class="card">
       <div class="card-head">
@@ -69,7 +73,7 @@
         </div>
       </div>
       <p class="hint">Fontes → entradas → grupos de gasto → categorias. Resgates de investimentos (dinheiro que volta para cobrir saldo negativo)
-        e saldo de meses anteriores aparecem em cinza: são fontes de caixa, não receita. O rendimento fica nos investimentos e não passa por aqui.</p>
+        e saldo de meses anteriores aparecem apagados: são fontes de caixa, não receita. O rendimento fica nos investimentos e não passa por aqui.</p>
       <div id="chart-sankey" class="chart tall"></div>
     </div>
     <div class="grid2">
@@ -172,7 +176,7 @@
         <div class="legend">
           <span><span class="swatch-cell scheduled"></span>quitação agendada</span>
           <span><span class="swatch-cell fits"></span>cabe no saldo do mês</span>
-          <span><span class="swatch-cell nofit"></span>não cabe</span>
+          <span><span class="swatch-cell nofit"></span>não cabe (riscado)</span>
         </div>
       </div>
       <p class="hint">Em cima, o caixa do cenário em cada mês (já com as quitações agendadas). Embaixo, quanto custa quitar cada contrato

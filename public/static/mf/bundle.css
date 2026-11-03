@@ -1,0 +1,110 @@
+@import url("https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Manrope:wght@500;600;700&display=swap");
+
+/* Modern Finance — component styles. Every value comes from tokens.css. */
+
+.mf-screen { background: var(--surface-000); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+.mf-num { font-variant-numeric: tabular-nums lining-nums; }
+.mf-muted { color: var(--ink-muted); }
+.mf-subtle { color: var(--ink-subtle); }
+
+/* focus */
+.mf-btn:focus-visible, .mf-icon-btn:focus-visible, .mf-tab:focus-visible, .mf-link:focus-visible {
+  outline: 2px solid var(--focus-ring); outline-offset: 2px;
+}
+
+/* Button — always a pill */
+.mf-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  height: 56px; padding: 0 var(--space-6); border-radius: var(--radius-pill);
+  font: 400 17px/24px var(--font-sans); color: var(--ink); cursor: pointer;
+  border: 1px solid var(--line-strong); background: var(--surface-100); box-shadow: var(--shadow-control);
+}
+.mf-btn:hover { background: var(--surface-200); }
+.mf-btn svg { width: 18px; height: 18px; flex: none; }
+.mf-btn--glass {
+  background: var(--glass); border-color: var(--glass-edge); box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: blur(var(--blur-glass)); backdrop-filter: blur(var(--blur-glass));
+}
+.mf-btn--glass:hover { background: var(--glass-strong); }
+.mf-btn--solid { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
+.mf-btn--solid:hover { background: var(--ink); opacity: .9; }
+.mf-btn--block { width: 100%; height: 64px; }
+.mf-btn[disabled] { opacity: .4; cursor: not-allowed; }
+
+/* Icon button — always a circle */
+.mf-icon-btn {
+  position: relative; display: inline-grid; place-items: center; width: 48px; height: 48px; padding: 0;
+  border-radius: var(--radius-pill); border: 1px solid var(--line-strong);
+  background: var(--surface-200); color: var(--ink); box-shadow: var(--shadow-control); cursor: pointer;
+}
+.mf-icon-btn--sm { width: 40px; height: 40px; }
+.mf-icon-btn svg { width: 20px; height: 20px; }
+.mf-icon-btn__dot { position: absolute; top: 10px; right: 11px; width: 8px; height: 8px; border-radius: var(--radius-pill); background: var(--notify); }
+
+/* Trend pill */
+.mf-trend {
+  display: inline-flex; align-items: center; gap: var(--space-2); height: 36px; padding: 0 var(--space-4);
+  border-radius: var(--radius-pill); border: 1px solid var(--line-strong); background: var(--glass);
+  font: 400 17px/24px var(--font-sans); color: var(--ink);
+}
+.mf-trend svg { width: 14px; height: 14px; }
+
+/* Balance card */
+.mf-balance {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-2);
+  padding: var(--space-6); border-radius: var(--radius-lg);
+  background: var(--glass); border: 1px solid var(--glass-edge); box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: blur(var(--blur-glass)); backdrop-filter: blur(var(--blur-glass));
+}
+.mf-balance__label { font: 400 17px/24px var(--font-sans); color: var(--ink); }
+.mf-balance__value { font: 700 48px/56px var(--font-sans); letter-spacing: -0.01em; color: var(--ink); font-variant-numeric: tabular-nums lining-nums; }
+
+/* Section header */
+.mf-section { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-4); }
+.mf-section__title { margin: 0; font: 500 22px/28px var(--font-sans); color: var(--ink); }
+.mf-link { font: 400 13px/18px var(--font-sans); color: var(--ink-muted); text-decoration: none; background: none; border: 0; padding: 0; cursor: pointer; }
+.mf-link:hover { color: var(--ink); }
+
+/* Transaction row */
+.mf-tx { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-5) 0; border-bottom: 1px solid var(--line); }
+.mf-tx__icon { flex: none; display: grid; place-items: center; width: 48px; height: 48px; border-radius: var(--radius-pill); background: var(--surface-200); border: 1px solid var(--line); color: var(--ink); font: 700 12px/1 var(--font-sans); }
+.mf-tx__icon svg { width: 22px; height: 22px; }
+.mf-tx__text { flex: 1; min-width: 0; }
+.mf-tx__title { font: 400 17px/24px var(--font-sans); color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mf-tx__meta { font: 400 13px/18px var(--font-sans); color: var(--ink-muted); }
+.mf-tx__amount { font: 400 17px/24px var(--font-sans); color: var(--ink); font-variant-numeric: tabular-nums lining-nums; white-space: nowrap; }
+
+/* Tab bar */
+.mf-tabbar {
+  display: inline-flex; align-items: center; gap: var(--space-1); padding: 6px;
+  border-radius: var(--radius-pill); background: var(--surface-300); border: 1px solid var(--glass-edge); box-shadow: var(--shadow-glass);
+  -webkit-backdrop-filter: blur(var(--blur-glass)); backdrop-filter: blur(var(--blur-glass));
+}
+.mf-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--space-1);
+  min-width: 64px; height: 60px; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-pill);
+  background: none; color: var(--ink-muted); font: 400 11px/14px var(--font-sans); cursor: pointer;
+}
+.mf-tab svg { width: 22px; height: 22px; }
+.mf-tab[aria-current="page"] { background: var(--surface-400); color: var(--ink); min-width: 72px; }
+
+/* Category card with sparkline */
+.mf-cat {
+  display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4);
+  border-radius: var(--radius-md); background: var(--surface-100); border: 1px solid var(--line);
+}
+.mf-cat__icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: var(--radius-pill); background: var(--surface-200); color: var(--ink); border: 1px solid var(--line); }
+.mf-cat__icon svg { width: 20px; height: 20px; }
+.mf-spark { display: flex; align-items: flex-end; gap: 3px; height: 72px; }
+.mf-spark i { display: block; flex: 1; min-width: 2px; max-width: 3px; border-radius: 2px; background: var(--chart-dim); }
+.mf-spark i.on { background: var(--chart-lit); }
+.mf-cat__label { font: 400 17px/24px var(--font-sans); color: var(--ink); }
+.mf-cat__amount { font: 500 22px/28px var(--font-sans); color: var(--ink); font-variant-numeric: tabular-nums lining-nums; }
+.mf-cat__amount small { font: inherit; color: var(--ink-subtle); }
+
+/* Spending bubble */
+.mf-bubble { position: relative; display: grid; place-items: center; border-radius: var(--radius-pill); background: var(--surface-300); box-shadow: var(--shadow-glass); overflow: hidden; text-align: center; }
+.mf-bubble__slice { position: absolute; inset: 0; border-radius: var(--radius-pill); }
+.mf-bubble__body { position: relative; display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+.mf-bubble__label { font: 400 15px/20px var(--font-sans); color: var(--ink); }
+.mf-bubble__pct { font: 400 15px/20px var(--font-sans); color: var(--ink); font-variant-numeric: tabular-nums; }

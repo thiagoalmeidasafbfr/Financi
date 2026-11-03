@@ -19,7 +19,7 @@ de forma que cada cenário fica guardado no banco e pode ser editado, duplicado 
 | **Cadastros** | Importar a planilha .xlsx, categorias e contas |
 
 Funciona no desktop e no celular (barra de navegação inferior, visão por mês, folhas de edição e arrastar pelo toque).
-Visual baseado no design system Glorioso Finance (tokens em `public/static/tokens/`, fonte Urbanist).
+Visual no design system **Modern Finance** (`public/static/mf/`: tokens, componentes `mf-*` e `adapter.css`, que traduz os nomes de token usados no app). Tema escuro por padrão e claro pelo botão no topo; monocromático: ganhos e perdas pelo sinal e pela seta, gráficos em tons "aceso/apagado" com traços diferentes por série.
 
 ## Publicando no Vercel + Neon
 

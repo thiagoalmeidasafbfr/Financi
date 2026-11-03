@@ -100,6 +100,16 @@ function baseOption() {
   };
 }
 
+// Modern Finance: gráficos monocromáticos; "aceso" para o foco, "apagado" para o contexto.
+const LIT = () => css("--chart-lit");
+const DIM = () => css("--chart-dim");
+const DASHES = ["solid", "dashed", "dotted", [8, 3, 2, 3], [2, 6]];
+// traço fixo por cenário, para distinguir linhas sem depender de cor
+function scenarioDash(id) {
+  const idx = state.scenarios.findIndex((s) => s.id === id);
+  return DASHES[Math.max(0, idx) % DASHES.length];
+}
+
 // cor fixa por cenário (segue a entidade, não a posição na seleção)
 function scenarioColor(id) {
   const idx = state.scenarios.findIndex((s) => s.id === id);
@@ -308,9 +318,17 @@ async function renderPainel() {
   if (!p) return;
   const k = p.kpis, s = p.series, months = p.months;
   const whole = !state.period.start && !state.period.end;
-  $("#hero-eyebrow").textContent = `Patrimônio ao fim ${whole ? "do horizonte" : `de ${mlabel(k.mes_final)}`} · conta + investimentos + FGTS`;
-  $("#hero-value").textContent = fmt(k.patrimonio_final);
-  $("#hero-caption").textContent = `${mlabel(k.mes_inicial)} a ${mlabel(k.mes_final)} · ${k.n_meses} meses`;
+  $("#hero-eyebrow").textContent = "Patrimônio";
+  $("#hero-value").textContent = fmt2(k.patrimonio_final);
+  $("#hero-caption").textContent = `${whole ? "fim do horizonte" : `fim de ${mlabel(k.mes_final)}`} · conta + investimentos + FGTS`;
+  // TrendPill: variação do patrimônio no período (direção pela seta e pelas palavras, nunca pela cor)
+  const startPat = p.waterfall.start + k.saldo_inicial_fgts;
+  const delta = k.patrimonio_final - startPat;
+  const arrow = delta >= 0 ? '<path d="M7 17 17 7M9 7h8v8"/>' : '<path d="M7 7l10 10M17 9v8H9"/>';
+  const rel = Math.abs(startPat) > 1 ? ` (${(Math.abs(delta / startPat) * 100).toFixed(1).replace(".", ",")}%)` : "";
+  $("#hero-trend").hidden = false;
+  $("#hero-trend").innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${arrow}</svg>${delta >= 0 ? "+" : "−"}${fmt(Math.abs(delta))}${rel} no período`;
+  renderCategoryCards(p);
   const neg = k.meses_saldo_negativo;
   $("#hero-insight").innerHTML = neg
     ? `<div class="insight"><span class="badge negative">${neg} ${neg > 1 ? "meses" : "mês"}</span><span>com saldo negativo em conta; o pior é <b>${mlabel(k.mes_menor_saldo)}</b> (${fmt(k.menor_saldo_conta)})</span></div>`
@@ -334,17 +352,16 @@ async function renderPainel() {
   await drawPainelSankey();
 
   renderWaterfall(p.waterfall, k);
-  const pal = SERIES();
   const line = (name, data, color, extra = {}) => ({ name, type: "line", data, color, symbol: "none", lineStyle: { width: 2 }, ...extra });
   chart("chart-lines").setOption({
     ...baseOption(),
     xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
     series: [
-      line("Receitas", s.receitas, pal[0]),
-      line("Despesas", s.total_despesas, pal[1]),
-      line("Saldo conta + investido", s.saldo_total, css("--ink-900"), { lineStyle: { width: 2.5 },
+      line("Receitas", s.receitas, css("--ink-muted"), { lineStyle: { width: 2, type: "dashed" } }),
+      line("Despesas", s.total_despesas, css("--ink-subtle"), { lineStyle: { width: 2, type: "dotted" } }),
+      line("Saldo conta + investido", s.saldo_total, LIT(), { lineStyle: { width: 2.5 },
         markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } }),
-      line("FGTS", s.fgts_saldo, pal[2], { lineStyle: { width: 2, type: "dashed" } }),
+      line("FGTS", s.fgts_saldo, DIM(), { lineStyle: { width: 2 } }),
     ],
   }, true);
 
@@ -370,7 +387,7 @@ function renderWaterfall(w, k) {
     run += st.value;
   }
   items.push({ y0: 0, y1: w.end, v: w.end, kind: "total" });
-  const color = { total: css("--ink-900"), up: css("--series-2"), down: css("--red-500") };
+  const color = { total: LIT(), up: css("--ink-muted"), down: DIM() };
   const signed = (v, kind) => (kind === "total" ? fmt(v) : `${v >= 0 ? "+" : "−"}${fmt(Math.abs(v))}`);
   chart("chart-waterfall").setOption({
     ...baseOption(),
@@ -395,7 +412,7 @@ function renderWaterfall(w, k) {
           children: [
             { type: "rect", shape: { x: a[0] - w2 / 2, y: Math.min(a[1], b[1]), width: w2, height: Math.max(1, Math.abs(a[1] - b[1])), r: 3 },
               style: { fill: color[it.kind] } },
-            { type: "text", style: { text: short(it.v), x: a[0], y: Math.min(a[1], b[1]) - 6, align: "center", verticalAlign: "bottom",
+            { type: "text", style: { text: it.kind === "total" ? short(it.v) : `${it.v >= 0 ? "+" : "−"}${short(Math.abs(it.v))}`, x: a[0], y: Math.min(a[1], b[1]) - 6, align: "center", verticalAlign: "bottom",
               fill: css("--text-secondary"), font: `11px ${css("--font-core")}` } },
           ],
         };
@@ -406,6 +423,33 @@ function renderWaterfall(w, k) {
 }
 
 const prevMonth = (iso) => { const [y, m] = iso.split("-").map(Number); return m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, "0")}-01`; };
+
+const CAT_ICONS = {
+  receitas: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  despesas_fixas: '<path d="M3 11l9-7 9 7v9H3z"/><path d="M9 20v-6h6v6"/>',
+  dividas: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>',
+  despesas_variaveis: '<path d="M6 7h12l-1 13H7z"/><path d="M9 7a3 3 0 0 1 6 0"/>',
+};
+
+// CategoryCard do DS: ícone, barras do período (mês atual aceso), total com centavos discretos
+function renderCategoryCards(p) {
+  const s = p.series, months = p.months;
+  const today = new Date().toISOString().slice(0, 7) + "-01";
+  const focus = months.includes(today) ? months.indexOf(today) : months.length - 1;
+  const cards = [["receitas", "Receitas"], ["despesas_fixas", "Despesas fixas"], ["dividas", "Dívidas"], ["despesas_variaveis", "Variáveis"]];
+  $("#cat-cards").innerHTML = cards.map(([key, label]) => {
+    const vals = s[key], max = Math.max(...vals, 1), total = vals.reduce((a, b) => a + b, 0);
+    const [whole, cents] = BRL2.format(total).split(",");
+    const bars = vals.map((v, i) => `<i class="${i === focus ? "on" : ""}" style="height:${Math.max(4, (v / max) * 100)}%" title="${mlabel(months[i])}: ${fmt(v)}"></i>`).join("");
+    return `<div class="mf-cat">
+      <div class="mf-cat__icon"><svg viewBox="0 0 24 24" aria-hidden="true">${CAT_ICONS[key]}</svg></div>
+      <div class="mf-spark">${bars}</div>
+      <div><div class="mf-cat__label">${label}</div>
+        <div class="mf-cat__amount">${whole}<small>,${cents}</small></div>
+        <div class="mf-cat__meta">média ${fmt(total / vals.length)}/mês · aceso: ${mlabel(months[focus])}</div></div>
+    </div>`;
+  }).join("");
+}
 
 async function drawPainelSankey() {
   const mode = $("#sankey-mode .active").dataset.mode;
@@ -834,15 +878,14 @@ function renderPlanner(pl) {
   }
   $("#payoff-planner").innerHTML = h + "</tbody>";
 
-  const pal = SERIES();
   chart("chart-planner").setOption({
     ...baseOption(),
     grid: { left: 8, right: 16, top: 30, bottom: 4, containLabel: true },
     xAxis: { ...baseOption().xAxis, data: months.map(mlabel) },
     series: [
-      { name: "Saldo total (conta + investimentos)", type: "line", data: pl.account.saldo_total, color: css("--ink-900"), symbol: "none", lineStyle: { width: 2 },
+      { name: "Saldo total (conta + investimentos)", type: "line", data: pl.account.saldo_total, color: LIT(), symbol: "none", lineStyle: { width: 2 },
         markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--border-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
-      { name: "Quitações agendadas", type: "bar", data: pl.account.quitacoes, color: pal[0], barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: "Quitações agendadas", type: "bar", data: pl.account.quitacoes, color: DIM(), barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
     ],
   }, true);
 }
@@ -940,22 +983,21 @@ async function renderConsignados() {
     <td>${fmt2(sum("payoff_value"))}</td><td>${fmt2(sum("installments_avoided"))}</td><td>${fmt2(sum("interest_saved"))}</td><td></td><td></td></tr></tbody>`;
   $("#loan-table").innerHTML = h;
 
-  const pal = SERIES();
   const months = t.months.map(mlabel);
   chart("chart-loan-cash").setOption({
     ...baseOption(),
     xAxis: { ...baseOption().xAxis, data: months },
     series: [
-      { name: "Parcelas (com quitação)", type: "bar", stack: "c", data: t.installments_with_payoff, color: css("--ink-900"), barMaxWidth: 18 },
-      { name: "Desembolso de quitação", type: "bar", stack: "c", data: t.payoff_disbursement, color: pal[0], barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Parcelas sem quitar", type: "line", data: t.installments_without_payoff, color: pal[1], symbol: "none", lineStyle: { width: 2, type: "dashed" } },
+      { name: "Parcelas (com quitação)", type: "bar", stack: "c", data: t.installments_with_payoff, color: DIM(), barMaxWidth: 18 },
+      { name: "Desembolso de quitação", type: "bar", stack: "c", data: t.payoff_disbursement, color: LIT(), barMaxWidth: 18, itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: "Parcelas sem quitar", type: "line", data: t.installments_without_payoff, color: css("--ink-muted"), symbol: "none", lineStyle: { width: 2, type: "dashed" } },
     ],
   }, true);
   chart("chart-loan-cum").setOption({
     ...baseOption(),
     xAxis: { ...baseOption().xAxis, data: months },
     series: [{
-      name: "Economia acumulada", type: "line", data: t.cumulative_net_saving, color: pal[0], symbol: "none",
+      name: "Economia acumulada", type: "line", data: t.cumulative_net_saving, color: LIT(), symbol: "none",
       lineStyle: { width: 2 }, areaStyle: { opacity: 0.12 },
       markLine: {
         symbol: "none", silent: true, label: { color: css("--text-secondary"), formatter: (p) => p.name },
@@ -996,7 +1038,7 @@ async function renderConsignados() {
     xAxis: { ...baseOption().xAxis, data: allMonths.map(mlabel) },
     series: scs.map((s) => {
       const idx = Object.fromEntries(s.months.map((m, i) => [m, i]));
-      return { name: s.name, type: "line", symbol: "none", lineStyle: { width: 2 }, color: scenarioColor(s.id),
+      return { name: s.name, type: "line", symbol: "none", lineStyle: { width: 2, type: scenarioDash(s.id) }, color: scenarioColor(s.id),
         data: allMonths.map((m) => (m in idx ? s.cumulative_net_saving[idx[m]] : null)) };
     }),
   }, true);
@@ -1005,9 +1047,9 @@ async function renderConsignados() {
     tooltip: { ...baseOption().tooltip, axisPointer: { type: "shadow" } },
     xAxis: { ...baseOption().xAxis, data: scs.map((s) => s.name) },
     series: [
-      { name: "Desembolso", type: "bar", data: scs.map((s) => s.totals.desembolso_quitacoes), color: css("--ink-900"), itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Parcelas evitadas", type: "bar", data: scs.map((s) => s.totals.parcelas_evitadas), color: pal[1], itemStyle: { borderRadius: [4, 4, 0, 0] } },
-      { name: "Economia líquida", type: "bar", data: scs.map((s) => s.totals.economia_liquida), color: pal[0], itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: "Desembolso", type: "bar", data: scs.map((s) => s.totals.desembolso_quitacoes), color: DIM(), itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: "Parcelas evitadas", type: "bar", data: scs.map((s) => s.totals.parcelas_evitadas), color: css("--ink-subtle"), itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { name: "Economia líquida", type: "bar", data: scs.map((s) => s.totals.economia_liquida), color: LIT(), itemStyle: { borderRadius: [4, 4, 0, 0] } },
     ],
   }, true);
 
@@ -1076,7 +1118,6 @@ async function renderAtrasos() {
 
   const open = data.items.filter((a) => a.status !== "pago").sort((a, b) => b.updated_value - a.updated_value);
   const label = (a) => a.creditor && a.creditor !== a.description ? `${a.description} · ${a.creditor}` : a.description;
-  const pal = SERIES();
   chart("chart-arrear-items").setOption({
     ...baseOption(),
     grid: { left: 8, right: 24, top: 36, bottom: 8, containLabel: true },
@@ -1085,9 +1126,9 @@ async function renderAtrasos() {
     yAxis: { type: "category", inverse: true, data: open.map(label), axisTick: { show: false },
       axisLine: { lineStyle: { color: css("--border-default") } }, axisLabel: { color: css("--text-secondary"), width: 170, overflow: "truncate" } },
     series: [
-      { name: "Original / acordo", type: "bar", stack: "a", color: css("--ink-900"), barMaxWidth: 18,
+      { name: "Original / acordo", type: "bar", stack: "a", color: DIM(), barMaxWidth: 18,
         data: open.map((a) => (a.negotiated_amount != null ? a.updated_value : a.amount)) },
-      { name: "Multa e juros", type: "bar", stack: "a", color: pal[0], barMaxWidth: 18, itemStyle: { borderRadius: [0, 4, 4, 0] },
+      { name: "Multa e juros", type: "bar", stack: "a", color: LIT(), barMaxWidth: 18, itemStyle: { borderRadius: [0, 4, 4, 0] },
         data: open.map((a) => a.charges) },
     ],
   }, true);
@@ -1097,7 +1138,7 @@ async function renderAtrasos() {
   chart("chart-arrear-plan").setOption({
     ...baseOption(),
     xAxis: { ...baseOption().xAxis, data: (p?.months || []).map(mlabel) },
-    series: [{ name: "Pagamento de atrasos", type: "bar", color: pal[0], itemStyle: { borderRadius: [4, 4, 0, 0] }, data: row ? row.values : [] }],
+    series: [{ name: "Pagamento de atrasos", type: "bar", color: LIT(), itemStyle: { borderRadius: [4, 4, 0, 0] }, data: row ? row.values : [] }],
   }, true);
 }
 
@@ -1201,7 +1242,7 @@ async function renderComparar() {
     chart(id).setOption({
       ...baseOption(),
       xAxis: { ...baseOption().xAxis, data: months },
-      series: scs.map((s) => ({ name: s.name, type: "line", symbol: "none", lineStyle: { width: 2 }, color: scenarioColor(s.id), data: s.aligned[key] })),
+      series: scs.map((s) => ({ name: s.name, type: "line", symbol: "none", lineStyle: { width: 2, type: scenarioDash(s.id) }, color: scenarioColor(s.id), data: s.aligned[key] })),
     }, true);
   }
   const groupCols = [
@@ -1717,6 +1758,22 @@ async function checkStatus() {
   el.hidden = !warn.length;
   el.innerHTML = warn.map((w) => `<div><span class="badge negative">atenção</span> ${esc(w)}</div>`).join("");
 }
+
+const THEME_ICONS = {
+  dark: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  light: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+};
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem("financi-theme", theme); } catch (_) { /* navegação privada */ }
+  // no escuro mostra o sol (ir para o claro) e vice-versa
+  $("#theme-btn").innerHTML = THEME_ICONS[theme];
+}
+$("#theme-btn").addEventListener("click", async () => {
+  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+  await (RENDER[state.tab] || (() => {}))(); // gráficos leem as cores dos tokens ao desenhar
+});
+applyTheme(document.documentElement.dataset.theme || "dark");
 
 (async function init() {
   checkStatus();
