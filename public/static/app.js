@@ -653,7 +653,16 @@ async function renderTabela() {
     values.map((v, i) => `<td class="${cls} ${sources && sources[i] === "média" ? "avg" : ""}">${num(v)}</td>`).join("");
   const signed = (now, values, cls) => `<td class="now ${cls}">${snum(now)}</td>` +
     values.map((v) => `<td class="${cls} ${v < 0 ? "neg" : ""}">${snum(v)}</td>`).join("");
+  const signedOrBlank = (now, values) => `<td class="now">${Math.round(now) ? snum(now) : ""}</td>` +
+    values.map((v) => `<td>${Math.round(v) ? snum(v) : ""}</td>`).join("");
+  state.table = t;
   let body = "";
+  // agrupamentos do usuário no topo: linhas com sinal e o líquido (ex.: Folha = o que cai na conta)
+  for (const g of t.groupings || []) {
+    body += `<tr class="sec grouping" data-grouping="${g.id}"><td class="lbl">${esc(g.name)} <span class="tb-tag">líquido</span></td>${signed(g.now, g.values, "")}</tr>`;
+    for (const r of g.rows) body += `<tr class="grouping-row"><td class="lbl sub" title="${esc(r.label)}">${esc(r.label)}</td>${signedOrBlank(r.now, r.values)}</tr>`;
+    if (!g.rows.length) body += `<tr class="grouping-row"><td class="lbl sub muted">sem linhas no período</td>${signedOrBlank(0, t.months.map(() => 0))}</tr>`;
+  }
   for (const s of t.sections) {
     if (!s.groups.length) continue;
     body += `<tr class="sec"><td class="lbl">${SECTION_TITLE[s.key]}</td>${cells(s.now, s.values)}</tr>`;
@@ -673,6 +682,61 @@ async function renderTabela() {
   $("#tb-table").innerHTML = `<thead><tr><th class="lbl">R$</th><th class="now" title="Atrasos e o que ainda vence neste mês">Agora</th>
     ${t.months.map((m) => `<th>${mlabel(m)}</th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
 }
+// agrupamentos: lista, criação e edição (escolhendo linhas da tabela)
+$("#tb-groups").onclick = () => openGroupingsSheet();
+$("#tb-table").addEventListener("click", (e) => {
+  const row = e.target.closest("[data-grouping]");
+  if (row) openGroupingEditor((state.table.groupings || []).find((g) => g.id === +row.dataset.grouping));
+});
+function openGroupingsSheet() {
+  const gs = (state.table && state.table.groupings) || [];
+  openSheet(`<p class="overline">Mês a mês</p><h2>Agrupamentos</h2>
+    <p class="hint">Junte linhas para ver o líquido. Ex.: <b>Folha</b> = Salário − Plano de saúde − consignados: o que de fato cai na conta.
+      É só uma visão: não muda totais nem a projeção.</p>
+    <div class="list">${gs.map((g) => `<div class="az-insight"><div class="az-insight__text"><div class="az-insight__title">${esc(g.name)}</div>
+      <div class="az-insight__desc">${g.refs.length} ${g.refs.length === 1 ? "linha" : "linhas"}</div></div>
+      <button class="sm" data-edit-grouping="${g.id}">Editar</button></div>`).join("") || '<p class="hint">Nenhum agrupamento ainda.</p>'}</div>
+    <div class="row"><button class="primary" id="gp-new">Novo agrupamento</button></div>`);
+  $("#gp-new").onclick = () => openGroupingEditor(null);
+  $("#sheet-body").querySelectorAll("[data-edit-grouping]").forEach((b) => {
+    b.onclick = () => openGroupingEditor(gs.find((g) => g.id === +b.dataset.editGrouping));
+  });
+}
+function openGroupingEditor(g) {
+  const t = state.table;
+  const chosen = new Set(g ? g.refs : []);
+  const seen = new Set();
+  let list = "";
+  for (const s of t.sections) {
+    const rows = s.groups.flatMap((gr) => gr.rows).filter((r) => (seen.has(r.ref) ? false : seen.add(r.ref)));
+    if (!rows.length) continue;
+    const sign = s.key === "entradas" ? "+" : "−";
+    list += `<p class="overline chk-sec">${SECTION_TITLE[s.key]} <span class="muted">(${sign})</span></p>` +
+      rows.map((r) => `<label class="chk-row"><input type="checkbox" value="${esc(r.ref)}" ${chosen.has(r.ref) ? "checked" : ""}>
+        <span>${esc(r.label)}</span></label>`).join("");
+  }
+  openSheet(`<p class="overline">${g ? "Editar agrupamento" : "Novo agrupamento"}</p><h2>${g ? esc(g.name) : "Agrupamento"}</h2>
+    <label class="field">Nome<input id="gp-name" value="${esc(g ? g.name : "")}" placeholder="Ex.: Folha"></label>
+    <p class="hint" style="margin-top:var(--space-3)">Marque as linhas. Entradas somam, saídas e dívidas subtraem.</p>
+    <div class="chk-list">${list || '<p class="hint">A tabela ainda não tem linhas neste período.</p>'}</div>
+    <div class="row"><button class="primary" id="gp-save">Salvar</button>${g ? '<button class="danger" id="gp-del">Excluir</button>' : ""}</div>`);
+  $("#gp-save").onclick = async () => {
+    const name = sheetVal("gp-name").trim();
+    if (!name) return toast("Dê um nome ao agrupamento");
+    const refs = $$("#sheet .chk-list input:checked").map((i) => i.value);
+    await api(g ? "PUT" : "POST", g ? `/api/groupings/${g.id}` : "/api/groupings", { name, refs });
+    closeSheet();
+    toast(g ? "Agrupamento atualizado" : "Agrupamento criado");
+    await renderTabela();
+  };
+  if (g) $("#gp-del").onclick = async () => {
+    if (!confirm(`Excluir o agrupamento "${g.name}"?`)) return;
+    await api("DELETE", `/api/groupings/${g.id}`);
+    closeSheet();
+    await renderTabela();
+  };
+}
+
 $("#tb-horizon").addEventListener("click", (e) => {
   const b = e.target.closest("[data-h]");
   if (!b) return;

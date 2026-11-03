@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from . import finance as fin
 from . import planned as planned_mod
-from .models import Account, Budget, Category, Debt, Transaction
+from .models import Account, Budget, Category, Debt, Grouping, Transaction
 
 LIQUID = ("corrente", "poupanca", "dinheiro")
 
@@ -318,6 +318,13 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     for o in pending_items:
         key, section, group, label = planned_line(o)
         cell(key, section, group, label, None, o.amount, "previsto")
+    # parcela de dívida que ainda vence neste mês também sai agora (ex.: consignado descontado no dia 5, hoje é dia 3)
+    cur = fin.month_start(today)
+    for d, sched in debt_rows:
+        v = sched.get(cur, 0.0)
+        if v and d.first_due and fin.day_in_month(cur, d.first_due.day) >= today:
+            pending = round(pending - v, 2)
+            cell(("debt", d.id), "dividas", "Dívidas e parcelas", d.name, None, v, "dívida")
     order = ("orçamento", "média", "previsto")
 
     rows, running = [], start_balance
@@ -363,6 +370,7 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
            "saldo_inicial": round(start_balance, 2), "months": rows}
     if detail:
         out["table"] = _table(lines, rows, start_balance, pending)
+        out["table"]["groupings"] = _groupings(db, out["table"])
     return out
 
 
@@ -370,6 +378,9 @@ def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pen
     """Linhas agrupadas por seção e grupo, com subtotais e os totais do mês (iguais aos da projeção)."""
     def rnd(xs):
         return [round(x, 2) for x in xs]
+
+    for key, r in lines.items():
+        r["ref"] = _ref(key)
 
     sections = []
     for sec in ("entradas", "saidas", "dividas"):
@@ -384,7 +395,8 @@ def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pen
                 "group": g,
                 "now": round(sum(r["now"] for r in rs), 2),
                 "values": rnd([sum(r["values"][i] for r in rs) for i in range(len(rows))]),
-                "rows": [{"label": r["label"], "now": round(r["now"], 2), "values": rnd(r["values"]), "sources": r["sources"]} for r in rs],
+                "rows": [{"label": r["label"], "ref": r["ref"], "now": round(r["now"], 2), "values": rnd(r["values"]),
+                          "sources": r["sources"]} for r in rs],
             })
         sections.append({"key": sec, "groups": out_groups,
                          "now": round(sum(g["now"] for g in out_groups), 2),
@@ -404,3 +416,34 @@ def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pen
             "acumulado": {"now": round(start_balance + pending, 2), "values": [r["saldo"] for r in rows]},
         },
     }
+
+
+def _ref(key: tuple) -> str:
+    """Referência estável de uma linha da tabela (usada pelos agrupamentos)."""
+    if key[0] == "cat":
+        return f"cat:{key[1] if key[1] is not None else 'none'}"
+    if key[0] == "plan":
+        return f"plan:{key[-1]}"
+    return f"{key[0]}:{key[1]}"
+
+
+def _groupings(db: Session, table: dict) -> list[dict]:
+    """Soma com sinal (entradas +, saídas e dívidas −) das linhas de cada agrupamento, mês a mês."""
+    n = len(table["months"])
+    by_ref: dict[str, list[tuple[int, dict]]] = defaultdict(list)
+    for s in table["sections"]:
+        sign = 1 if s["key"] == "entradas" else -1
+        for g in s["groups"]:
+            for r in g["rows"]:
+                by_ref[r["ref"]].append((sign, r))
+    out = []
+    for gr in db.scalars(select(Grouping).order_by(Grouping.sort_order, Grouping.id)):
+        rows = []
+        for m in gr.members:
+            for sign, r in by_ref.get(m.ref, []):
+                rows.append({"label": r["label"], "ref": r["ref"], "now": round(sign * r["now"], 2),
+                             "values": [round(sign * v, 2) for v in r["values"]]})
+        out.append({"id": gr.id, "name": gr.name, "refs": [m.ref for m in gr.members], "rows": rows,
+                    "now": round(sum(r["now"] for r in rows), 2),
+                    "values": [round(sum(r["values"][i] for r in rows), 2) for i in range(n)]})
+    return out

@@ -22,6 +22,8 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
 - **Mês a mês** (em Planejamento): tabela no formato de planilha, com uma linha por previsto, categoria orçada,
   dívida e parcelas de cartão, colunas "Agora" (atrasos e o que ainda vence no mês) e os próximos 6, 12 ou 24 meses,
   totais de entradas e saídas, saldo do mês e saldo acumulado. Usa os mesmos números da projeção.
+  **Agrupamentos** juntam linhas com sinal para ver o líquido (ex.: Folha = salário − plano de saúde − consignados,
+  o que de fato cai na conta). São só uma visão: não mudam totais nem a projeção.
 - **Previstos** (em Planejamento): despesas e receitas futuras **todo mês** (a partir de um mês, com fim opcional)
   ou **uma vez**. Dá para mover uma ocorrência para outro mês, mudar o valor só de um mês, pular um mês ou marcar
   como pago. O que venceu e não foi pago aparece **em atraso** (no Início e em Previstos); o pagamento é reconhecido

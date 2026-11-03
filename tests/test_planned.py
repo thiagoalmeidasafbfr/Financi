@@ -153,3 +153,37 @@ def test_month_by_month_table_matches_projection(client):
     assert lines["Consignado"]["values"][0] == 300
     groups = [g["group"] for g in sec["saidas"]["groups"]]
     assert "Moradia" in groups and "Alimentação" in groups
+
+
+def test_grouping_net_payroll(client):
+    """Agrupamento "Folha": salário − plano de saúde descontado − consignado = o que cai na conta."""
+    saude = cat_id(client, "Plano de saúde")
+    new(client, name="Salário", kind="receita", amount=8167, start_month=m(1))
+    new(client, name="Plano de saúde", amount=912, category_id=saude, start_month=m(1))
+    new(client, name="Aluguel", amount=1300, start_month=m(1))  # fora do agrupamento
+    debt = client.post("/api/debts", json={"name": "PAN 015435447", "kind": "consignado", "installment": 364.89,
+                                           "first_due": f"{m(1)[:7]}-05", "total_installments": 2}).json()
+    r = client.post("/api/groupings", json={"name": "Folha", "refs": ["plan:Salário", "plan:Plano de saúde", f"debt:{debt['id']}"]})
+    assert r.status_code == 201
+    gid = r.json()["id"]
+    t = client.get("/api/projection", params={"months": 3, "detail": True}).json()["table"]
+    folha = t["groupings"][0]
+    assert folha["name"] == "Folha" and len(folha["rows"]) == 3
+    assert folha["values"][0] == round(8167 - 912 - 364.89, 2) and folha["values"][2] == 8167 - 912  # consignado acabou
+    # editar membros e excluir
+    client.put(f"/api/groupings/{gid}", json={"name": "Folha", "refs": ["plan:Salário"]})
+    assert client.get("/api/projection", params={"months": 1, "detail": True}).json()["table"]["groupings"][0]["values"] == [8167]
+    assert client.post("/api/groupings", json={"name": "x", "refs": ["qualquer"]}).status_code == 400
+    assert client.delete(f"/api/groupings/{gid}").status_code == 204
+    assert client.get("/api/groupings").json() == []
+
+
+def test_debt_installment_due_later_this_month_is_pending(client):
+    """Parcela que ainda vence neste mês (dia 28) entra em "Agora"; depois do dia 28 já passou e não entra."""
+    client.post("/api/debts", json={"name": "Dia 28", "kind": "consignado", "installment": 200,
+                                    "first_due": f"{m(-1)[:7]}-28", "total_installments": 6})
+    expected = 200 if date.today().day <= 28 else 0  # noqa: DTZ011
+    p = client.get("/api/projection", params={"months": 2, "detail": True}).json()
+    assert p["months"][0]["pendentes"] == expected
+    lines = {r["label"]: r for s in p["table"]["sections"] for g in s["groups"] for r in g["rows"]}
+    assert lines["Dia 28"]["now"] == expected

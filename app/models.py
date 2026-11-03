@@ -7,6 +7,7 @@
   Budget    orçamento por categoria (padrão mensal ou de um mês específico)
   Debt      empréstimos, consignados, financiamentos... (cartões são contas)
   Planned   lançamentos previstos (mensais com início/fim ou pontuais) e PlannedChange (ajuste de um mês)
+  Grouping  agrupamentos do usuário (ex.: Folha = salário − descontos), só para visualizar o líquido
 """
 from datetime import date, datetime
 
@@ -218,3 +219,30 @@ class PlannedChange(Base):
     paid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # vazio = automático pelo extrato
 
     planned: Mapped[Planned] = relationship(back_populates="changes")
+
+
+class Grouping(Base):
+    """Agrupamento definido pelo usuário (ex.: "Folha"): soma com sinal de linhas da tabela mês a mês.
+
+    É só uma visão: não muda totais nem projeção. Cada membro é a referência de uma linha da tabela
+    ("plan:<nome do previsto>", "cat:<id>", "debt:<id>", "card:<id da conta>")."""
+
+    __tablename__ = "fin_groupings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+
+    members: Mapped[list["GroupingMember"]] = relationship(back_populates="grouping", cascade="all, delete-orphan",
+                                                           order_by="GroupingMember.id")
+
+
+class GroupingMember(Base):
+    __tablename__ = "fin_grouping_members"
+    __table_args__ = (UniqueConstraint("grouping_id", "ref", name="uq_fin_grouping_member"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    grouping_id: Mapped[int] = mapped_column(ForeignKey("fin_groupings.id", ondelete="CASCADE"), index=True)
+    ref: Mapped[str] = mapped_column(String(160))
+
+    grouping: Mapped[Grouping] = relationship(back_populates="members")

@@ -79,7 +79,7 @@ def test_debts_cards_projection_and_dashboard(client):
     # Supermercado vem do orçamento; as outras categorias do cartão, da média dos meses com extrato
     assert m1["receitas"] == 6000 and m1["despesas"] > 1000 and m1["fonte_despesas"] == "orçamento + média"
     assert m1["dividas"] == round(312.07 + 500, 2) and p["months"][2]["dividas"] == round(312.07 + 500, 2)
-    assert m1["saldo"] == round(p["saldo_inicial"] + 6000 - m1["despesas"] - m1["dividas"] - m1["parcelas_cartao"], 2)
+    assert m1["saldo"] == round(p["saldo_inicial"] + 6000 - m1["despesas"] - m1["dividas"] - m1["parcelas_cartao"] - m1["pendentes"], 2)
 
     dash = client.get("/api/dashboard").json()
     assert dash["saldo_contas"] == 10000 and dash["cards"] and "uncategorized" in dash

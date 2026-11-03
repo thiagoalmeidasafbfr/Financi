@@ -134,3 +134,14 @@ class OccurrenceChange(BaseModel):
     skipped: bool | None = None
     paid: bool | None = None
     reset: bool = False
+
+
+class GroupingIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    refs: list[str] = Field(default_factory=list, max_length=200)
+
+
+class GroupingOut(BaseModel):
+    id: int
+    name: str
+    refs: list[str]

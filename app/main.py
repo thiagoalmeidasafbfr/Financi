@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from . import ai
 from .db import engine
 from .migrations import init_db
-from .routers import core, planned, planning, transactions
+from .routers import core, groupings, planned, planning, transactions
 
 ROOT = Path(__file__).resolve().parent.parent
 # Arquivos estáticos ficam em public/: no Vercel a CDN os serve direto em /static/...;
@@ -70,6 +70,7 @@ app.include_router(core.router)
 app.include_router(transactions.router)
 app.include_router(planning.router)
 app.include_router(planned.router)
+app.include_router(groupings.router)
 
 
 if STATIC.is_dir():
