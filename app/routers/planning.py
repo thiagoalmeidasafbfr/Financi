@@ -9,7 +9,7 @@ from .. import ai, schemas
 from .. import finance as fin
 from .. import planned as planned_mod
 from ..db import get_session
-from ..models import Budget, Category, Debt, Transaction
+from ..models import Budget, Category, Debt, Planned, Transaction
 from ..services import (
     accounts_for,
     balances,
@@ -153,8 +153,11 @@ def dashboard(person: str | None = None, month: date | None = None, db: Session 
     this_month = [o for o in occ if o.month == current.isoformat() and o.status != "pulado"]
     uncategorized = db.scalar(select(func.count()).select_from(Transaction)
                               .where(Transaction.account_id.in_(acc_ids), Transaction.category_id.is_(None))) if acc_ids else 0
+    # há o que mostrar mesmo sem conta: a planilha de planejamento traz previstos, dívidas e orçamento
+    has_data = bool(accs) or any(db.scalar(select(func.count()).select_from(model)) for model in (Planned, Debt, Budget))
     return {
         "month": m.isoformat(),
+        "has_data": has_data,
         "accounts": [{"id": a.id, "name": a.name, "kind": a.kind, "owner_id": a.owner_id, "balance": bal.get(a.id, 0.0)}
                      for a in accs],
         "saldo_contas": round(sum(bal.get(a.id, 0.0) for a in accs if a.kind in ("corrente", "poupanca", "dinheiro")), 2),

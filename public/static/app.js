@@ -222,7 +222,7 @@ $("#h-eye").addEventListener("click", () => {
 });
 async function renderInicio() {
   const d = await api("GET", withPerson(`/api/dashboard`));
-  const empty = state.accounts.length === 0;
+  const empty = !d.has_data;
   $("#home-empty").hidden = !empty;
   $("#home-content").hidden = empty;
   $("#home-crumb").textContent = mlong(d.month);
@@ -325,7 +325,7 @@ async function renderInicio() {
   $("#home-accounts").innerHTML = liquid.map((a) => `<div class="az-insight">${well(esc(initials(a.name)))}
     <div class="az-insight__text"><div class="az-insight__title">${esc(a.name)}</div><div class="az-insight__desc">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}</div></div>
     <div class="tx-right"><span class="amount">${money(a.balance)}</span><span class="tx-date share">${total > 0 && a.balance > 0 ? pct(a.balance / total) : ""}</span></div></div>`).join("")
-    || '<p class="hint">Nenhuma conta.</p>';
+    || '<p class="hint" style="margin:0">Nenhuma conta ainda. Envie o extrato OFX da conta em Importações para ver os saldos reais.</p>';
 
   // cartões desenhados sob o saldo (como o cartão da foto de referência)
   $("#home-cardviz").innerHTML = d.cards.map((c) => {

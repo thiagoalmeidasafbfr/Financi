@@ -114,3 +114,11 @@ def test_dashboard_overview(client):
     assert d["previstos_mes"] == {"receitas": 8000, "despesas": 1300}
     assert len(d["projecao"]["meses"]) == 6 and d["projecao"]["menor"]["saldo"] <= d["projecao"]["meses"][-1]["saldo"]
     assert isinstance(d["proximos"], list)
+
+
+def test_dashboard_has_data_without_accounts(client):
+    """A planilha de planejamento não cria conta; o Início mostra o panorama mesmo assim."""
+    assert client.get("/api/dashboard").json()["has_data"] is False
+    new(client, name="Aluguel", amount=1300, start_month=m(0))
+    d = client.get("/api/dashboard").json()
+    assert d["has_data"] is True and d["accounts"] == [] and d["previstos_mes"]["despesas"] == 1300
