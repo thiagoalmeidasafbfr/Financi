@@ -2,8 +2,6 @@
    Referência visual: as telas do app Azure Finance (fundo navy em degradê, cartões de vidro, folha branca
    no Início, botão central elevado). Helvetica Neue em 400/500, números tabulares, direção pelo
    sinal/seta/palavra (nunca verde e vermelho). */
-@import url("az/tokens.css");
-@import url("az/bundle.css");
 
 /* ---------------------------------------------------------------- tokens do app (derivados do DS) */
 :root, [data-theme="light"] {
@@ -924,3 +922,26 @@ button.icon { font-size: 16px; }
   .tb-head .segmented { flex-wrap: nowrap; }
   .tb-head .segmented button { padding: 0 10px; }
 }
+
+/* ---------------------------------------------------------------- entrada (senha / Face ID) */
+.lock { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center;
+  padding: max(var(--space-6), env(safe-area-inset-top)) var(--space-4) max(var(--space-6), env(safe-area-inset-bottom));
+  background: radial-gradient(80% 50% at 50% -8%, rgba(88, 137, 250, .55) 0%, rgba(88, 137, 250, 0) 70%),
+    linear-gradient(180deg, #0d32a0 0%, #082577 45%, #061b58 100%); color: #ffffff; }
+.lock[hidden] { display: none; }
+body.locked { overflow: hidden; }
+.lock-card { width: 100%; max-width: 340px; display: flex; flex-direction: column; align-items: stretch; text-align: center; }
+.lock-brand { font-size: 28px; line-height: 34px; font-weight: 500; letter-spacing: -.01em; }
+.lock-sub { margin: var(--space-1) 0 var(--space-8); font-size: 13px; color: #b7c6f2; }
+.lock-bio { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); height: auto; margin: 0 auto var(--space-6);
+  padding: var(--space-4) var(--space-6); border: 0; background: transparent; color: #ffffff; font-size: 14px; }
+.lock-bio svg { width: 44px; height: 44px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.lock-bio:hover { background: rgba(255, 255, 255, .06); }
+.lock-bio[hidden] { display: none; }
+.lock form { display: flex; flex-direction: column; gap: var(--space-3); }
+.lock input { height: 44px; text-align: center; background: rgba(255, 255, 255, .08); border-color: rgba(255, 255, 255, .22); color: #ffffff; }
+.lock input::placeholder { color: #b7c6f2; }
+.lock input:focus { border-color: #ffffff; box-shadow: 0 0 0 1px #ffffff; }
+.lock button.primary { height: 44px; background: var(--bright-azure); border-color: var(--bright-azure); color: #ffffff; }
+.lock-msg { min-height: 20px; margin: var(--space-3) 0 0; font-size: 13px; color: #ffd2d2; }
+.sec-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }

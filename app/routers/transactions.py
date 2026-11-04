@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, Upl
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import planilha, schemas
+from .. import schemas
 from ..categorize import apply_ai, learn
 from ..db import get_session
 from ..finance import add_months, month_start
@@ -181,6 +181,7 @@ XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 @router.get("/imports/modelo")
 def download_template(db: Session = Depends(get_session)):
     """Modelo .xlsx com as abas Previstos, Atrasos, Dívidas e Orçamento (listas com as categorias e pessoas do app)."""
+    from .. import planilha  # openpyxl só carrega quando usado (subida a frio mais rápida)
     cats = db.scalars(select(Category).order_by(Category.type, Category.sort_order, Category.name)).all()
     people = db.scalars(select(Person).order_by(Person.name)).all()
     return Response(planilha.build_template(list(cats), list(people)), media_type=XLSX,
@@ -193,6 +194,7 @@ async def upload_planilha(file: UploadFile = File(...), secoes: str = Form(""), 
     """Importa a planilha do modelo por seção (receitas, despesas, atrasos, dividas, orcamento; vazio = todas).
 
     modo "adicionar" soma ao que existe; "substituir" apaga as seções que a planilha traz e importa de novo."""
+    from .. import planilha
     content = await file.read()
     if len(content) > MAX_UPLOAD:
         raise HTTPException(413, "Arquivo maior que 4 MB")

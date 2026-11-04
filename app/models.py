@@ -8,6 +8,8 @@
   Debt      empréstimos, consignados, financiamentos... (cartões são contas)
   Planned   lançamentos previstos (mensais com início/fim ou pontuais) e PlannedChange (ajuste de um mês)
   Grouping  agrupamentos do usuário (ex.: Folha = salário − descontos), só para visualizar o líquido
+  Passkey   biometria (Face ID, digital) cadastrada em cada aparelho para abrir o app
+  Meta      versão do esquema já criado no banco (a subida pula a criação quando nada mudou)
 """
 from datetime import date, datetime
 
@@ -18,6 +20,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -246,3 +249,24 @@ class GroupingMember(Base):
     ref: Mapped[str] = mapped_column(String(160))
 
     grouping: Mapped[Grouping] = relationship(back_populates="members")
+
+
+class Passkey(Base):
+    """Credencial WebAuthn (passkey) de um aparelho: a chave pública que confere o Face ID / digital."""
+
+    __tablename__ = "fin_passkeys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    credential_id: Mapped[str] = mapped_column(String(512), unique=True)  # base64url, sem "="
+    public_key: Mapped[bytes] = mapped_column(LargeBinary)
+    sign_count: Mapped[int] = mapped_column(Integer, default=0)
+    label: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class Meta(Base):
+    __tablename__ = "fin_meta"
+
+    key: Mapped[str] = mapped_column(String(40), primary_key=True)
+    value: Mapped[str] = mapped_column(String(200))

@@ -90,7 +90,18 @@ async function api(method, url, body) {
     opts.headers["Content-Type"] = "application/json";
     opts.body = JSON.stringify(body);
   }
-  const r = await fetch(url, opts);
+  let r;
+  try {
+    r = await fetch(url, opts);
+  } catch (err) {
+    toast("Sem conexão. Tente de novo.");
+    throw err;
+  }
+  // sem sessão: mostra a entrada (senha ou Face ID) e repete o pedido; pedidos em paralelo esperam o mesmo login
+  if (r.status === 401 && !url.startsWith("/api/auth/")) {
+    await requireLogin();
+    return api(method, url, body);
+  }
   if (!r.ok) {
     let detail = r.statusText;
     try {
@@ -1210,6 +1221,7 @@ async function renderAjustes() {
     || '<p class="hint">Cadastre quem usa o app (ex.: vocês dois). Cada conta, cartão e dívida pode ter um titular; sem titular fica como conjunta.</p>';
   const st = await api("GET", "/api/status");
   state.status = st;
+  renderSecurity();
   $("#set-ai").innerHTML = st.ai
     ? `<div class="az-ai"><span class="az-ai__label">${SPARKLE}IA ligada</span>
          <div class="az-ai__text">Os lançamentos que nenhuma regra reconhece são categorizados pelo Claude. Respostas muito confiantes viram regras.</div>
@@ -1447,10 +1459,192 @@ async function checkStatus() {
   el.innerHTML = warn.map((w) => `<div><span class="badge strong">atenção</span> ${esc(w)}</div>`).join("");
 }
 
+// ------------------------------------------------------------------ acesso: senha uma vez por aparelho, Face ID opcional
+const FACEID_KEY = "financi-faceid";      // id da passkey deste aparelho (Face ID ligado aqui)
+const UNLOCKED_KEY = "financi-unlocked";  // sessionStorage: já desbloqueado nesta abertura do app
+const store = (area, k, v) => {
+  try {
+    const st = area === "s" ? sessionStorage : localStorage;
+    if (v === undefined) return st.getItem(k);
+    if (v === null) st.removeItem(k); else st.setItem(k, v);
+  } catch (_) { /* navegação privada */ }
+  return null;
+};
+const hasFaceId = () => !!store("l", FACEID_KEY) && !!window.PublicKeyCredential;
+const BIO_NAME = /iPhone|iPad/.test(navigator.userAgent) ? "Face ID" : /Mac/.test(navigator.userAgent) ? "Touch ID" : "biometria";
+const FACE_SVG = svg('<path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/>' +
+  '<path d="M9 9.5v1M15 9.5v1M12 9.5v3.5h-1M9.5 15.5c1.4 1.2 3.6 1.2 5 0"/>');
+const b64u = {
+  enc: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+  dec: (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4)), (c) => c.charCodeAt(0)),
+};
+// credencial do navegador → JSON que o servidor confere (py_webauthn)
+function credJSON(c) {
+  const r = c.response;
+  const out = { id: c.id, rawId: b64u.enc(c.rawId), type: c.type, clientExtensionResults: {}, response: { clientDataJSON: b64u.enc(r.clientDataJSON) } };
+  if (c.authenticatorAttachment) out.authenticatorAttachment = c.authenticatorAttachment;
+  if (r.attestationObject) {
+    out.response.attestationObject = b64u.enc(r.attestationObject);
+    out.response.transports = r.getTransports ? r.getTransports() : [];
+  } else {
+    out.response.authenticatorData = b64u.enc(r.authenticatorData);
+    out.response.signature = b64u.enc(r.signature);
+    if (r.userHandle) out.response.userHandle = b64u.enc(r.userHandle);
+  }
+  return out;
+}
+const postJSON = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+
+let loginWait = null;
+function requireLogin() {
+  loginWait ||= new Promise((resolve) => showLock(resolve)).finally(() => { loginWait = null; });
+  return loginWait;
+}
+function showLock(done) {
+  const el = $("#lock");
+  el.hidden = false;
+  document.body.classList.add("locked");
+  $("#lock-msg").textContent = "";
+  const bio = hasFaceId();
+  $("#lock-bio").hidden = !bio;
+  $("#lock-bio").innerHTML = `${FACE_SVG}<span>Entrar com ${BIO_NAME}</span>`;
+  const finish = () => {
+    el.hidden = true;
+    document.body.classList.remove("locked");
+    $("#lock-pw").value = "";
+    store("s", UNLOCKED_KEY, "1");
+    done();
+  };
+  $("#lock-form").onsubmit = async (e) => {
+    e.preventDefault();
+    $("#lock-go").disabled = true;
+    // com Face ID ligado a senha também não fica salva: a próxima abertura pede a biometria de novo
+    const r = await postJSON("/api/auth/login", { password: $("#lock-pw").value, remember: !hasFaceId() }).catch(() => null);
+    $("#lock-go").disabled = false;
+    if (r && r.ok) return finish();
+    $("#lock-msg").textContent = r && r.status === 401 ? "Senha incorreta" : "Sem conexão. Tente de novo.";
+    $("#lock-pw").select();
+  };
+  $("#lock-bio").onclick = async () => { if (await bioLogin()) finish(); };
+  if (bio) bioLogin().then((ok) => ok && finish()); // pede a biometria direto (se o navegador exigir um toque, fica o botão)
+  else setTimeout(() => $("#lock-pw").focus(), 60);
+}
+async function bioLogin() {
+  if (bioLogin.busy) return false;
+  bioLogin.busy = true;
+  try {
+    const opts = await (await fetch("/api/auth/passkey/login/options", { method: "POST" })).json();
+    const cred = await navigator.credentials.get({ publicKey: { ...opts, challenge: b64u.dec(opts.challenge),
+      allowCredentials: (opts.allowCredentials || []).map((c) => ({ ...c, id: b64u.dec(c.id) })) } });
+    const r = await postJSON("/api/auth/passkey/login", { credential: credJSON(cred) });
+    if (r.ok) return true;
+    const j = await r.json().catch(() => ({}));
+    $("#lock-msg").textContent = j.detail || "Não foi possível confirmar. Use a senha.";
+    return false;
+  } catch (e) {
+    // cancelado pela pessoa (ou o navegador pediu um toque antes): fica a tela com o botão e a senha
+    if (!["NotAllowedError", "AbortError"].includes(e.name)) $("#lock-msg").textContent = `${BIO_NAME} indisponível agora. Use a senha.`;
+    return false;
+  } finally {
+    bioLogin.busy = false;
+  }
+}
+
+// Face ID ligado: voltar ao app depois de 5 min em segundo plano pede a biometria de novo (a sessão é encerrada)
+let hiddenAt = 0;
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (!hasFaceId() || !state.status?.auth || !hiddenAt || Date.now() - hiddenAt < 5 * 60e3) return;
+  hiddenAt = 0;
+  await fetch("/api/auth/logout", { method: "POST" });
+  store("s", UNLOCKED_KEY, null);
+  await requireLogin();
+  refresh();
+});
+
+const deviceLabel = () => {
+  const ua = navigator.userAgent;
+  return /iPhone/.test(ua) ? "iPhone" : /iPad/.test(ua) ? "iPad" : /Android/.test(ua) ? "Android" : /Mac/.test(ua) ? "Mac" : /Windows/.test(ua) ? "Windows" : "Aparelho";
+};
+async function renderSecurity() {
+  const card = $("#card-security");
+  card.hidden = !state.status?.auth;
+  if (card.hidden) return;
+  const keys = await api("GET", "/api/auth/passkeys");
+  const mine = store("l", FACEID_KEY);
+  let supported = false;
+  try { supported = !!window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(); } catch (_) { /* sem suporte */ }
+  const on = hasFaceId();
+  const intro = on
+    ? `<p class="hint">Este aparelho abre com ${BIO_NAME}. A senha continua valendo se a biometria falhar.</p>
+       <div class="sec-actions"><button class="secondary" id="faceid-off">Desligar ${BIO_NAME} neste aparelho</button></div>`
+    : supported
+      ? `<p class="hint">A senha fica salva neste aparelho. Para mais privacidade, ligue o ${BIO_NAME}: o app passa a pedir a biometria a cada abertura.</p>
+         <div class="sec-actions"><button class="primary" id="faceid-on">Abrir com ${BIO_NAME}</button></div>`
+      : '<p class="hint">A senha fica salva neste aparelho. Este navegador não oferece biometria; no iPhone, use o app instalado pelo Safari.</p>';
+  const when = (iso) => (iso ? `${dlabel(iso)}/${iso.slice(0, 4)}` : "");
+  const list = keys.map((k) => listRow({ icon: FACE_SVG, title: `${esc(k.label)}${String(k.id) === mine ? " · este aparelho" : ""}`,
+    desc: `Ligado em ${when(k.created_at)}${k.last_used_at ? ` · último uso ${when(k.last_used_at)}` : ""}`,
+    extra: `<button class="sm ghost" data-del-key="${k.id}">Remover</button>` })).join("");
+  $("#set-security").innerHTML = `${intro}${list ? `<p class="overline imp-label">Aparelhos com biometria</p><div class="list">${list}</div>` : ""}
+    <div class="sec-actions"><button class="ghost" id="logout">Sair deste aparelho</button></div>`;
+}
+async function enableFaceId() {
+  try {
+    const opts = await api("POST", "/api/auth/passkey/register/options");
+    const cred = await navigator.credentials.create({ publicKey: { ...opts, challenge: b64u.dec(opts.challenge),
+      user: { ...opts.user, id: b64u.dec(opts.user.id) },
+      excludeCredentials: (opts.excludeCredentials || []).map((c) => ({ ...c, id: b64u.dec(c.id) })) } });
+    const r = await api("POST", "/api/auth/passkey/register", { credential: credJSON(cred), label: deviceLabel() });
+    store("l", FACEID_KEY, String(r.id));
+    store("s", UNLOCKED_KEY, "1");
+    toast(`Pronto: o Financi vai abrir com ${BIO_NAME}`);
+  } catch (e) {
+    if (e.name === "InvalidStateError") { store("l", FACEID_KEY, "1"); toast(`Este aparelho já tem ${BIO_NAME} ligado`); }
+    else if (e.name !== "NotAllowedError" && e.name !== "AbortError" && !String(e.message).startsWith("Não")) toast(`Não foi possível ligar: ${e.message}`);
+  }
+  renderSecurity();
+}
+document.addEventListener("click", async (e) => {
+  if (e.target.closest("#faceid-on")) return enableFaceId();
+  if (e.target.closest("#faceid-off")) {
+    const id = store("l", FACEID_KEY);
+    if (id && /^\d+$/.test(id)) await api("DELETE", `/api/auth/passkeys/${id}`).catch(() => null);
+    store("l", FACEID_KEY, null);
+    await api("POST", "/api/auth/session", { remember: true }); // volta a ficar salvo neste aparelho
+    toast(`${BIO_NAME} desligado. A senha fica salva neste aparelho.`);
+    return renderSecurity();
+  }
+  const del = e.target.closest("[data-del-key]");
+  if (del) {
+    if (!confirm("Remover a biometria deste aparelho? Ele vai precisar da senha para entrar.")) return;
+    await api("DELETE", `/api/auth/passkeys/${del.dataset.delKey}`);
+    if (del.dataset.delKey === store("l", FACEID_KEY)) store("l", FACEID_KEY, null);
+    return renderSecurity();
+  }
+  if (e.target.closest("#logout")) {
+    if (!confirm("Sair deste aparelho? Para entrar de novo, vai precisar da senha.")) return;
+    await fetch("/api/auth/logout", { method: "POST" });
+    store("l", FACEID_KEY, null);
+    store("s", UNLOCKED_KEY, null);
+    location.reload();
+  }
+});
+
+// a casca do app fica guardada no aparelho (abre sem esperar o servidor); avisa quando há versão nova
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+  navigator.serviceWorker.register("/sw.js").catch(() => { /* sem service worker: funciona igual, só mais lento */ });
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "updated") toast("Nova versão do Financi", { label: "Atualizar", run: () => location.reload() });
+  });
+}
+
 (async function init() {
-  checkStatus();
+  // Face ID ligado: cada abertura do app pede a biometria (recarregar a página na mesma abertura não pede)
+  if (hasFaceId() && !store("s", UNLOCKED_KEY)) await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+  checkStatus().catch(() => null);
   await loadBase();
   const tab = location.hash.slice(1);
   if (RENDER[tab]) showTab(tab);
   await refresh();
-})();
+})().catch(() => null); // sem rede: a casca abre e o aviso de conexão já apareceu

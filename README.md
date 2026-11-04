@@ -46,11 +46,19 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
 Pensado para o celular (funciona também no computador). Visual no design system **Azure Finance**
 (`public/static/az/`: `tokens.css` e componentes `az-*` em `bundle.css`), seguindo as telas de referência do app:
 fundo navy em degradê com cartões de vidro, saldo e cartões desenhados no topo do Início com a folha branca por
-baixo, título grande com subtítulo e barra inferior com o botão central elevado (Importar). Tema claro em Ajustes.
+baixo, título grande com subtítulo e barra inferior com o botão central elevado (Início). Tema claro em Ajustes.
 Valores com centavos discretos; direção pelo sinal e pela seta (sem verde e vermelho).
 
 **Instalar no celular:** abra o endereço no Safari (iPhone) ou Chrome (Android) → Compartilhar / menu →
-**Adicionar à Tela de Início**. O Financi abre em tela cheia, como um app.
+**Adicionar à Tela de Início**. O Financi abre em tela cheia, como um app. A casca do app (página, estilos e
+scripts) fica guardada no aparelho por um service worker (`app/sw.js`): abre na hora, sem esperar o servidor
+acordar, e só os dados vêm da rede. Quando há versão nova, o app avisa ("Nova versão · Atualizar").
+
+**Acesso:** com `FINANCI_PASSWORD` definida, o app mostra a própria tela de entrada. A senha é pedida uma vez por
+aparelho e fica salva por um ano (cookie assinado; trocar a senha encerra todas as sessões). Em **Ajustes → Acesso**
+dá para ligar **Abrir com Face ID** (ou digital), por passkey WebAuthn: a partir daí cada abertura do app, e a volta
+depois de 5 minutos em segundo plano, pede a biometria; a senha continua valendo como alternativa. A lista mostra os
+aparelhos com biometria e permite remover. Scripts podem seguir usando usuário e senha (Basic) no cabeçalho.
 
 ## Publicando no Vercel + Neon
 
@@ -62,11 +70,13 @@ Valores com centavos discretos; direção pelo sinal e pela seta (sem verde e ve
    | Variável | Valor |
    | --- | --- |
    | `DATABASE_URL` | a connection string do Neon |
-   | `FINANCI_PASSWORD` | uma senha forte: o app passa a pedir usuário e senha |
-   | `FINANCI_USER` | opcional, padrão `financi` |
+   | `FINANCI_PASSWORD` | uma senha forte: o app passa a pedir a senha (uma vez por aparelho) |
+   | `FINANCI_USER` | opcional, padrão `financi` (só para scripts com Basic auth) |
+   | `FINANCI_SECRET` | opcional: chave das sessões (padrão: derivada da senha) |
    | `ANTHROPIC_API_KEY` | opcional: liga a categorização por IA (crie em console.anthropic.com) |
 
-4. *Deploy* (ou *Redeploy* depois de mudar uma variável). As tabelas são criadas no primeiro acesso.
+4. *Deploy* (ou *Redeploy* depois de mudar uma variável). As tabelas são criadas no primeiro acesso; a versão do
+   esquema fica em `fin_meta`, e as subidas seguintes fazem uma consulta só (em vez de conferir tabela por tabela).
 
 `vercel.json` coloca a função em São Paulo (`gru1`), na mesma região do Neon (`sa-east-1`); `/healthz`
 responde sem senha. O limite de upload no Vercel é de 4 MB por arquivo: para extratos grandes, exporte um
@@ -147,7 +157,9 @@ ruff check .
 
 ```
 app/
-  main.py          FastAPI, senha (Basic auth), /healthz, /api/status
+  main.py          FastAPI, exige login na API, /healthz, /api/status, /sw.js
+  auth.py          entrada: senha salva no aparelho (cookie assinado) e Face ID (passkeys WebAuthn)
+  sw.js            service worker: casca do app guardada no aparelho
   models.py        tabelas fin_*: pessoas, contas, categorias, lançamentos, regras, orçamentos, dívidas
   ofx.py           leitura de OFX (SGML e XML)
   text.py          normalização de descrições, estabelecimento e parcelas
