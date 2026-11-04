@@ -19,6 +19,15 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   categorias mais usadas em um toque e **quando**: *Já paguei / Já recebi* vira lançamento (hoje, ontem ou outra
   data, na conta usada da última vez); *Vou pagar / Vou receber* vira previsto (uma vez ou todo mês). Dá para salvar
   e adicionar outra em seguida, e o aviso traz **Desfazer**. Lançamentos à mão sem categoria passam pelas regras.
+- **Cockpit** (Planejamento → Cockpit): ações com liga/desliga para simular decisões. Ligada, a ação entra no
+  Fluxo, no Mês e no saldo projetado; desligada, fica guardada sem mudar nada. O gráfico compara o saldo sem e com
+  as ações ligadas (saldo final e menor saldo).
+  - **Ações de ajuste**: linhas por mês que somam uma entrada/saída ou **substituem** o valor de um previsto (0 zera).
+    O valor é fixo ou uma **fração de outro previsto** (ex.: 1/3 × Salário de nov/26), então acompanha o previsto.
+    Há um modelo de **antecipação de férias** (salário adiantado, 1/3, 10 dias vendidos, 1ª parcela do 13º e o
+    salário do mês seguinte só com os dias trabalhados).
+  - **Quitar dívidas**: um liga/desliga e um mês por dívida. A quitação paga a parcela do mês mais o valor presente
+    das seguintes (juros do contrato) e as parcelas depois somem; mostra quanto custa e quanto economiza de juros.
 - **Lançamentos**: extrato por mês, busca, filtro por conta, fila de revisão, categorização em massa e
   lançamento manual.
 - **Planejamento**, em duas visões (no modelo de Monarch, Quicken Simplifi e Copilot):
@@ -165,6 +174,7 @@ app/
   main.py          FastAPI, exige login na API, /healthz, /api/status, /sw.js
   auth.py          entrada: senha salva no aparelho (cookie assinado) e Face ID (passkeys WebAuthn)
   sw.js            service worker: casca do app guardada no aparelho
+  cockpit.py       ações do cockpit: efeitos no fluxo (ajustes, frações de previstos, quitação)
   models.py        tabelas fin_*: pessoas, contas, categorias, lançamentos, regras, orçamentos, dívidas
   ofx.py           leitura de OFX (SGML e XML)
   text.py          normalização de descrições, estabelecimento e parcelas

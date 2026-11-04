@@ -179,7 +179,7 @@
   <section class="tab" id="tab-planejamento">
     <div class="page-head"><p class="overline">Plano do mês e fluxo futuro</p><h1>Planejamento</h1></div>
     <div class="plan-top">
-      <div class="segmented" id="plan-view"><button data-view="mes" class="active">Mês</button><button data-view="fluxo">Fluxo</button></div>
+      <div class="segmented" id="plan-view"><button data-view="mes" class="active">Mês</button><button data-view="fluxo">Fluxo</button><button data-view="cockpit">Cockpit</button></div>
     </div>
 
     <div id="pv-mes">
@@ -214,6 +214,25 @@
         <div id="chart-fluxo" class="chart chart--fx"></div>
       </div>
       <div class="card tb-card"><div class="table-wrap tb-wrap"><table id="tb-table" class="flow-table"></table></div></div>
+    </div>
+
+    <!-- cockpit: ações com liga/desliga; ligadas entram no Fluxo e no Mês -->
+    <div id="pv-cockpit" hidden>
+      <div class="card ck-card">
+        <div class="ck-kpis" id="ck-kpis"></div>
+        <div id="chart-cockpit" class="chart chart--ck"></div>
+        <div class="row ck-foot"><div class="segmented" id="ck-horizon"><button data-h="12">12 meses</button><button data-h="18">18 meses</button><button data-h="24">24 meses</button></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Ações</h3><button id="ck-add">Nova ação</button></div>
+        <p class="hint" style="margin-top:0">Ligada, a ação entra no Fluxo e no Mês. Desligada, fica guardada sem mudar nada.</p>
+        <div class="list" id="ck-actions"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Quitar dívidas</h3></div>
+        <p class="hint" style="margin-top:0">Escolha o mês e ligue: o saldo da dívida sai naquele mês (parcela + valor presente das seguintes, com os juros do contrato) e as parcelas depois somem.</p>
+        <div class="list" id="ck-payoffs"></div>
+      </div>
     </div>
   </section>
 

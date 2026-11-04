@@ -7,6 +7,7 @@ from datetime import date
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from . import cockpit
 from . import finance as fin
 from . import planned as planned_mod
 from .models import Account, Budget, Category, Debt, Grouping, Transaction
@@ -222,7 +223,8 @@ def debts_summary(db: Session, person: str | None, today: date) -> dict:
 
 # ---------------------------------------------------------------- projeção
 
-def projection(db: Session, person: str | None, today: date, months: int = 6, detail: bool = False) -> dict:
+def projection(db: Session, person: str | None, today: date, months: int = 6, detail: bool = False,
+               actions: bool | cockpit.Effects = True) -> dict:
     """Caixa dos próximos meses: saldo atual + receitas previstas − despesas orçadas − dívidas − parcelas de cartão.
 
     Cada categoria usa o orçamento do mês; categoria sem orçamento usa a média dos últimos meses com extrato
@@ -231,7 +233,12 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     de fora porque as parcelas vêm do módulo de dívidas.
 
     Com detail, devolve também a tabela mês a mês (uma linha por categoria, previsto sem categoria, dívida e cartão),
-    montada com os mesmos números da projeção."""
+    montada com os mesmos números da projeção.
+
+    As ações ligadas do cockpit entram (actions=False ignora; ou passe os efeitos já calculados): substituem
+    previstos, somam entradas/saídas (só na visão de todos) e quitam dívidas."""
+    eff = actions if isinstance(actions, cockpit.Effects) else (cockpit.effects(db, today) if actions else cockpit.Effects())
+    everyone = person in (None, "", "all")
     accs = accounts_for(db, person)
     acc_ids = [a.id for a in accs]
     bal = balances(db, accs)
@@ -293,8 +300,7 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     debt_sched: dict[date, float] = defaultdict(float)
     debt_rows: list[tuple[Debt, dict[date, float]]] = []
     for d in db.scalars(debt_q.order_by(Debt.id)):
-        sched = fin.loan_schedule(d.installment, d.first_due, d.total_installments, today=today,
-                                  rate=d.monthly_rate, balance=d.balance)
+        sched = cockpit.apply_payoff(d, cockpit.schedule(d, today), eff, today)
         debt_rows.append((d, sched))
         for m, v in sched.items():
             debt_sched[m] += v
@@ -314,18 +320,32 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     start_balance -= open_invoices
 
     items_by_month, pending_items = planned_mod.projection_items(db, today, months + 1, person, acc_ids)
+    items_by_month = {m: cockpit.apply_overrides(v, eff) for m, v in items_by_month.items()}
+    pending_items = cockpit.apply_overrides(pending_items, eff)
     pending = round(sum(o.amount if o.kind == "receita" else -o.amount for o in pending_items), 2)
     for o in pending_items:
         key, section, group, label = planned_line(o)
         cell(key, section, group, label, None, o.amount, "previsto")
+
+    def action_line(x) -> tuple[tuple, str, str, str]:
+        return ("acao", x.action_id, x.label), "entradas" if x.kind == "receita" else "saidas", f"{cockpit.GROUP} · {x.action}", x.label
+
+    extras_by_month: dict[date, list] = defaultdict(list)
+    for x in eff.extras if everyone else []:
+        if x.month <= fin.month_start(today):  # mês atual ou passado: entra agora, como os pendentes
+            pending = round(pending + (x.amount if x.kind == "receita" else -x.amount), 2)
+            cell(*action_line(x), None, x.amount, "ação")
+        else:
+            extras_by_month[x.month].append(x)
     # parcela de dívida que ainda vence neste mês também sai agora (ex.: consignado descontado no dia 5, hoje é dia 3)
     cur = fin.month_start(today)
     for d, sched in debt_rows:
         v = sched.get(cur, 0.0)
-        if v and d.first_due and fin.day_in_month(cur, d.first_due.day) >= today:
+        paying_off_now = eff.payoffs.get(d.id) == cur  # quitação neste mês sai agora, mesmo depois do vencimento
+        if v and (paying_off_now or (d.first_due and fin.day_in_month(cur, d.first_due.day) >= today)):
             pending = round(pending - v, 2)
             cell(("debt", d.id), "dividas", "Dívidas e parcelas", d.name, None, v, "dívida")
-    order = ("orçamento", "média", "previsto")
+    order = ("orçamento", "média", "previsto", "ação")
 
     rows, running = [], start_balance
     for i in range(months):
@@ -354,6 +374,10 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
             used[o.kind].add("previsto")
             key, section, group, label = planned_line(o)
             cell(key, section, group, label, i, o.amount, "previsto")
+        for x in extras_by_month.get(m, []):
+            tot[x.kind] += x.amount
+            used[x.kind].add("ação")
+            cell(*action_line(x), i, x.amount, "ação")
         inc, exp = max(0.0, tot["receita"]), max(0.0, tot["despesa"])
         src = {k: " + ".join(x for x in order if x in v) or "média" for k, v in used.items()}
         debts, cards = debt_sched.get(m, 0.0), card_sched.get(m, 0.0)
@@ -463,7 +487,8 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
     accs = accounts_for(db, person)
     acc_ids = [a.id for a in accs]
     cats = {c.id: c for c in db.scalars(select(Category))}
-    occ = planned_mod.occurrences(db, today, m, m, person, acc_ids)
+    eff = cockpit.effects(db, today)
+    occ = cockpit.apply_overrides(planned_mod.occurrences(db, today, m, m, person, acc_ids), eff)
     actual = _category_totals(db, acc_ids, m, fin.add_months(m, 1))
     budgets = budget_map(db, m)
     month_specific = {b.category_id for b in db.scalars(select(Budget).where(Budget.month == m))}
@@ -482,6 +507,13 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
             dividas.append(row)
         else:
             fixas.append(row)
+    # ações ligadas do cockpit que somam entradas/saídas neste mês (na visão de todos)
+    if person in (None, "", "all"):
+        for x in eff.extras:
+            if x.month == m:
+                row = {"type": "acao", "action_id": x.action_id, "name": x.label, "action": x.action, "kind": x.kind,
+                       "amount": round(x.amount, 2), "actual": 0.0, "status": "pendente"}
+                (entradas if x.kind == "receita" else fixas).append(row)
 
     # parcelas de dívidas e de cartão que caem no mês
     debt_q = select(Debt).where(Debt.active.is_(True))
@@ -490,12 +522,14 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
     elif person and person != "all":
         debt_q = debt_q.where(Debt.owner_id == int(person))
     for d in db.scalars(debt_q.order_by(Debt.id)):
-        v = fin.loan_schedule(d.installment, d.first_due, d.total_installments, today=today,
-                              rate=d.monthly_rate, balance=d.balance).get(m)
+        v = cockpit.apply_payoff(d, cockpit.schedule(d, today), eff, today).get(m)
         if v:
             n = fin.months_between(fin.month_start(d.first_due), m) + 1 if d.first_due else None
             due = fin.day_in_month(m, d.first_due.day).isoformat() if d.first_due else None
-            dividas.append({"type": "divida", "debt_id": d.id, "name": d.name, "amount": round(v, 2), "due": due,
+            if eff.payoffs.get(d.id) == m:
+                n = None  # quitação: o saldo inteiro neste mês
+            dividas.append({"type": "divida", "debt_id": d.id, "amount": round(v, 2), "due": due,
+                            "name": f"{d.name} · quitação" if eff.payoffs.get(d.id) == m else d.name,
                             "installment_n": n, "installment_total": d.total_installments, "actual": 0.0,
                             "status": "pago" if due and due < today.isoformat() else "pendente"})
     for a in accs:
@@ -545,9 +579,11 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
     # agrupamentos (informativos): soma com sinal das linhas do mês
     refs: dict[str, float] = defaultdict(float)
     for r in live(entradas):
-        refs[f"plan:{r['name']}" if r["type"] == "previsto" else f"cat:{r['category_id']}"] += r["amount"]
+        ref = {"previsto": f"plan:{r['name']}", "acao": f"acao:{r.get('action_id')}"}.get(r["type"], f"cat:{r.get('category_id')}")
+        refs[ref] += r["amount"]
     for r in live(fixas) + live(dividas) + variaveis:
         key = {"previsto": lambda r: f"plan:{r['name']}", "divida": lambda r: f"debt:{r['debt_id']}",
+               "acao": lambda r: f"acao:{r['action_id']}",
                "cartao": lambda r: f"card:{r['account_id']}", "orcamento": lambda r: f"cat:{r['category_id']}"}[r["type"]](r)
         refs[key] -= r["amount"]
     groupings = [{"id": g.id, "name": g.name, "value": round(sum(refs.get(mm.ref, 0.0) for mm in g.members), 2)}

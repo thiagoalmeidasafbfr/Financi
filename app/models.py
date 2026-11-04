@@ -8,6 +8,7 @@
   Debt      empréstimos, consignados, financiamentos... (cartões são contas)
   Planned   lançamentos previstos (mensais com início/fim ou pontuais) e PlannedChange (ajuste de um mês)
   Grouping  agrupamentos do usuário (ex.: Folha = salário − descontos), só para visualizar o líquido
+  Action    ações do cockpit (ligar/desligar): ajustes no fluxo (somar ou substituir previstos) e quitação de dívidas
   Passkey   biometria (Face ID, digital) cadastrada em cada aparelho para abrir o app
   Meta      versão do esquema já criado no banco (a subida pula a criação quando nada mudou)
 """
@@ -270,3 +271,47 @@ class Meta(Base):
 
     key: Mapped[str] = mapped_column(String(40), primary_key=True)
     value: Mapped[str] = mapped_column(String(200))
+
+
+class Action(Base):
+    """Ação do cockpit: só muda o fluxo enquanto está ligada.
+
+    kind "ajuste": linhas que somam entradas/saídas ou substituem um previsto num mês (ex.: antecipar férias).
+    kind "quitacao": quita a dívida `debt_id` no mês `month` (paga o saldo e as parcelas seguintes somem)."""
+
+    __tablename__ = "fin_actions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80))
+    kind: Mapped[str] = mapped_column(String(12), default="ajuste")
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    debt_id: Mapped[int | None] = mapped_column(ForeignKey("fin_debts.id", ondelete="CASCADE"), unique=True)
+    month: Mapped[date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    lines: Mapped[list["ActionLine"]] = relationship(back_populates="action", cascade="all, delete-orphan",
+                                                     order_by="ActionLine.position")
+
+
+class ActionLine(Base):
+    """Uma linha da ação. op "somar": entrada ou saída no mês. op "substituir": o previsto `target` passa a valer o
+    valor no mês (0 zera). O valor é fixo (amount) ou uma fração de outro previsto (factor × base no mês base_month)."""
+
+    __tablename__ = "fin_action_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    action_id: Mapped[int] = mapped_column(ForeignKey("fin_actions.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    month: Mapped[date] = mapped_column(Date)
+    label: Mapped[str] = mapped_column(String(120))
+    op: Mapped[str] = mapped_column(String(12), default="somar")
+    direction: Mapped[str] = mapped_column(String(8), default="entrada")
+    amount: Mapped[float | None] = mapped_column(Money)
+    factor: Mapped[float | None] = mapped_column(Float)
+    base: Mapped[str | None] = mapped_column(String(120))
+    base_month: Mapped[date | None] = mapped_column(Date)
+    target: Mapped[str | None] = mapped_column(String(120))
+
+    action: Mapped[Action] = relationship(back_populates="lines")

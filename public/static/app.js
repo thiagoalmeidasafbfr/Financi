@@ -807,12 +807,13 @@ const SECTION_INFO = {
   variaveis: { title: "Gastos variáveis", add: "Orçar categoria" },
 };
 async function renderPlanejamento() {
-  const view = ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
+  const view = state.plan.view === "cockpit" ? "cockpit" : ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
   state.plan.view = view;
   $$("#plan-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $("#pv-mes").hidden = view !== "mes";
   $("#pv-fluxo").hidden = view !== "fluxo";
-  return view === "fluxo" ? renderFluxo() : renderMes();
+  $("#pv-cockpit").hidden = view !== "cockpit";
+  return view === "fluxo" ? renderFluxo() : view === "cockpit" ? renderCockpit() : renderMes();
 }
 $("#plan-view").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
@@ -1140,6 +1141,207 @@ function openPlannedSheet(p, preset = {}) {
   };
 }
 
+
+// ------------------------------------------------------------------ COCKPIT: ações com liga/desliga
+// Cada ação ligada muda o fluxo (Fluxo e Mês). Ajustes: linhas que somam entradas/saídas ou substituem um previsto no mês,
+// com valor fixo ou fração de outro previsto (ex.: 1/3 do Salário). Quitação: um liga/desliga e um mês por dívida.
+const FRACTIONS = [[1, "1"], [1 / 2, "1/2"], [1 / 3, "1/3"], [2 / 3, "2/3"], [1 / 4, "1/4"], [3 / 4, "3/4"], [1 / 6, "1/6"], [1 / 12, "1/12"]];
+const fmtFactor = (f) => (f == null ? "" : (FRACTIONS.find(([v]) => Math.abs(v - f) < 1e-6)?.[1] ?? String(+f.toFixed(4)).replace(".", ",")));
+function parseFactor(t) {
+  t = String(t || "").trim().replace(/\s+/g, "");
+  if (!t) return null;
+  let m = t.match(/^(\d+(?:[.,]\d+)?)\/(\d+(?:[.,]\d+)?)$/);
+  if (m) return parseNum(m[1]) / parseNum(m[2]);
+  m = t.match(/^(\d+(?:[.,]\d+)?)%$/);
+  if (m) return parseNum(m[1]) / 100;
+  const v = parseNum(t);
+  return v === undefined ? undefined : v;
+}
+const switchHtml = (attrs, on, label) => `<label class="switch" title="${esc(label)}"><input type="checkbox" ${attrs} ${on ? "checked" : ""} aria-label="${esc(label)}"><span></span></label>`;
+const signedMoney = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${fmt(Math.abs(v))}`;
+
+async function renderCockpit() {
+  const h = state.plan.ckHorizon || 18;
+  $$("#ck-horizon button").forEach((b) => b.classList.toggle("active", +b.dataset.h === h));
+  const ck = await api("GET", `/api/cockpit?months=${h}`);
+  state.cockpit = ck;
+  const s = ck.summary, last = ck.months[ck.months.length - 1];
+  const diff = s.final_with - s.final_base;
+  $("#ck-kpis").innerHTML = `
+    <div class="ck-kpi"><small>Saldo em ${mlabel(last)}</small><b>${fmt(s.final_with)}</b>
+      <em>${s.active ? `${signedMoney(diff)} com ${s.active} ${s.active === 1 ? "ação ligada" : "ações ligadas"}` : "nenhuma ação ligada"}</em></div>
+    <div class="ck-kpi"><small>Menor saldo</small><b>${fmt(s.low_with.value)}</b>
+      <em>em ${mlabel(s.low_with.month)}${s.active && s.low_with.value !== s.low_base.value ? ` · sem ações ${fmt(s.low_base.value)}` : ""}</em></div>`;
+  chart("chart-cockpit").setOption({
+    ...baseOption(), grid: { left: 8, right: 16, top: 30, bottom: 8, containLabel: true },
+    xAxis: { ...baseOption().xAxis, data: ck.months.map(mlabel) },
+    series: [
+      { name: "Sem ações", type: "line", data: ck.base, smooth: true, symbol: "none", color: DIM(), lineStyle: { width: 2, type: "dashed" } },
+      { name: "Com as ações ligadas", type: "line", data: ck.with, smooth: true, symbol: "circle", symbolSize: 5, color: LIT(), lineStyle: { width: 2.5 },
+        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: css("--line-strong"), type: "dashed" }, data: [{ yAxis: 0 }] } },
+    ],
+  }, true);
+  chart("chart-cockpit").resize();
+
+  $("#ck-actions").innerHTML = ck.actions.length ? ck.actions.map((a) => {
+    const months = a.impact.by_month.slice(0, 3).map((x) => `${signedMoney(x.value)} em ${mlabel(x.month)}`).join(" · ");
+    const more = a.impact.by_month.length > 3 ? ` · +${a.impact.by_month.length - 3} meses` : "";
+    const problems = a.lines.filter((l) => l.problem).length;
+    return `<div class="ck-row ${a.active ? "" : "off"}">
+      ${switchHtml(`data-ck-toggle="${a.id}"`, a.active, `Ligar ${a.name}`)}
+      <button class="ck-row__main" data-ck-edit="${a.id}"><span class="ck-row__title">${esc(a.name)}</span>
+        <span class="ck-row__desc">${problems ? `<span class="ck-warn">${problems} ${problems === 1 ? "linha" : "linhas"} com problema · </span>` : ""}${esc(months + more) || "sem efeito"}</span></button>
+      <span class="ck-row__val">${signedMoney(a.impact.total)}</span></div>`;
+  }).join("") : '<p class="hint">Crie ações para simular decisões, como antecipar férias, vender dias ou receber um bônus. Ligue e desligue para comparar.</p>';
+
+  $("#ck-payoffs").innerHTML = ck.payoffs.length ? ck.payoffs.map((d) => `<div class="ck-row ${d.active ? "" : "off"}">
+      ${switchHtml(`data-ck-pay="${d.debt_id}"`, d.active, `Quitar ${d.name}`)}
+      <div class="ck-row__main"><span class="ck-row__title">${esc(d.name)}</span>
+        <span class="ck-row__desc">${fmt2(d.installment)}/mês · ${d.installments_left} ${d.installments_left === 1 ? "parcela" : "parcelas"} até ${mlabel(d.end_month)}</span>
+        <span class="ck-row__desc">Quitação ${fmt2(d.payoff)}${d.interest_saved > 0.5 ? ` · economiza ${fmt(d.interest_saved)} de juros` : ""}</span>
+        <label class="ck-pay__month">Quitar em <input type="month" data-ck-paymonth="${d.debt_id}" value="${d.month.slice(0, 7)}"></label></div>
+    </div>`).join("") : '<p class="hint">Nenhuma dívida com parcelas pela frente.</p>';
+}
+$("#ck-horizon").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-h]");
+  if (b) { state.plan.ckHorizon = +b.dataset.h; renderCockpit(); }
+});
+$("#pv-cockpit").addEventListener("change", async (e) => {
+  const t = e.target;
+  if (t.dataset.ckToggle) {
+    await api("PATCH", `/api/cockpit/actions/${t.dataset.ckToggle}`, { active: t.checked });
+    toast(t.checked ? "Ação ligada: entra no Fluxo e no Mês" : "Ação desligada");
+  } else if (t.dataset.ckPay) {
+    const month = $(`[data-ck-paymonth="${t.dataset.ckPay}"]`).value;
+    await api("PUT", `/api/cockpit/payoffs/${t.dataset.ckPay}`, { active: t.checked, month: month ? month + "-01" : null });
+    toast(t.checked ? `Quitação em ${mlabel(month + "-01")} ligada` : "Quitação desligada");
+  } else if (t.dataset.ckPaymonth) {
+    if (!t.value) return;
+    const on = $(`[data-ck-pay="${t.dataset.ckPaymonth}"]`).checked;
+    await api("PUT", `/api/cockpit/payoffs/${t.dataset.ckPaymonth}`, { active: on, month: t.value + "-01" });
+  } else return;
+  renderCockpit();
+});
+$("#pv-cockpit").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ck-edit]");
+  if (b) openActionSheet(state.cockpit.actions.find((a) => a.id === +b.dataset.ckEdit));
+});
+$("#ck-add").onclick = () => openActionSheet(null);
+
+// modelo do exemplo de férias: antecipar recebe salário do mês seguinte + 1/3 + 10 dias vendidos + 1ª parcela do 13º seguinte;
+// no mês seguinte o salário vira só os 10 dias trabalhados
+function feriasTemplate(names) {
+  const sal = names.find((n) => /^sal[aá]rio$/i.test(n)) || names.find((n) => /sal[aá]rio/i.test(n)) || "Salário";
+  const m0 = thisMonth(), m1 = addMonths(m0, 1);
+  const nextName = MESES_LONGOS[+m1.slice(5, 7) - 1];
+  const next13 = +m0.slice(0, 4) + 1;
+  const frac = (month, label, factor, extra = {}) => ({ month, label, op: "somar", direction: "entrada", factor, base: sal, base_month: m0, ...extra });
+  return {
+    name: "Antecipação de férias",
+    notes: `Valores como fração do ${sal} de ${mlabel(m0)}. Ajuste os meses se o pagamento das férias cair em outro mês.`,
+    lines: [
+      frac(m0, `Salário de ${nextName} adiantado`, 1),
+      frac(m0, "1/3 de férias", 1 / 3),
+      frac(m0, "10 dias vendidos (abono)", 1 / 3),
+      frac(m0, `1ª parcela do 13º de ${next13} adiantada`, 1 / 2),
+      frac(m1, `${capFirst(nextName)}: só os 10 dias trabalhados`, 1 / 3, { op: "substituir", target: sal }),
+    ],
+  };
+}
+
+function openActionSheet(a, preset) {
+  const ck = state.cockpit;
+  const names = [...new Set(ck.previstos.map((p) => p.name))];
+  const v = preset || a || { name: "", notes: "", lines: [] };
+  let lines = v.lines.map((l) => ({ ...l }));
+  const prevOpts = (sel) => '<option value="">Escolha o previsto</option>' + names.map((n) => `<option ${n === sel ? "selected" : ""}>${esc(n)}</option>`).join("");
+  openSheet(`<p class="overline">Cockpit</p><h2>${a ? "Editar ação" : "Nova ação"}</h2>
+    ${a ? "" : `<div class="row" style="margin-top:0"><button class="secondary" id="ak-tpl">Usar modelo: antecipação de férias</button></div>`}
+    <label class="field">Nome<input id="ak-name" value="${esc(v.name)}" placeholder="Antecipação de férias, venda do carro…"></label>
+    <div class="ck-lines" id="ak-lines"></div>
+    <div class="row"><button class="secondary" id="ak-add">Adicionar linha</button></div>
+    <label class="field">Observação<input id="ak-notes" value="${esc(v.notes || "")}"></label>
+    <div class="row"><button class="primary" id="ak-save">Salvar</button>${a ? '<button class="danger" id="ak-del">Excluir</button>' : ""}</div>`);
+  const read = () => {
+    lines = $$("#ak-lines .ck-line").map((el, i) => {
+      const l = lines[i];
+      const q = (sel) => el.querySelector(sel);
+      return { ...l, month: (q("[data-f=month]").value || thisMonth().slice(0, 7)) + "-01", label: q("[data-f=label]").value,
+        amount: l.mode === "valor" ? parseNum(q("[data-f=amount]").value) ?? null : null,
+        factor: l.mode === "fracao" ? parseFactor(q("[data-f=factor]").value) ?? null : null,
+        base: l.mode === "fracao" ? q("[data-f=base]").value || null : null,
+        base_month: l.mode === "fracao" && q("[data-f=base_month]").value ? q("[data-f=base_month]").value + "-01" : null,
+        target: l.op === "substituir" ? q("[data-f=target]").value || null : null };
+    });
+  };
+  const paint = () => {
+    $("#ak-lines").innerHTML = lines.map((l, i) => {
+      l.mode ||= l.factor != null ? "fracao" : "valor";
+      const kind = l.op === "substituir" ? "sub" : l.direction;
+      const calc = l.value != null && l.mode === "fracao" ? `= ${fmt2(l.value)}` : "";
+      return `<div class="ck-line" data-i="${i}">
+        <div class="ck-line__top">${monthInput(`ak-m${i}`, l.month).replace('<input type="month"', '<input type="month" data-f="month"')}
+          <input data-f="label" value="${esc(l.label || "")}" placeholder="Descrição" aria-label="Descrição"></div>
+        <div class="segmented" data-f="kind"><button data-k="entrada" class="${kind === "entrada" ? "active" : ""}">Entrada</button><button data-k="saida" class="${kind === "saida" ? "active" : ""}">Saída</button><button data-k="sub" class="${kind === "sub" ? "active" : ""}">Substituir previsto</button></div>
+        ${l.op === "substituir" ? `<div class="ck-line__val">O previsto <select data-f="target">${prevOpts(l.target)}</select> passa a valer:</div>` : ""}
+        <div class="ck-line__val"><div class="segmented" data-f="mode"><button data-m="valor" class="${l.mode === "valor" ? "active" : ""}">R$</button><button data-m="fracao" class="${l.mode === "fracao" ? "active" : ""}">Fração de previsto</button></div></div>
+        ${l.mode === "valor" ? `<div class="ck-line__val">R$ <input data-f="amount" inputmode="decimal" value="${l.amount != null ? String(l.amount).replace(".", ",") : ""}" placeholder="0,00"></div>`
+          : `<div class="ck-line__val"><input data-f="factor" value="${fmtFactor(l.factor)}" placeholder="1/3" aria-label="Fração"> × <select data-f="base">${prevOpts(l.base)}</select></div>
+             <div class="ck-line__val">de <input type="month" data-f="base_month" value="${l.base_month ? l.base_month.slice(0, 7) : ""}" aria-label="Mês do previsto de referência"> <span class="ck-line__calc">${calc}${l.problem ? ` ${esc(l.problem)}` : ""}</span></div>`}
+        <button class="ghost sm ck-line__rm" data-rm="${i}">Remover linha</button></div>`;
+    }).join("") || '<p class="hint">Cada linha muda um mês: soma uma entrada ou saída, ou troca o valor de um previsto (0 zera).</p>';
+  };
+  paint();
+  $("#ak-lines").addEventListener("click", (e) => {
+    const line = e.target.closest(".ck-line");
+    if (!line) return;
+    const i = +line.dataset.i;
+    const k = e.target.closest("[data-f=kind] [data-k]"), m = e.target.closest("[data-f=mode] [data-m]"), rm = e.target.closest("[data-rm]");
+    if (!k && !m && !rm) return;
+    read();
+    if (k) Object.assign(lines[i], k.dataset.k === "sub" ? { op: "substituir" } : { op: "somar", direction: k.dataset.k });
+    if (m) lines[i].mode = m.dataset.m;
+    if (rm) lines.splice(i, 1);
+    paint();
+  });
+  $("#ak-add").onclick = () => {
+    read();
+    const prev = lines[lines.length - 1];
+    lines.push({ month: prev ? prev.month : addMonths(thisMonth(), 1), label: "", op: "somar", direction: "entrada", mode: "valor" });
+    paint();
+    $$("#ak-lines [data-f=label]").pop()?.focus();
+  };
+  if (!a) $("#ak-tpl").onclick = () => {
+    const t = feriasTemplate(names);
+    $("#ak-name").value = t.name;
+    $("#ak-notes").value = t.notes;
+    lines = t.lines;
+    paint();
+  };
+  $("#ak-save").onclick = async () => {
+    read();
+    const name = $("#ak-name").value.trim();
+    if (!name) return toast("Dê um nome à ação");
+    for (const l of lines) {
+      if (!l.label.trim()) return toast("Toda linha precisa de descrição");
+      if (l.mode === "valor" && (l.amount == null || l.amount < 0)) return toast(`“${l.label}”: informe o valor`);
+      if (l.mode === "fracao" && (l.factor == null || !l.base)) return toast(`“${l.label}”: informe a fração e o previsto`);
+      if (l.op === "substituir" && !l.target) return toast(`“${l.label}”: escolha o previsto a substituir`);
+    }
+    const body = { name, notes: $("#ak-notes").value.trim() || null,
+      lines: lines.map(({ month, label, op, direction, amount, factor, base, base_month, target }) => ({ month, label: label.trim(), op, direction, amount, factor, base, base_month, target })) };
+    await api(a ? "PUT" : "POST", a ? `/api/cockpit/actions/${a.id}` : "/api/cockpit/actions", body);
+    closeSheet();
+    toast(a ? "Ação atualizada" : "Ação criada. Ligue para ver no fluxo.");
+    renderCockpit();
+  };
+  if (a) $("#ak-del").onclick = async () => {
+    if (!confirm(`Excluir a ação "${a.name}"?`)) return;
+    await api("DELETE", `/api/cockpit/actions/${a.id}`);
+    closeSheet();
+    renderCockpit();
+  };
+}
 
 // ------------------------------------------------------------------ FLUXO: saldo projetado e tabela mês a mês
 const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
