@@ -1017,3 +1017,18 @@ button.ck-row__main:hover { background: none; }
 @media (max-width: 700px) {
   .ck-line__top { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------------------------------------------------------------- editar pela tabela */
+.flow-table td.ed { cursor: pointer; }
+.flow-table td.ed:hover { background: var(--surface-tint); }
+.flow-table td.ed:active { background: var(--surface-tint); }
+.flow-table td.flash { animation: cellflash 1.6s ease-out; }
+@keyframes cellflash { 0%, 30% { background: var(--bright-azure); color: #ffffff; } 100% { background: transparent; } }
+.tb-tip { margin: var(--space-3) 0 0; }
+.cell-amount { margin: var(--space-3) 0 var(--space-4); }
+.ce-scope { display: flex; flex-wrap: wrap; }
+.cell-now { font-size: 22px; font-variant-numeric: tabular-nums; margin: var(--space-3) 0 0; }
+.cell-amount { justify-content: flex-start; }
+.cell-amount input { width: 10ch; height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; text-align: left;
+  font-size: 32px; line-height: 40px; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--ink); }
+.cell-amount input:focus { box-shadow: none; border: 0; }

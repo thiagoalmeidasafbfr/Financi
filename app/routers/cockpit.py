@@ -170,3 +170,14 @@ def set_payoff(debt_id: int, data: PayoffIn, db: Session = Depends(get_session))
         a.month = fin.add_months(fin.month_start(date.today()), 1)  # noqa: DTZ011
     db.commit()
     return {"debt_id": d.id, "active": a.active, "month": a.month.isoformat()}
+
+
+@router.get("/payoffs/{debt_id}")
+def get_payoff(debt_id: int, db: Session = Depends(get_session)):
+    """Situação da quitação de uma dívida (para o toque na tabela do Fluxo)."""
+    d = db.get(Debt, debt_id)
+    if d is None:
+        raise HTTPException(404, "Dívida não encontrada")
+    a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == debt_id))
+    return {"debt_id": d.id, "name": d.name, "installment": d.installment, "active": bool(a and a.active),
+            "month": a.month.isoformat() if a and a.month else None}

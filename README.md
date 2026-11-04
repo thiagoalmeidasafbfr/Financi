@@ -19,6 +19,10 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   categorias mais usadas em um toque e **quando**: *Já paguei / Já recebi* vira lançamento (hoje, ontem ou outra
   data, na conta usada da última vez); *Vou pagar / Vou receber* vira previsto (uma vez ou todo mês). Dá para salvar
   e adicionar outra em seguida, e o aviso traz **Desfazer**. Lançamentos à mão sem categoria passam pelas regras.
+- **Editar pela tabela** (Planejamento → Fluxo): toque num valor para mudar aquele mês. Previsto: **só neste mês**
+  ou **deste mês em diante** (até o fim da previsão; a previsão é dividida e as outras ficam como estão), **Zerar**,
+  mover ou marcar como pago. Categoria: orçamento só do mês ou de todo mês (ou voltar à média). Parcela de dívida:
+  **quitar naquele mês** (vira a quitação do Cockpit). Linha do Cockpit: abre a ação.
 - **Cockpit** (Planejamento → Cockpit): ações com liga/desliga para simular decisões. Ligada, a ação entra no
   Fluxo, no Mês e no saldo projetado; desligada, fica guardada sem mudar nada. O gráfico compara o saldo sem e com
   as ações ligadas (saldo final e menor saldo).

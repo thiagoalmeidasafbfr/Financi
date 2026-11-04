@@ -1333,13 +1333,13 @@ function openActionSheet(a, preset) {
     await api(a ? "PUT" : "POST", a ? `/api/cockpit/actions/${a.id}` : "/api/cockpit/actions", body);
     closeSheet();
     toast(a ? "Ação atualizada" : "Ação criada. Ligue para ver no fluxo.");
-    renderCockpit();
+    renderPlanejamento();
   };
   if (a) $("#ak-del").onclick = async () => {
     if (!confirm(`Excluir a ação "${a.name}"?`)) return;
     await api("DELETE", `/api/cockpit/actions/${a.id}`);
     closeSheet();
-    renderCockpit();
+    renderPlanejamento();
   };
 }
 
@@ -1378,7 +1378,9 @@ async function renderFluxo() {
     const showGroups = s.groups.length > 1;
     for (const g of s.groups) {
       if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g.now, g.values)}</tr>`;
-      for (const r of g.rows) body += `<tr><td class="lbl ${showGroups ? "sub" : ""}" title="${esc(r.label)}">${esc(r.label)}</td>${cells(r.now, r.values, "", r.sources)}</tr>`;
+      // linhas editáveis: tocar num valor muda aquele mês (ou dali em diante)
+      for (const r of g.rows) body += `<tr><td class="lbl ${showGroups ? "sub" : ""}" title="${esc(r.label)}">${esc(r.label)}</td><td class="now">${num(r.now)}</td>` +
+        r.values.map((v, i) => `<td class="ed ${r.sources[i] === "média" ? "avg" : ""}" data-ref="${esc(r.ref)}" data-m="${t.months[i]}" data-label="${esc(r.label)}" data-v="${v}" data-src="${r.sources[i]}">${num(v)}</td>`).join("") + "</tr>";
     }
   }
   const T = t.totais;
@@ -1401,9 +1403,135 @@ $("#tb-table").addEventListener("click", (e) => {
     state.plan.view = "mes";
     return renderPlanejamento();
   }
+  const td = e.target.closest("td[data-ref]");
+  if (td) return openCellSheet({ ref: td.dataset.ref, month: td.dataset.m, label: td.dataset.label, value: +td.dataset.v, source: td.dataset.src });
   const row = e.target.closest("[data-grouping]");
   if (row) openGroupingEditor((state.table.groupings || []).find((g) => g.id === +row.dataset.grouping));
 });
+
+// ------------------------------------------------------------------ editar pela tabela: toque num valor
+// Previsto: só neste mês ou deste mês em diante (até o fim da previsão). Categoria: orçamento do mês ou de todo mês.
+// Dívida: quitar neste mês (vira ação do cockpit). Ação do cockpit: abre a ação.
+async function afterCellEdit(ref, month) {
+  const wrap = $(".tb-wrap"), x = wrap ? wrap.scrollLeft : 0, y = window.scrollY;
+  await renderFluxo();
+  if (wrap) wrap.scrollLeft = x;
+  window.scrollTo(0, y);
+  const cell = $(`#tb-table td[data-ref="${CSS.escape(ref)}"][data-m="${month}"]`);
+  if (cell) { cell.classList.add("flash"); setTimeout(() => cell.classList.remove("flash"), 1600); }
+}
+const cellAmountInput = (v) => `<label class="qa-amount cell-amount"><span>R$</span><input id="ce-amount" inputmode="decimal" value="${v ? String(v.toFixed(2)).replace(".", ",") : ""}" placeholder="0,00" autocomplete="off" aria-label="Valor"></label>`;
+function scopeSeg(opts, cur) {
+  return `<div class="segmented ce-scope" id="ce-scope">${opts.map(([k, l]) => `<button data-s="${k}" class="${k === cur ? "active" : ""}">${esc(l)}</button>`).join("")}</div>`;
+}
+function bindScope(get, set) {
+  $("#ce-scope")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-s]");
+    if (!b) return;
+    set(b.dataset.s);
+    $$("#ce-scope button").forEach((x) => x.classList.toggle("active", x.dataset.s === get()));
+  });
+}
+
+async function openCellSheet(c) {
+  const i = c.ref.indexOf(":"), kind = c.ref.slice(0, i), id = c.ref.slice(i + 1);
+  if (kind === "plan") return openPlanCell(id, c.month, c.value, c.ref);
+  if (kind === "cat") return id === "none" ? openInfoCell(c, "Média dos lançamentos sem categoria. Categorize os lançamentos para orçar cada um.") : openCatCell(+id, c);
+  if (kind === "debt") return openDebtCell(+id, c);
+  if (kind === "card") return openInfoCell(c, "Parcelas de compras no cartão, calculadas a partir das faturas importadas.");
+  if (kind === "acao") {
+    state.cockpit = await api("GET", "/api/cockpit");
+    const a = state.cockpit.actions.find((x) => x.id === +id);
+    return a ? openActionSheet(a) : null;
+  }
+}
+function openInfoCell(c, text) {
+  openSheet(`<p class="overline">${capFirst(mlong(c.month))}</p><h2>${esc(c.label)}</h2>
+    <p class="hint">${esc(text)}</p><p class="cell-now">${fmt2(c.value)}</p>`);
+}
+
+async function openPlanCell(name, month, value, ref) {
+  const info = await api("GET", `/api/planned/month-info?name=${encodeURIComponent(name)}&month=${month}`);
+  const s = info.series, o = info.occurrence;
+  const fwd = s ? (s.end_month ? `De ${mlabel(month)} até ${mlabel(s.end_month)}` : `De ${mlabel(month)} em diante`) : `Todo mês desde ${mlabel(month)}`;
+  const now = o ? (o.recurrence === "mensal" ? `Previsto todo mês${s && s.end_month ? ` até ${mlabel(s.end_month)}` : ""}: ${fmt2(s ? s.amount : o.amount)}${o.changed ? ` · neste mês ajustado para ${fmt2(o.amount)}` : ""}${o.status === "pulado" ? " · este mês está pulado" : ""}` : "Previsto só neste mês")
+    : "Nada previsto neste mês.";
+  let scope = "mes";
+  openSheet(`<p class="overline">${capFirst(mlong(month))}</p><h2>${esc(name)}</h2>
+    <p class="hint">${esc(now)}</p>
+    ${cellAmountInput(value)}
+    ${info.can_forward ? scopeSeg([["mes", `Só em ${mlabel(month)}`], ["diante", fwd]], scope) : `<p class="hint">Vale só para ${mlabel(month)}.</p>`}
+    <div class="qa-actions"><button class="primary" id="ce-save">Salvar</button><button class="secondary" id="ce-zero">Zerar</button></div>
+    <div class="row occ-links">${o ? '<button class="link" id="ce-more">Mover ou marcar como pago</button>' : ""}${s ? '<button class="link" id="ce-series">Editar previsão</button>' : ""}</div>`);
+  bindScope(() => scope, (v) => { scope = v; });
+  setTimeout(() => $("#ce-amount").select(), 40);
+  const send = async (amount) => {
+    await api("POST", "/api/planned/edit-month", { name, month, amount, scope });
+    closeSheet();
+    const when = scope === "mes" ? `em ${mlabel(month)}` : fwd.charAt(0).toLowerCase() + fwd.slice(1);
+    toast(amount ? `${name}: ${fmt2(amount)} ${when}` : `${name} zerado ${when}`);
+    await afterCellEdit(ref, month);
+  };
+  $("#ce-save").onclick = () => {
+    const v = parseNum($("#ce-amount").value);
+    if (v === undefined || v === null || v < 0) return toast("Informe o valor");
+    send(v);
+  };
+  $("#ce-amount").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#ce-save").click(); } };
+  $("#ce-zero").onclick = () => send(0);
+  $("#ce-more")?.addEventListener("click", () => openOccSheet(o));
+  $("#ce-series")?.addEventListener("click", async () => openPlannedSheet((await api("GET", "/api/planned")).find((p) => p.id === s.id)));
+}
+
+async function openCatCell(cid, c) {
+  const cat = catById(cid);
+  const budgets = await api("GET", "/api/budgets");
+  const monthB = budgets.find((b) => b.category_id === cid && b.month === c.month);
+  const defB = budgets.find((b) => b.category_id === cid && !b.month);
+  let scope = "mes"; // tocou num mês: começa mudando só ele
+  const now = monthB ? `Orçamento só de ${mlabel(c.month)}: ${fmt2(monthB.amount)}` : defB ? `Orçamento de todo mês: ${fmt2(defB.amount)}`
+    : `Sem orçamento: usa a média dos últimos meses (${fmt2(c.value)})`;
+  openSheet(`<p class="overline">${capFirst(mlong(c.month))} · ${cat && cat.type === "receita" ? "receita" : "gastos"}</p><h2>${esc(c.label)}</h2>
+    <p class="hint">${esc(now)}</p>
+    ${cellAmountInput(c.value)}
+    ${scopeSeg([["mes", `Só em ${mlabel(c.month)}`], ["padrao", "Todo mês"]], scope)}
+    <div class="qa-actions"><button class="primary" id="ce-save">Salvar</button>
+      ${monthB || defB ? `<button class="secondary" id="ce-avg">${monthB ? `Tirar o ajuste de ${mlabel(c.month)}` : "Voltar à média"}</button>` : ""}</div>`);
+  bindScope(() => scope, (v) => { scope = v; });
+  setTimeout(() => $("#ce-amount").select(), 40);
+  const put = async (amount, sc) => {
+    await api("PUT", "/api/budgets", [{ category_id: cid, month: sc === "mes" ? c.month : null, amount }]);
+    closeSheet();
+    await afterCellEdit(c.ref || `cat:${cid}`, c.month);
+  };
+  $("#ce-save").onclick = async () => {
+    const v = parseNum($("#ce-amount").value);
+    if (v === undefined || v === null || v < 0) return toast("Informe o valor");
+    await put(v, scope);
+    toast(`${c.label}: ${fmt2(v)} ${scope === "mes" ? `em ${mlabel(c.month)}` : "todo mês"}`);
+  };
+  $("#ce-amount").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#ce-save").click(); } };
+  $("#ce-avg")?.addEventListener("click", async () => { await put(null, monthB ? "mes" : "padrao"); toast("Ajuste removido"); });
+}
+
+async function openDebtCell(did, c) {
+  const info = await api("GET", `/api/cockpit/payoffs/${did}`);
+  const here = info.active && info.month === c.month;
+  openSheet(`<p class="overline">${capFirst(mlong(c.month))}</p><h2>${esc(info.name)}</h2>
+    <p class="hint">${here ? `Quitação neste mês: ${fmt2(c.value)}. Depois disso, as parcelas somem.`
+      : `Parcela de ${fmt2(info.installment)}, do contrato (muda em Dívidas).${info.active ? ` A quitação está marcada para ${mlabel(info.month)}.` : ""}`}</p>
+    <div class="qa-actions">${here ? '<button class="secondary" id="ce-unpay">Desfazer quitação</button>'
+      : `<button class="primary" id="ce-pay">Quitar em ${mlabel(c.month)}</button>`}</div>
+    <p class="hint">A quitação paga a parcela do mês e o valor presente das seguintes (juros do contrato). Fica no Cockpit, onde dá para desligar.</p>`);
+  const put = async (active) => {
+    await api("PUT", `/api/cockpit/payoffs/${did}`, { active, month: c.month });
+    closeSheet();
+    toast(active ? `${info.name}: quitação em ${mlabel(c.month)}` : "Quitação desfeita");
+    await afterCellEdit(`debt:${did}`, c.month);
+  };
+  $("#ce-pay")?.addEventListener("click", () => put(true));
+  $("#ce-unpay")?.addEventListener("click", () => put(false));
+}
 $("#tb-horizon").addEventListener("click", (e) => {
   const b = e.target.closest("[data-h]");
   if (!b) return;
