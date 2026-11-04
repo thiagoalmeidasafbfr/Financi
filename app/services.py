@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from . import cockpit
 from . import finance as fin
 from . import planned as planned_mod
-from .models import Account, Budget, Category, Debt, Grouping, Transaction
+from .models import Account, Action, Budget, Category, Debt, Grouping, Transaction
 
 LIQUID = ("corrente", "poupanca", "dinheiro")
 
@@ -174,7 +174,14 @@ def debt_overview(db: Session, d: Debt, today: date) -> dict:
         "end_month": st.end_month.isoformat() if st.end_month else None,
         "next_due": st.next_due.isoformat() if st.next_due else None, "last_payment": last_payment,
         "notes": d.notes, "active": d.active, "match_pattern": d.match_pattern, "informed_balance": d.balance,
+        "payoff_month": _payoff_month(db, d.id),
     }
+
+
+def _payoff_month(db: Session, debt_id: int) -> str | None:
+    """Mês da quitação ligada no Cockpit (para mostrar e ligar as telas)."""
+    a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == debt_id, Action.active.is_(True)))
+    return a.month.isoformat() if a and a.month else None
 
 
 def avg_income(db: Session, accounts: list[Account], today: date, months_back: int = 3) -> float:

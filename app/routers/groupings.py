@@ -8,7 +8,7 @@ from ..db import get_session
 from ..models import Grouping, GroupingMember
 
 router = APIRouter(prefix="/api/groupings", tags=["agrupamentos"])
-REF_PREFIXES = ("plan:", "cat:", "debt:", "card:")
+REF_PREFIXES = ("plan:", "cat:", "debt:", "card:", "acao:")  # acao: linha de uma ação do cockpit
 
 
 def _out(g: Grouping) -> dict:

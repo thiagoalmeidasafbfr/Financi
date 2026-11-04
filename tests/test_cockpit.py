@@ -105,3 +105,13 @@ def test_payoff_value_before_and_after_due_day():
     assert cockpit.payoff_value(d, date(2026, 3, 1), date(2026, 3, 2)) == 800   # parcela de março ainda não saiu
     assert cockpit.payoff_value(d, date(2026, 3, 1), date(2026, 3, 10)) == 700  # já saiu: só as seguintes
     assert cockpit.payoff_value(d, date(2027, 1, 1), date(2026, 3, 10)) == 0    # depois do fim
+
+
+def test_grouping_with_cockpit_row(salary):
+    """Agrupamento pode incluir a linha de uma ação do cockpit (antes dava "Linha inválida: acao:1")."""
+    c = salary
+    aid = c.post("/api/cockpit/actions", json={**FERIAS, "active": True}).json()["id"]
+    r = c.post("/api/groupings", json={"name": "Folha", "refs": ["plan:Salário", f"acao:{aid}"]})
+    assert r.status_code in (200, 201), r.text
+    g = c.get("/api/projection", params={"months": 4, "detail": True}).json()["table"]["groupings"][0]
+    assert g["values"][0] == pytest.approx(8000 + 8000 + 2666.67)  # salário + as duas entradas da ação em ym(1)

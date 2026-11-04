@@ -251,9 +251,9 @@ async function renderInicio() {
   $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> em ${MESES_LONGOS[+d.month.slice(5, 7) - 1]}`;
   // faixa de saldos: investido, faturas abertas e o que sobra depois de pagar as faturas
   const livre = d.saldo_contas - DT.faturas_abertas;
-  $("#h-stats").innerHTML = [["Investido", fmt(d.investido)], ["Faturas abertas", fmt(DT.faturas_abertas)],
-    ["Livre após faturas", `${livre < 0 ? "−" : ""}${fmt(Math.abs(livre))}`]]
-    .map(([l, v]) => `<div class="hero-stat"><span>${l}</span><b class="money">${v}</b></div>`).join("");
+  $("#h-stats").innerHTML = [["Investido", fmt(d.investido), "ajustes"], ["Faturas abertas", fmt(DT.faturas_abertas), "dividas"],
+    ["Livre após faturas", `${livre < 0 ? "−" : ""}${fmt(Math.abs(livre))}`, "dividas"]]
+    .map(([l, v, go]) => `<button class="hero-stat" data-goto="${go}"><span>${l}</span><b class="money">${v}</b></button>`).join("");
 
   // big numbers (cada um leva à sua tela)
   const P = d.previstos_mes || { receitas: 0, despesas: 0 };
@@ -287,7 +287,8 @@ async function renderInicio() {
   }
 
   // próximos vencimentos (previstos dos próximos 30 dias)
-  $("#home-next").innerHTML = (d.proximos || []).map((o) => `<div class="az-insight">${well(esc(initials(o.name)))}
+  state.homeOcc = {};
+  $("#home-next").innerHTML = (d.proximos || []).map((o) => `<div class="az-insight is-link" data-open="occ:${(state.homeOcc[occKey(o)] = o, occKey(o))}">${well(esc(initials(o.name)))}
     <div class="az-insight__text"><div class="az-insight__title">${esc(o.name)}</div><div class="az-insight__desc">vence ${dlabel(o.due)}</div></div>
     <div class="tx-right"><span class="amount ${o.kind === "receita" ? "in" : ""}">${money(o.kind === "receita" ? o.amount : -o.amount, { plus: true })}</span></div></div>`).join("")
     || '<p class="hint" style="margin:0">Nada vencendo nos próximos 30 dias. Cadastre contas e receitas em Planejamento → Previstos.</p>';
@@ -333,7 +334,7 @@ async function renderInicio() {
 
   const liquid = d.accounts.filter((a) => a.kind !== "cartao");
   const total = liquid.reduce((sum, a) => sum + Math.max(0, a.balance), 0);
-  $("#home-accounts").innerHTML = liquid.map((a) => `<div class="az-insight">${well(esc(initials(a.name)))}
+  $("#home-accounts").innerHTML = liquid.map((a) => `<div class="az-insight is-link" data-open="txacc:${a.id}">${well(esc(initials(a.name)))}
     <div class="az-insight__text"><div class="az-insight__title">${esc(a.name)}</div><div class="az-insight__desc">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}</div></div>
     <div class="tx-right"><span class="amount">${money(a.balance)}</span><span class="tx-date share">${total > 0 && a.balance > 0 ? pct(a.balance / total) : ""}</span></div></div>`).join("")
     || '<p class="hint" style="margin:0">Nenhuma conta ainda. Envie o extrato OFX da conta em Importações para ver os saldos reais.</p>';
@@ -352,6 +353,7 @@ async function renderInicio() {
   applyHidden();
 
   const recent = await api("GET", withPerson("/api/transactions?limit=5"));
+  state.homeRecent = recent;
   $("#home-recent").innerHTML = recent.map((t) => txRow(t)).join("") || '<p class="hint">Nenhum lançamento ainda.</p>';
 
   $("#home-groups").innerHTML = d.groups.length ? d.groups.map((g) => {
@@ -359,7 +361,7 @@ async function renderInicio() {
     const withData = g.values.filter((v) => v > 0);
     const avg = withData.length ? withData.reduce((a, b) => a + b, 0) / withData.length : 0;
     const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(6, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
-    return `<div class="az-insight cat-row">${well(esc(initials(g.group)))}<div class="az-insight__text"><div class="az-insight__title">${esc(g.group)}</div>
+    return `<div class="az-insight cat-row is-link" data-goto-plan="mes">${well(esc(initials(g.group)))}<div class="az-insight__text"><div class="az-insight__title">${esc(g.group)}</div>
       <div class="az-insight__desc">média ${fmt(avg)}/mês</div></div><div class="spark">${bars}</div>
       <div class="tx-right"><span class="amount">${money(cur)}</span></div></div>`;
   }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
@@ -369,6 +371,8 @@ document.addEventListener("click", (e) => {
   const go = e.target.closest("#home-insights [data-go]");
   const recent = e.target.closest("#home-recent .tx-row");
   if (recent) {
+    const t = (state.homeRecent || []).find((x) => x.id === +recent.dataset.id);
+    if (t) return openTxSheet(t);
     state.tx.status = "";
     goTab("lancamentos");
     return;
@@ -479,13 +483,13 @@ function openTxSheet(t) {
     const r = await api("PATCH", `/api/transactions/${t.id}`, body);
     closeSheet();
     toast(r.similar_updated ? `Salvo e ${r.similar_updated} parecido(s) corrigido(s)` : "Salvo");
-    await renderLancamentos();
+    await refresh();
   };
   $("#sh-del").onclick = async () => {
     if (!confirm("Excluir este lançamento?")) return;
     await api("DELETE", `/api/transactions/${t.id}`);
     closeSheet();
-    await renderLancamentos();
+    await refresh();
   };
 }
 
@@ -871,7 +875,7 @@ async function renderMes() {
     `<div class="pm-leg"><span class="dot seg-sobra"></span><span class="pm-leg__l">${p.sobra >= 0 ? "Sobra" : "Falta"}</span><span class="pm-leg__a"></span><b>${fmt(Math.abs(p.sobra))}</b></div>`;
   // agrupamentos: só informativos, numa linha à parte (não entram na conta)
   $("#pm-info").hidden = !p.groupings.length;
-  $("#pm-info").innerHTML = p.groupings.map((g) => `<div class="pm-info-row"><span>${esc(g.name)} <span class="tb-tag">informativo</span></span>
+  $("#pm-info").innerHTML = p.groupings.map((g) => `<div class="pm-info-row is-link" data-open="grouping:${g.id}"><span>${esc(g.name)} <span class="tb-tag">informativo</span></span>
     <b>${money(g.value)}</b></div>`).join("");
 
   // em atraso (meses anteriores; os do próprio mês aparecem nas seções)
@@ -925,9 +929,15 @@ function planRow(k, r) {
   }
   if (r.type === "divida" || r.type === "cartao") {
     const desc = r.type === "divida" ? `${r.installment_n && r.installment_total ? `parcela ${r.installment_n} de ${r.installment_total}` : "parcela"}${r.due ? ` · dia ${r.due.slice(8, 10)}` : ""}` : "parcelas de compras";
-    return `<div class="az-insight pm-debt" data-goto="dividas">${well(r.type === "cartao" ? ICON.card : esc(initials(r.name)))}
+    return `<div class="az-insight pm-debt is-link" data-open="${r.type === "cartao" ? `account:${r.account_id}` : `debt:${r.debt_id}`}">${well(r.type === "cartao" ? ICON.card : esc(initials(r.name)))}
       <div class="az-insight__text"><div class="az-insight__title">${esc(r.name)}</div><div class="az-insight__desc">${desc}</div></div>
       <div class="tx-right"><span class="amount">${money(-r.amount)}</span></div></div>`;
+  }
+  if (r.type === "acao") {
+    const value = r.kind === "receita" ? r.amount : -r.amount;
+    return `<div class="az-insight is-link" data-open="action:${r.action_id}">${well(ICON.chart)}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(r.name)}</div><div class="az-insight__desc">Cockpit · ${esc(r.action)}</div></div>
+      <div class="tx-right"><span class="amount ${r.kind === "receita" ? "in" : ""}">${money(value, { plus: true })}</span></div></div>`;
   }
   // orçamento (gasto variável ou entrada orçada)
   const over = r.amount && r.actual > r.amount;
@@ -1072,7 +1082,7 @@ function openOccSheet(o) {
     await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, ...body });
     closeSheet();
     if (msg) toast(msg);
-    await renderPlanejamento();
+    await refresh();
   };
   $("#oc-save").onclick = async () => {
     const body = {};
@@ -1136,13 +1146,13 @@ function openPlannedSheet(p, preset = {}) {
     await api(p ? "PUT" : "POST", p ? `/api/planned/${p.id}` : "/api/planned", body);
     closeSheet();
     toast(p ? "Previsto atualizado" : "Previsto criado");
-    await renderPlanejamento();
+    await refresh();
   };
   if (p) $("#pp-del").onclick = async () => {
     if (!confirm(`Excluir "${p.name}" e todos os meses dele?`)) return;
     await api("DELETE", `/api/planned/${p.id}`);
     closeSheet();
-    await renderPlanejamento();
+    await refresh();
   };
 }
 
@@ -1201,7 +1211,7 @@ async function renderCockpit() {
 
   $("#ck-payoffs").innerHTML = ck.payoffs.length ? ck.payoffs.map((d) => `<div class="ck-row ${d.active ? "" : "off"}">
       ${switchHtml(`data-ck-pay="${d.debt_id}"`, d.active, `Quitar ${d.name}`)}
-      <div class="ck-row__main"><span class="ck-row__title">${esc(d.name)}</span>
+      <div class="ck-row__main"><button class="ck-row__title link-title" data-open="debt:${d.debt_id}">${esc(d.name)}</button>
         <span class="ck-row__desc">${fmt2(d.installment)}/mês · ${d.installments_left} ${d.installments_left === 1 ? "parcela" : "parcelas"} até ${mlabel(d.end_month)}</span>
         <span class="ck-row__desc">Quitação ${fmt2(d.payoff)}${d.interest_saved > 0.5 ? ` · economiza ${fmt(d.interest_saved)} de juros` : ""}</span>
         <label class="ck-pay__month">Quitar em <input type="month" data-ck-paymonth="${d.debt_id}" value="${d.month.slice(0, 7)}"></label></div>
@@ -1338,13 +1348,13 @@ function openActionSheet(a, preset) {
     await api(a ? "PUT" : "POST", a ? `/api/cockpit/actions/${a.id}` : "/api/cockpit/actions", body);
     closeSheet();
     toast(a ? "Ação atualizada" : "Ação criada. Ligue para ver no fluxo.");
-    renderPlanejamento();
+    refresh();
   };
   if (a) $("#ak-del").onclick = async () => {
     if (!confirm(`Excluir a ação "${a.name}"?`)) return;
     await api("DELETE", `/api/cockpit/actions/${a.id}`);
     closeSheet();
-    renderPlanejamento();
+    refresh();
   };
 }
 
@@ -1384,7 +1394,7 @@ async function renderFluxo() {
     for (const g of s.groups) {
       if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g.now, g.values)}</tr>`;
       // linhas editáveis: tocar num valor muda aquele mês (ou dali em diante)
-      for (const r of g.rows) body += `<tr><td class="lbl ${showGroups ? "sub" : ""}" title="${esc(r.label)}">${esc(r.label)}</td><td class="now">${num(r.now)}</td>` +
+      for (const r of g.rows) body += `<tr><td class="lbl lnk ${showGroups ? "sub" : ""}" title="${esc(r.label)}" data-row-open="${esc(r.ref)}">${esc(r.label)}</td><td class="now ${r.now ? "lnk" : ""}" data-now="1">${num(r.now)}</td>` +
         r.values.map((v, i) => `<td class="ed ${r.sources[i] === "média" ? "avg" : ""}" data-ref="${esc(r.ref)}" data-m="${t.months[i]}" data-label="${esc(r.label)}" data-v="${v}" data-src="${r.sources[i]}">${num(v)}</td>`).join("") + "</tr>";
     }
   }
@@ -1408,11 +1418,90 @@ $("#tb-table").addEventListener("click", (e) => {
     state.plan.view = "mes";
     return renderPlanejamento();
   }
+  const lbl = e.target.closest("td[data-row-open]");
+  if (lbl) return openRowRef(lbl.dataset.rowOpen, state.table.months[0]);
+  if (e.target.closest("td[data-now]")) {
+    state.plan.month = thisMonth();
+    state.plan.view = "mes";
+    return renderPlanejamento();
+  }
   const td = e.target.closest("td[data-ref]");
   if (td) return openCellSheet({ ref: td.dataset.ref, month: td.dataset.m, label: td.dataset.label, value: +td.dataset.v, source: td.dataset.src });
   const row = e.target.closest("[data-grouping]");
   if (row) openGroupingEditor((state.table.groupings || []).find((g) => g.id === +row.dataset.grouping));
 });
+
+// ------------------------------------------------------------------ referências cruzadas
+// data-open="tipo:id" em qualquer elemento abre o item: previsto, dívida, quitação, conta, ação, agrupamento, extrato da conta.
+async function openRef(ref) {
+  const i = ref.indexOf(":"), kind = ref.slice(0, i), id = ref.slice(i + 1);
+  if (kind === "occ") return openOccSheet((state.homeOcc || {})[id] || state.occ[id]);
+  if (kind === "debt") {
+    const d = (await api("GET", "/api/debts/overview")).debts.find((x) => x.id === +id);
+    return d ? openDebtSheet(d) : toast("Dívida não encontrada");
+  }
+  if (kind === "payoff") return openPayoffSheet(+id);
+  if (kind === "account") return openAccountSheet(accById(+id));
+  if (kind === "txacc") { state.tx.account = id; state.tx.status = ""; return goTab("lancamentos"); }
+  if (kind === "action") {
+    state.cockpit = await api("GET", "/api/cockpit");
+    const a = state.cockpit.actions.find((x) => x.id === +id);
+    return a ? openActionSheet(a) : toast("Ação não encontrada");
+  }
+  if (kind === "grouping") {
+    if (!state.table) state.table = (await api("GET", withPerson("/api/projection?months=12&detail=true"))).table;
+    return openGroupingEditor((state.table.groupings || []).find((g) => g.id === +id));
+  }
+  if (kind === "planned") return openPlannedSheet((await api("GET", "/api/planned")).find((p) => p.id === +id));
+}
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-open]");
+  if (!el || e.target.closest("input, select, .switch")) return;
+  e.preventDefault();
+  openRef(el.dataset.open);
+});
+// linha da tabela (pelo nome): abre o previsto, a dívida, a conta, a ação; categoria abre o orçamento do 1º mês
+async function openRowRef(ref, month) {
+  const i = ref.indexOf(":"), kind = ref.slice(0, i), id = ref.slice(i + 1);
+  if (kind === "plan") {
+    const info = await api("GET", `/api/planned/month-info?name=${encodeURIComponent(id)}&month=${month}`);
+    const all = await api("GET", "/api/planned");
+    const same = all.filter((p) => p.name.toLowerCase() === id.toLowerCase());
+    const p = (info.series && all.find((x) => x.id === info.series.id)) || same.find((x) => x.start_month >= month) || same[same.length - 1];
+    return p ? openPlannedSheet(p) : null;
+  }
+  if (kind === "cat") {
+    if (id === "none") return null;
+    const td = $(`#tb-table td[data-ref="${CSS.escape(ref)}"][data-m="${month}"]`);
+    return openCatCell(+id, { ref, month, label: catById(+id)?.name || "", value: td ? +td.dataset.v : 0 });
+  }
+  if (kind === "debt") return openRef(`debt:${id}`);
+  if (kind === "card") return openRef(`account:${id}`);
+  if (kind === "acao") return openRef(`action:${id}`);
+}
+// quitação de uma dívida em qualquer mês, com o custo e os juros economizados (liga a ação do cockpit)
+async function openPayoffSheet(did, month) {
+  const info = await api("GET", `/api/cockpit/payoffs/${did}${month ? `?month=${month}` : ""}`);
+  const m = info.preview_month;
+  const on = info.active && info.month === m;
+  openSheet(`<p class="overline">Quitar dívida</p><h2>${esc(info.name)}</h2>
+    <label class="field">Quitar em<input type="month" id="po-month" value="${m.slice(0, 7)}"></label>
+    <div class="tiles">${tile("Para quitar", fmt2(info.payoff))}${tile("Juros economizados", fmt(info.interest_saved))}${tile("Parcelas evitadas", info.installments_left)}</div>
+    <p class="hint">Paga a parcela do mês e o valor presente das seguintes, com os juros do contrato; as parcelas depois somem do fluxo.
+      ${info.active && !on ? `Hoje a quitação está marcada para ${mlabel(info.month)}.` : ""}</p>
+    <div class="qa-actions">${on ? '<button class="secondary" id="po-off">Desfazer quitação</button>' : `<button class="primary" id="po-on">Quitar em ${mlabel(m)}</button>`}</div>
+    <div class="row occ-links"><button class="link" data-open="debt:${did}">Editar dívida</button><button class="link" id="po-ck">Ver no Cockpit</button></div>`);
+  $("#po-month").onchange = (e) => { if (e.target.value) openPayoffSheet(did, e.target.value + "-01"); };
+  const put = async (active) => {
+    await api("PUT", `/api/cockpit/payoffs/${did}`, { active, month: m });
+    closeSheet();
+    toast(active ? `${info.name}: quitação em ${mlabel(m)}` : "Quitação desfeita");
+    await refresh();
+  };
+  $("#po-on")?.addEventListener("click", () => put(true));
+  $("#po-off")?.addEventListener("click", () => put(false));
+  $("#po-ck").onclick = () => { closeSheet(); state.plan.view = "cockpit"; goTab("planejamento"); };
+}
 
 // ------------------------------------------------------------------ editar pela tabela: toque num valor
 // Previsto: só neste mês ou deste mês em diante (até o fim da previsão). Categoria: orçamento do mês ou de todo mês.
@@ -1527,7 +1616,8 @@ async function openDebtCell(did, c) {
       : `Parcela de ${fmt2(info.installment)}, do contrato (muda em Dívidas).${info.active ? ` A quitação está marcada para ${mlabel(info.month)}.` : ""}`}</p>
     <div class="qa-actions">${here ? '<button class="secondary" id="ce-unpay">Desfazer quitação</button>'
       : `<button class="primary" id="ce-pay">Quitar em ${mlabel(c.month)}</button>`}</div>
-    <p class="hint">A quitação paga a parcela do mês e o valor presente das seguintes (juros do contrato). Fica no Cockpit, onde dá para desligar.</p>`);
+    <p class="hint">A quitação paga a parcela do mês e o valor presente das seguintes (juros do contrato). Fica no Cockpit, onde dá para desligar.</p>
+    <div class="row occ-links"><button class="link" data-open="debt:${did}">Editar dívida</button></div>`);
   const put = async (active) => {
     await api("PUT", `/api/cockpit/payoffs/${did}`, { active, month: c.month });
     closeSheet();
@@ -1583,13 +1673,13 @@ function openGroupingEditor(g) {
     await api(g ? "PUT" : "POST", g ? `/api/groupings/${g.id}` : "/api/groupings", { name, refs });
     closeSheet();
     toast(g ? "Agrupamento atualizado" : "Agrupamento criado");
-    await renderFluxo();
+    await refresh();
   };
   if (g) $("#gp-del").onclick = async () => {
     if (!confirm(`Excluir o agrupamento "${g.name}"?`)) return;
     await api("DELETE", `/api/groupings/${g.id}`);
     closeSheet();
-    await renderFluxo();
+    await refresh();
   };
 }
 
@@ -1630,6 +1720,8 @@ async function renderDividas() {
   $("#debt-list").innerHTML = d.debts.length ? d.debts.map((x) => {
     const prog = x.total_installments ? x.paid / x.total_installments : null;
     return `<div class="card debt"><div class="card-head"><h3>${esc(x.name)}</h3><button class="link" data-debt="${x.id}">Editar</button></div>
+      <div class="debt-links">${x.remaining > 0 ? `<button class="chip-link" data-open="payoff:${x.id}">${x.payoff_month ? `Quitação em ${mlabel(x.payoff_month)}` : "Quitar…"}</button>` : ""}
+        <button class="chip-link" data-goto-plan="fluxo">Ver no fluxo</button></div>
       <p class="hint" style="margin:0 0 8px">${DEBT_LABEL[x.kind]}${x.creditor ? ` · ${esc(x.creditor)}` : ""} · ${esc(personName(x.owner_id))}</p>
       <div class="amount-row"><span class="big">${money(x.balance)}</span><span class="muted">saldo devedor${x.total_installments ? " (valor para quitar hoje)" : ""}</span></div>
       ${prog != null ? `<div class="meter"><i style="width:${prog * 100}%"></i></div>
@@ -1669,7 +1761,9 @@ function openDebtSheet(x) {
     </div>
     <p class="hint">Com parcela, 1ª parcela e número de parcelas o app calcula quantas foram pagas, o saldo devedor e o valor para quitar
       hoje. “Texto no extrato” localiza o último pagamento nos lançamentos.</p>
-    <div class="row"><button class="primary" id="dv-save">Salvar</button>${x ? '<button class="danger" id="dv-del">Excluir</button>' : ""}</div>`);
+    <div class="row"><button class="primary" id="dv-save">Salvar</button>${x ? '<button class="danger" id="dv-del">Excluir</button>' : ""}</div>
+    ${x ? `<div class="row occ-links"><button class="link" data-open="payoff:${x.id}">${x.payoff_month ? `Quitação em ${mlabel(x.payoff_month)}` : "Simular quitação"}</button>
+      <button class="link" data-goto-plan="fluxo">Ver no fluxo</button></div>` : ""}`);
   $("#dv-save").onclick = async () => {
     const rate = parseNum(sheetVal("dv-rate"));
     const body = {
@@ -1683,13 +1777,13 @@ function openDebtSheet(x) {
     await api(x ? "PUT" : "POST", x ? `/api/debts/${x.id}` : "/api/debts", body);
     closeSheet();
     toast("Dívida salva");
-    await renderDividas();
+    await refresh();
   };
   if (x) $("#dv-del").onclick = async () => {
     if (!confirm("Excluir esta dívida?")) return;
     await api("DELETE", `/api/debts/${x.id}`);
     closeSheet();
-    await renderDividas();
+    await refresh();
   };
 }
 

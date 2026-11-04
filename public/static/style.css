@@ -1040,3 +1040,21 @@ button.ck-row__main:hover { background: none; }
 .pm-acc__row b { font-size: 18px; line-height: 24px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pm-acc__row b.short { color: var(--ink); }
 .pm-acc__sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-muted); }
+
+/* ---------------------------------------------------------------- referências cruzadas: tudo que abre algo tem cara de toque */
+button.hero-stat { height: auto; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; text-align: left;
+  align-items: flex-start; justify-content: flex-start; font-weight: 400; cursor: pointer; }
+button.hero-stat + .hero-stat { padding-left: var(--space-4); }
+button.hero-stat:hover { background: none; }
+.is-link { cursor: pointer; }
+.list .az-insight.is-link:hover, .az-insight.is-link:hover { background: var(--surface-tint); border-radius: 12px; }
+.pm-info-row.is-link:hover b { text-decoration: underline; }
+.flow-table td.lnk { cursor: pointer; }
+.flow-table td.lbl.lnk:hover { color: var(--link); text-decoration: underline; text-underline-offset: 3px; }
+.flow-table td.now.lnk:hover { background: var(--surface-tint); }
+.debt-links { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: calc(-1 * var(--space-2)) 0 var(--space-3); }
+.chip-link { height: 28px; padding: 0 var(--space-3); border-radius: 999px; border: 1px solid var(--btn-line); background: transparent;
+  color: var(--link); font-size: 12px; font-weight: 500; }
+.chip-link:hover { background: var(--surface-tint); }
+.link-title { padding: 0; height: auto; border: 0; background: none; color: inherit; text-align: left; font: inherit; font-weight: 500; cursor: pointer; }
+.link-title:hover { color: var(--link); background: none; }

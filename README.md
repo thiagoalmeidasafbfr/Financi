@@ -19,6 +19,12 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   categorias mais usadas em um toque e **quando**: *Já paguei / Já recebi* vira lançamento (hoje, ontem ou outra
   data, na conta usada da última vez); *Vou pagar / Vou receber* vira previsto (uma vez ou todo mês). Dá para salvar
   e adicionar outra em seguida, e o aviso traz **Desfazer**. Lançamentos à mão sem categoria passam pelas regras.
+- **Tudo abre o que mostra** (referências cruzadas): no Início, próximos vencimentos abrem o previsto, contas abrem o
+  extrato da conta, a faixa de saldos leva às dívidas, os últimos lançamentos abrem o lançamento; no Mês, parcelas
+  abrem a dívida, linhas do Cockpit abrem a ação e agrupamentos abrem o agrupamento; no Fluxo, o nome da linha abre o
+  previsto/categoria/dívida/ação e a coluna "Agora" abre o mês atual; em Dívidas e no Cockpit, cada dívida tem
+  **Quitar…** (escolhe o mês, mostra o custo e os juros economizados) e **Ver no fluxo**. Salvar em qualquer folha
+  atualiza a tela em que você está.
 - **Saldo acumulado no Mês**: o resumo da visão Mês mostra o saldo acumulado no fim do mês (o mesmo da linha
   "Saldo acumulado" do Fluxo, com as ações ligadas do Cockpit) e com quanto o mês começa; nos meses passados, o
   saldo realizado das contas.
