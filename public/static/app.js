@@ -1380,7 +1380,7 @@ async function renderFluxo() {
   const acc = t.totais.acumulado.values;
   const low = acc.reduce((a, v, i) => (v < a.v ? { v, i } : a), { v: Infinity, i: -1 });
   $("#fx-end").innerHTML = acc.length ? `${money(acc[acc.length - 1])} <small>em ${mlabel(t.months[t.months.length - 1])}</small>` : "";
-  $("#tb-hint").innerHTML = `Começa com ${fmt(t.saldo_inicial)} (contas menos faturas)${low.i >= 0 ? ` · menor saldo ${fmt(low.v)} em ${mlabel(t.months[low.i])}` : ""}.`;
+  $("#tb-hint").innerHTML = `Começa com ${fmt(t.saldo_inicial)} (contas menos faturas)${p.atrasos ? ` · ${fmt(p.atrasos)} em atraso` : ""}${low.i >= 0 ? ` · menor saldo ${fmt(low.v)} em ${mlabel(t.months[low.i])}` : ""}.`;
   chart("chart-fluxo").setOption({
     ...baseOption(), grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true }, legend: { show: false },
     xAxis: { ...baseOption().xAxis, data: t.months.map(mlabel) },
@@ -1390,32 +1390,36 @@ async function renderFluxo() {
   }, true);
   chart("chart-fluxo").resize();
 
-  const cells = (now, values, cls = "", sources) => `<td class="now ${cls}">${num(now)}</td>` +
-    values.map((v, i) => `<td class="${cls} ${sources && sources[i] === "média" ? "avg" : ""}">${num(v)}</td>`).join("");
-  const signed = (now, values) => `<td class="now">${snum(now)}</td>` + values.map((v) => `<td>${snum(v)}</td>`).join("");
+  // antes dos meses projetados: "Em atraso" (venceu e não foi pago) e o mês atual (o que ainda vence nele)
+  const pre = (x, f = num) => `<td class="late">${f(x.late || 0)}</td><td class="now">${f(x.now || 0)}</td>`;
+  const cells = (x, cls = "", sources) => pre(x) +
+    x.values.map((v, i) => `<td class="${cls} ${sources && sources[i] === "média" ? "avg" : ""}">${num(v)}</td>`).join("");
+  const signed = (x) => pre(x, snum) + x.values.map((v) => `<td>${snum(v)}</td>`).join("");
   let body = "";
   for (const s of t.sections) {
     if (!s.groups.length) continue;
-    body += `<tr class="sec"><td class="lbl">${SECTION_TITLE[s.key]}</td>${cells(s.now, s.values)}</tr>`;
+    body += `<tr class="sec"><td class="lbl">${SECTION_TITLE[s.key]}</td>${cells(s)}</tr>`;
     const showGroups = s.groups.length > 1;
     for (const g of s.groups) {
-      if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g.now, g.values)}</tr>`;
+      if (showGroups) body += `<tr class="grp"><td class="lbl">${esc(g.group)}</td>${cells(g)}</tr>`;
       // linhas editáveis: tocar num valor muda aquele mês (ou dali em diante)
-      for (const r of g.rows) body += `<tr><td class="lbl lnk ${showGroups ? "sub" : ""}" title="${esc(r.label)}" data-row-open="${esc(r.ref)}">${esc(r.label)}</td><td class="now ${r.now ? "lnk" : ""}" data-now="1">${num(r.now)}</td>` +
+      for (const r of g.rows) body += `<tr><td class="lbl lnk ${showGroups ? "sub" : ""}" title="${esc(r.label)}" data-row-open="${esc(r.ref)}">${esc(r.label)}</td><td class="late ${r.late ? "lnk" : ""}" data-now="1">${num(r.late)}</td><td class="now ${r.now ? "lnk" : ""}" data-now="1">${num(r.now)}</td>` +
         r.values.map((v, i) => `<td class="ed ${r.sources[i] === "média" ? "avg" : ""}" data-ref="${esc(r.ref)}" data-m="${t.months[i]}" data-label="${esc(r.label)}" data-v="${v}" data-src="${r.sources[i]}">${num(v)}</td>`).join("") + "</tr>";
     }
   }
   const T = t.totais;
-  body += `<tr class="total first"><td class="lbl">Total de entradas</td>${cells(T.entradas.now, T.entradas.values)}</tr>
-    <tr class="total"><td class="lbl">Total de saídas</td>${cells(T.saidas.now, T.saidas.values)}</tr>
-    <tr class="total"><td class="lbl">Saldo do mês</td>${signed(T.saldo_mes.now, T.saldo_mes.values)}</tr>
-    <tr class="acc"><td class="lbl">Saldo acumulado</td>${signed(T.acumulado.now, T.acumulado.values)}</tr>`;
+  body += `<tr class="total first"><td class="lbl">Total de entradas</td>${cells(T.entradas)}</tr>
+    <tr class="total"><td class="lbl">Total de saídas</td>${cells(T.saidas)}</tr>
+    <tr class="total"><td class="lbl">Saldo do mês</td>${signed(T.saldo_mes)}</tr>
+    <tr class="acc"><td class="lbl">Saldo acumulado</td>${signed(T.acumulado)}</tr>`;
   // agrupamentos: linhas informativas, à parte da modelagem (não somam em nada)
   if ((t.groupings || []).length) {
-    body += `<tr class="info-sep"><td class="lbl">Informativo</td><td colspan="${t.months.length + 1}"></td></tr>` +
-      t.groupings.map((g) => `<tr class="info" data-grouping="${g.id}"><td class="lbl" title="${esc(g.name)}">${esc(g.name)}</td>${signed(g.now, g.values)}</tr>`).join("");
+    body += `<tr class="info-sep"><td class="lbl">Informativo</td><td colspan="${t.months.length + 2}"></td></tr>` +
+      t.groupings.map((g) => `<tr class="info" data-grouping="${g.id}"><td class="lbl" title="${esc(g.name)}">${esc(g.name)}</td>${signed(g)}</tr>`).join("");
   }
-  $("#tb-table").innerHTML = `<thead><tr><th class="lbl">R$</th><th class="now" title="Atrasos e o que ainda vence neste mês">Agora</th>
+  const cur = t.current_month || thisMonth();
+  $("#tb-table").innerHTML = `<thead><tr><th class="lbl">R$</th><th class="late" title="Venceu e não foi pago (deste mês ou de antes)">Em atraso</th>
+    <th class="now"><button class="th-month" data-open-month="${cur}" title="O que ainda vence em ${mlong(cur)}">${mlabel(cur)}</button></th>
     ${t.months.map((m) => `<th><button class="th-month" data-open-month="${m}">${mlabel(m)}</button></th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
 }
 $("#tb-table").addEventListener("click", (e) => {

@@ -54,7 +54,8 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
     em atraso com "Pago", e gastos variáveis por categoria com barra de consumo (toque para mudar o orçamento,
     todo mês ou só naquele mês; sugestão pela média dos extratos).
   - **Fluxo**: linha do saldo projetado e a tabela no formato de planilha (uma linha por previsto, categoria
-    orçada, dívida e parcelas de cartão; colunas "Agora" — atrasos e o que ainda vence no mês — e 6, 12 ou 24 meses;
+    orçada, dívida e cartão; antes dos meses, as colunas **Em atraso** (venceu e não foi pago, deste mês ou de antes)
+    e o **mês atual** (o que ainda vence nele), como na planilha; depois 6, 12 ou 24 meses;
     totais, saldo do mês e saldo acumulado). Tocar num mês abre o plano daquele mês.
   - **Agrupamentos** (ex.: Salário líquido = salário − plano de saúde − consignados) aparecem como linha
     **informativa**, à parte do planejamento, no resumo do mês e no fim da tabela. Não mudam totais nem a projeção.

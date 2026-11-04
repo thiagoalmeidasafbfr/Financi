@@ -143,13 +143,16 @@ def test_month_by_month_table_matches_projection(client):
         assert sec["entradas"]["values"][i] == pytest.approx(r["receitas"])
         assert sec["saidas"]["values"][i] + sec["dividas"]["values"][i] == pytest.approx(r["despesas"] + r["dividas"] + r["parcelas_cartao"])
         assert t["totais"]["acumulado"]["values"][i] == r["saldo"]
-    # coluna "Agora": multa atrasada + salário e o que vence neste mês
-    assert t["totais"]["saldo_mes"]["now"] == -rows[0]["pendentes"]
+    # antes dos meses: "Em atraso" (a multa) e o mês atual (o que ainda vence); juntas = os pendentes da projeção
+    T = t["totais"]
+    assert T["saldo_mes"]["late"] + T["saldo_mes"]["now"] == pytest.approx(-rows[0]["pendentes"])
+    assert T["saldo_mes"]["late"] == -500 and T["saidas"]["late"] == 500
+    assert T["acumulado"]["now"] - T["acumulado"]["late"] == pytest.approx(T["saldo_mes"]["now"])
     lines = {row["label"]: row for s in t["sections"] for g in s["groups"] for row in g["rows"]}
     # orçamento da categoria e o previsto que o substitui viram linhas separadas (o previsto com o próprio nome)
     assert lines["Aluguel"]["values"][:2] == [1000, 0] and lines["Aluguel"]["sources"][0] == "orçamento"
     assert lines["Aluguel novo"]["values"][:2] == [0, 1300] and lines["Aluguel novo"]["sources"][1] == "previsto"
-    assert lines["Freela"]["values"][2] == 2000 and lines["Multa"]["now"] == 500
+    assert lines["Freela"]["values"][2] == 2000 and lines["Multa"]["late"] == 500 and lines["Multa"]["now"] == 0
     assert lines["Consignado"]["values"][0] == 300
     groups = [g["group"] for g in sec["saidas"]["groups"]]
     assert "Moradia" in groups and "Alimentação" in groups

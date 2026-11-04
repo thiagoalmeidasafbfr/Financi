@@ -269,12 +269,15 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     # tabela: chave da linha → {seção, grupo, rótulo, valores por mês, fonte por mês, "agora"}
     lines: dict[tuple, dict] = {}
 
-    def cell(key: tuple, section: str, group: str, label: str, i: int | None, value: float, source: str) -> None:
+    def cell(key: tuple, section: str, group: str, label: str, i: int | str | None, value: float, source: str) -> None:
+        """i: índice do mês projetado; None = o que ainda vence no mês atual; "late" = em atraso."""
         if not detail or not value:
             return
-        row = lines.setdefault(key, {"section": section, "group": group, "label": label, "now": 0.0,
+        row = lines.setdefault(key, {"section": section, "group": group, "label": label, "late": 0.0, "now": 0.0,
                                      "values": [0.0] * months, "sources": [""] * months})
-        if i is None:
+        if i == "late":
+            row["late"] += value
+        elif i is None:
             row["now"] += value
         else:
             row["values"][i] += value
@@ -333,9 +336,11 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     items_by_month = {m: cockpit.apply_overrides(v, eff) for m, v in items_by_month.items()}
     pending_items = cockpit.apply_overrides(pending_items, eff)
     pending = round(sum(o.amount if o.kind == "receita" else -o.amount for o in pending_items), 2)
+    # em atraso (venceu e não foi pago, deste mês ou de antes) separado do que ainda vence no mês atual
+    late = round(sum(o.amount if o.kind == "receita" else -o.amount for o in pending_items if o.status == "atrasado"), 2)
     for o in pending_items:
         key, section, group, label = planned_line(o)
-        cell(key, section, group, label, None, o.amount, "previsto")
+        cell(key, section, group, label, "late" if o.status == "atrasado" else None, o.amount, "previsto")
 
     def action_line(x) -> tuple[tuple, str, str, str]:
         return ("acao", x.action_id, x.label), "entradas" if x.kind == "receita" else "saidas", f"{cockpit.GROUP} · {x.action}", x.label
@@ -405,15 +410,19 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
                      "dividas": round(debts, 2), "parcelas_cartao": round(cards, 2), "pendentes": round(-pend, 2),
                      "saldo": round(running, 2), "fonte_receitas": src["receita"], "fonte_despesas": src["despesa"]})
     out = {"saldo_atual": round(start_balance + open_invoices, 2), "faturas_abertas": round(open_invoices, 2),
-           "saldo_inicial": round(start_balance, 2), "months": rows}
+           "saldo_inicial": round(start_balance, 2), "atrasos": round(-late, 2), "months": rows}
     if detail:
-        out["table"] = _table(lines, rows, start_balance, pending)
+        out["table"] = _table(lines, rows, start_balance, pending, late)
+        out["table"]["current_month"] = fin.month_start(today).isoformat()
         out["table"]["groupings"] = _groupings(db, out["table"])
     return out
 
 
-def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pending: float) -> dict:
-    """Linhas agrupadas por seção e grupo, com subtotais e os totais do mês (iguais aos da projeção)."""
+def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pending: float, late: float = 0.0) -> dict:
+    """Linhas agrupadas por seção e grupo, com subtotais e os totais do mês (iguais aos da projeção).
+
+    Antes dos meses projetados vêm duas colunas: "late" (em atraso) e "now" (o que ainda vence no mês atual);
+    pending é o líquido das duas e late o líquido do que está em atraso (entrada +, saída −)."""
     def rnd(xs):
         return [round(x, 2) for x in xs]
 
@@ -431,27 +440,33 @@ def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pen
             rs.sort(key=lambda r: -(sum(r["values"]) + r["now"]))
             out_groups.append({
                 "group": g,
+                "late": round(sum(r["late"] for r in rs), 2),
                 "now": round(sum(r["now"] for r in rs), 2),
                 "values": rnd([sum(r["values"][i] for r in rs) for i in range(len(rows))]),
-                "rows": [{"label": r["label"], "ref": r["ref"], "now": round(r["now"], 2), "values": rnd(r["values"]),
-                          "sources": r["sources"]} for r in rs],
+                "rows": [{"label": r["label"], "ref": r["ref"], "late": round(r["late"], 2), "now": round(r["now"], 2),
+                          "values": rnd(r["values"]), "sources": r["sources"]} for r in rs],
             })
         sections.append({"key": sec, "groups": out_groups,
+                         "late": round(sum(g["late"] for g in out_groups), 2),
                          "now": round(sum(g["now"] for g in out_groups), 2),
                          "values": rnd([sum(g["values"][i] for g in out_groups) for i in range(len(rows))])})
     entradas = [r["receitas"] for r in rows]
     saidas = [r["despesas"] + r["dividas"] + r["parcelas_cartao"] for r in rows]
     now_in = next(s["now"] for s in sections if s["key"] == "entradas")
     now_out = sum(s["now"] for s in sections if s["key"] != "entradas")
+    late_in = next(s["late"] for s in sections if s["key"] == "entradas")
+    late_out = sum(s["late"] for s in sections if s["key"] != "entradas")
     return {
         "months": [r["month"] for r in rows],
         "sections": sections,
         "saldo_inicial": round(start_balance, 2),
         "totais": {
-            "entradas": {"now": round(now_in, 2), "values": rnd(entradas)},
-            "saidas": {"now": round(now_out, 2), "values": rnd(saidas)},
-            "saldo_mes": {"now": round(pending, 2), "values": rnd([e - s for e, s in zip(entradas, saidas, strict=True)])},
-            "acumulado": {"now": round(start_balance + pending, 2), "values": [r["saldo"] for r in rows]},
+            "entradas": {"late": round(late_in, 2), "now": round(now_in, 2), "values": rnd(entradas)},
+            "saidas": {"late": round(late_out, 2), "now": round(now_out, 2), "values": rnd(saidas)},
+            "saldo_mes": {"late": round(late, 2), "now": round(pending - late, 2),
+                          "values": rnd([e - s for e, s in zip(entradas, saidas, strict=True)])},
+            "acumulado": {"late": round(start_balance + late, 2), "now": round(start_balance + pending, 2),
+                          "values": [r["saldo"] for r in rows]},
         },
     }
 
@@ -479,9 +494,10 @@ def _groupings(db: Session, table: dict) -> list[dict]:
         rows = []
         for m in gr.members:
             for sign, r in by_ref.get(m.ref, []):
-                rows.append({"label": r["label"], "ref": r["ref"], "now": round(sign * r["now"], 2),
+                rows.append({"label": r["label"], "ref": r["ref"], "late": round(sign * r["late"], 2), "now": round(sign * r["now"], 2),
                              "values": [round(sign * v, 2) for v in r["values"]]})
         out.append({"id": gr.id, "name": gr.name, "refs": [m.ref for m in gr.members], "rows": rows,
+                    "late": round(sum(r["late"] for r in rows), 2),
                     "now": round(sum(r["now"] for r in rows), 2),
                     "values": [round(sum(r["values"][i] for r in rows), 2) for i in range(n)]})
     return out

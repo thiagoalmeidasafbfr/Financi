@@ -1060,3 +1060,11 @@ button.hero-stat:hover { background: none; }
 .chip-link:hover { background: var(--surface-tint); }
 .link-title { padding: 0; height: auto; border: 0; background: none; color: inherit; text-align: left; font: inherit; font-weight: 500; cursor: pointer; }
 .link-title:hover { color: var(--link); background: none; }
+
+/* Fluxo: "Em atraso" e o mês atual antes dos meses projetados (como na planilha) */
+.flow-table th.late, .flow-table td.late { background: var(--late-bg, var(--now-bg)); }
+.flow-table tbody tr:not(.sec):not(.grp):not(.total):not(.acc) td.late:not(:empty) { font-weight: 500; }
+.flow-table th.now, .flow-table td.now { border-right: 2px solid var(--line-strong); }
+.flow-table th.late { color: var(--ink); }
+:root, [data-theme="light"] { --late-bg: rgba(220, 120, 60, .10); }
+[data-theme="navy"] { --late-bg: rgba(255, 170, 120, .12); }
