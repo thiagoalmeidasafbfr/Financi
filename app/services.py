@@ -175,14 +175,18 @@ def debt_overview(db: Session, d: Debt, today: date) -> dict:
         "end_month": st.end_month.isoformat() if st.end_month else None,
         "next_due": st.next_due.isoformat() if st.next_due else None, "last_payment": last_payment,
         "notes": d.notes, "active": d.active, "match_pattern": d.match_pattern, "informed_balance": d.balance,
-        "payoff_month": _payoff_month(db, d.id),
+        **_payoff(db, d, today),
     }
 
 
-def _payoff_month(db: Session, debt_id: int) -> str | None:
-    """Mês da quitação ligada no Cockpit (para mostrar e ligar as telas)."""
-    a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == debt_id, Action.active.is_(True)))
-    return a.month.isoformat() if a and a.month else None
+def _payoff(db: Session, d: Debt, today: date) -> dict:
+    """Quitação ligada no Cockpit: data e valor naquela data (para mostrar e ligar as telas)."""
+    a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == d.id, Action.active.is_(True)))
+    if not a or not a.month:
+        return {"payoff_date": None, "payoff_month": None, "payoff_at_date": None}
+    info = cockpit.payoff_info(d, a.month, today)
+    return {"payoff_date": info["date"], "payoff_month": fin.month_start(date.fromisoformat(info["date"])).isoformat(),
+            "payoff_at_date": info["payoff"]}
 
 
 def avg_income(db: Session, accounts: list[Account], today: date, months_back: int = 3) -> float:
@@ -356,7 +360,8 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
     cur = fin.month_start(today)
     for d, sched in debt_rows:
         v = sched.get(cur, 0.0)
-        paying_off_now = eff.payoffs.get(d.id) == cur  # quitação neste mês sai agora, mesmo depois do vencimento
+        pay_on = eff.payoffs.get(d.id)
+        paying_off_now = pay_on is not None and fin.month_start(pay_on) == cur  # quitação neste mês sai agora
         if v and (paying_off_now or (d.first_due and fin.day_in_month(cur, d.first_due.day) >= today)):
             pending = round(pending - v, 2)
             cell(("debt", d.id), "dividas", "Dívidas e parcelas", d.name, None, v, "dívida")
@@ -561,10 +566,13 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
         if v:
             n = fin.months_between(fin.month_start(d.first_due), m) + 1 if d.first_due else None
             due = fin.day_in_month(m, d.first_due.day).isoformat() if d.first_due else None
-            if eff.payoffs.get(d.id) == m:
-                n = None  # quitação: o saldo inteiro neste mês
+            pay_on = eff.payoffs.get(d.id)
+            payoff_here = pay_on is not None and fin.month_start(pay_on) == m
+            if payoff_here:
+                n = None  # quitação: o saldo inteiro neste mês (e a parcela que vence antes da data, se houver)
+                due = pay_on.isoformat()
             dividas.append({"type": "divida", "debt_id": d.id, "amount": round(v, 2), "due": due,
-                            "name": f"{d.name} · quitação" if eff.payoffs.get(d.id) == m else d.name,
+                            "name": f"{d.name} · quitação" if payoff_here else d.name,
                             "installment_n": n, "installment_total": d.total_installments, "actual": 0.0,
                             "status": "pago" if due and due < today.isoformat() else "pendente"})
     for a in accs:

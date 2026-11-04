@@ -39,7 +39,9 @@ class ToggleIn(BaseModel):
 
 
 class PayoffIn(BaseModel):
+    """date: dia da quitação. month (sem date): quitar no vencimento da parcela daquele mês."""
     active: bool
+    on: date | None = Field(None, alias="date")
     month: date | None = None
 
 
@@ -98,10 +100,10 @@ def overview(months: int = 18, db: Session = Depends(get_session)):
         if not any(m >= cur for m in sched):
             continue
         a = by_debt.get(d.id)
-        month = max(fin.month_start(a.month), cur) if a and a.month else fin.add_months(cur, 1)
+        on = max(a.month, today) if a and a.month else cockpit.next_due(d, today)
+        info = cockpit.payoff_info(d, on, today)
         payoffs.append({"debt_id": d.id, "name": d.name, "creditor": d.creditor, "kind": d.kind, "installment": d.installment,
-                        "monthly_rate": d.monthly_rate, "active": bool(a and a.active), "month": month.isoformat(),
-                        **cockpit.payoff_info(d, month, today)})
+                        "active": bool(a and a.active), "month": fin.month_start(on).isoformat(), **info})
     names = sorted({(p.name, p.kind) for p in db.scalars(select(Planned).where(Planned.active.is_(True)))})
     return {
         "months": month_list, "base": series_base, "with": series_with,
@@ -169,10 +171,13 @@ def set_payoff(debt_id: int, data: PayoffIn, db: Session = Depends(get_session))
             a = Action(name=f"Quitar {d.name}", kind="quitacao", debt_id=d.id)
             db.add(a)
         a.active = data.active
-        if data.month:
-            a.month = fin.month_start(data.month)
+        today = date.today()  # noqa: DTZ011
+        if data.on:
+            a.month = data.on  # o campo guarda a data da quitação
+        elif data.month:
+            a.month = cockpit.due_in_month(d, data.month, today)
         elif a.month is None:
-            a.month = fin.add_months(fin.month_start(date.today()), 1)  # noqa: DTZ011
+            a.month = cockpit.next_due(d, today)
         try:
             db.commit()
             break
@@ -180,20 +185,20 @@ def set_payoff(debt_id: int, data: PayoffIn, db: Session = Depends(get_session))
             db.rollback()
             if attempt:
                 raise
-    return {"debt_id": d.id, "active": a.active, "month": a.month.isoformat()}
+    return {"debt_id": d.id, "active": a.active, "date": a.month.isoformat(), "month": fin.month_start(a.month).isoformat()}
 
 
 @router.get("/payoffs/{debt_id}")
-def get_payoff(debt_id: int, month: date | None = None, db: Session = Depends(get_session)):
-    """Quitação de uma dívida: se está ligada, em que mês, e quanto custa quitar em `month` (ou no mês marcado)."""
+def get_payoff(debt_id: int, month: date | None = None, on: date | None = None, db: Session = Depends(get_session)):
+    """Quitação de uma dívida: se está ligada, em que data, e quanto custa quitar em `on` (ou no vencimento do mês
+    `month`, ou na data marcada, ou no próximo vencimento): parcelas a valor presente pela taxa do contrato."""
     d = db.get(Debt, debt_id)
     if d is None:
         raise HTTPException(404, "Dívida não encontrada")
     a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == debt_id))
     today = date.today()  # noqa: DTZ011
-    cur = fin.month_start(today)
-    when = fin.month_start(month) if month else (a.month if a and a.month else fin.add_months(cur, 1))
-    when = max(when, cur)
+    when = on or (cockpit.due_in_month(d, month, today) if month else (a.month if a and a.month else cockpit.next_due(d, today)))
+    when = max(when, today)
     return {"debt_id": d.id, "name": d.name, "installment": d.installment, "active": bool(a and a.active),
-            "month": a.month.isoformat() if a and a.month else None, "preview_month": when.isoformat(),
-            **cockpit.payoff_info(d, when, today)}
+            "set_date": a.month.isoformat() if a and a.month else None, "month": fin.month_start(a.month).isoformat() if a and a.month else None,
+            "preview_month": fin.month_start(when).isoformat(), **cockpit.payoff_info(d, when, today)}

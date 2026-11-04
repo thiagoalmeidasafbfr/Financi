@@ -85,6 +85,24 @@ def present_value(installment: float, rate: float | None, n: int) -> float:
     return installment * n
 
 
+def payoff_on(installment: float, rate: float | None, dues: list[date], on: date) -> float:
+    """Valor para quitar em `on`: cada parcela que vence a partir dessa data trazida a valor presente pela taxa mensal
+    do contrato, proporcional aos dias corridos até o vencimento (parcela / (1 + i)^(dias/30))."""
+    total = 0.0
+    for due in dues:
+        if due < on:
+            continue
+        days = (due - on).days
+        total += installment / (1 + rate) ** (days / 30) if rate else installment
+    return round(total, 2)
+
+
+def due_dates(first_due: date, total: int) -> list[date]:
+    """Vencimento de cada parcela: o dia da 1ª parcela em cada mês (último dia quando o mês é mais curto)."""
+    start = month_start(first_due)
+    return [day_in_month(add_months(start, k), first_due.day) for k in range(total)]
+
+
 @dataclass
 class LoanStatus:
     paid: int
@@ -110,7 +128,10 @@ def loan_status(installment: float, rate: float | None, first_due: date | None, 
     paid = months_between(first_due, today) + (1 if today >= day_in_month(month_start(today), day) else 0)
     paid = max(0, min(total, paid))
     remaining = total - paid
-    balance = informed_balance if informed_balance is not None and remaining > 0 and not rate else present_value(installment, rate, remaining)
+    if informed_balance is not None and remaining > 0 and not rate:
+        balance = informed_balance
+    else:  # valor para quitar hoje: parcelas que ainda vão vencer, a valor presente pelos dias até cada vencimento
+        balance = payoff_on(installment, rate, [d for d in due_dates(first_due, total) if d > today], today)
     end = add_months(month_start(first_due), total - 1)
     nxt = day_in_month(add_months(month_start(first_due), paid), day) if remaining > 0 else None
     return LoanStatus(paid, remaining, round(balance, 2), round(installment * remaining - balance, 2), end, nxt)

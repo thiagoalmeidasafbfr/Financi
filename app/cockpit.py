@@ -43,7 +43,7 @@ class Extra:
 class Effects:
     overrides: dict[tuple[str, date], float] = field(default_factory=dict)  # (previsto, mês) → novo valor
     extras: list[Extra] = field(default_factory=list)
-    payoffs: dict[int, date] = field(default_factory=dict)                  # dívida → mês da quitação
+    payoffs: dict[int, date] = field(default_factory=dict)                  # dívida → data da quitação
 
     def __bool__(self) -> bool:
         return bool(self.overrides or self.extras or self.payoffs)
@@ -101,7 +101,7 @@ def effects(db: Session, today: date, actions: list[Action] | None = None) -> Ef
     for a in actions:
         if a.kind == "quitacao":
             if a.debt_id and a.month:
-                eff.payoffs[a.debt_id] = max(fin.month_start(a.month), fin.month_start(today))
+                eff.payoffs[a.debt_id] = max(a.month, today)  # data da quitação
             continue
         for ln in a.lines:
             v = line_value(ln, bases)
@@ -137,43 +137,76 @@ def schedule(d: Debt, today: date) -> dict[date, float]:
     return fin.loan_schedule(d.installment, d.first_due, d.total_installments, today=today, rate=d.monthly_rate, balance=d.balance)
 
 
-def payoff_value(d: Debt, month: date, today: date) -> float:
-    """Quanto custa quitar no mês: parcela do mês + valor presente das seguintes (a juros do contrato)."""
+@dataclass
+class Payoff:
+    """Quitação numa data: o valor, as parcelas que ela cobre e o mês em que sai do caixa."""
+    on: date                                  # data da quitação (nunca antes de hoje)
+    value: float                              # parcelas cobertas a valor presente pelos dias até cada vencimento
+    covered: list[tuple[date, float]]         # (vencimento, parcela) das parcelas que a quitação substitui
+    month: date                               # mês da data
+    installment_before: float                 # parcela do mês que vence antes da data e ainda será paga
+
+
+def _dues(d: Debt, sched: dict[date, float]) -> dict[date, date]:
+    """Mês da parcela → data de vencimento (dívida sem prazo: dia 1 de cada mês estimado)."""
+    day = d.first_due.day if d.first_due else 1
+    return {m: fin.day_in_month(m, day) for m in sched}
+
+
+def payoff_plan(d: Debt, on: date, today: date) -> Payoff:
     sched = schedule(d, today)
-    cur = fin.month_start(today)
-    month = max(fin.month_start(month), cur)
-    rest = sorted(m for m in sched if m >= month)
-    if month == cur and d.first_due and fin.day_in_month(cur, d.first_due.day) < today:
-        rest = [m for m in rest if m > cur]  # a parcela deste mês já foi descontada
-        return round(fin.present_value(d.installment, d.monthly_rate, len(rest)), 2)
-    if not rest:
-        return 0.0
-    return round(d.installment + fin.present_value(d.installment, d.monthly_rate, len(rest) - 1), 2)
+    on = max(on, today)
+    dues = _dues(d, sched)
+    # cobre as parcelas que vencem a partir da data (as que vencem hoje ou antes já foram descontadas)
+    covered = sorted((dues[m], v) for m, v in sched.items() if dues[m] >= on and dues[m] > today)
+    if d.first_due and d.total_installments:
+        value = fin.payoff_on(d.installment, d.monthly_rate, [due for due, _ in covered], on)
+    else:  # sem prazo (acordo, rotativo): o saldo informado / valor presente das parcelas estimadas
+        value = round(d.balance if d.balance is not None else fin.present_value(d.installment, d.monthly_rate, len(covered)), 2)
+    month = fin.month_start(on)
+    m_due = dues.get(month)
+    before = sched.get(month, 0.0) if m_due and today < m_due < on else 0.0
+    return Payoff(on, value if covered else 0.0, covered, month, before)
+
+
+def payoff_value(d: Debt, on: date, today: date) -> float:
+    return payoff_plan(d, on, today).value
 
 
 def apply_payoff(d: Debt, sched: dict[date, float], eff: Effects, today: date) -> dict[date, float]:
-    """Cronograma da dívida com a quitação: até o mês anterior igual; no mês, o valor de quitação; depois, nada."""
+    """Cronograma com a quitação: antes do mês igual; no mês, a parcela que vence antes da data (se houver) mais o
+    valor de quitação; depois, nada."""
     if d.id not in eff.payoffs:
         return sched
-    month = eff.payoffs[d.id]
-    value = payoff_value(d, month, today)
-    out = {m: v for m, v in sched.items() if m < month}
-    if value:
-        out[month] = value
+    plan = payoff_plan(d, eff.payoffs[d.id], today)
+    out = {m: v for m, v in sched.items() if m < plan.month}
+    total = plan.installment_before + plan.value
+    if total:
+        out[plan.month] = round(total, 2)
     return out
 
 
-def payoff_info(d: Debt, month: date, today: date) -> dict:
-    """Para o cockpit: valor de quitação, parcelas evitadas, juros economizados e quanto sobra por mês depois."""
+def payoff_info(d: Debt, on: date, today: date) -> dict:
+    """Para as telas: data, valor de quitação, parcelas cobertas, juros economizados."""
     sched = schedule(d, today)
-    cur = fin.month_start(today)
-    month = max(fin.month_start(month), cur)
-    value = payoff_value(d, month, today)
-    already = month == cur and d.first_due and fin.day_in_month(cur, d.first_due.day) < today
-    avoided = sum(v for m, v in sched.items() if m > month or (m == month and not already))
-    return {"payoff": value, "avoided": round(avoided, 2), "interest_saved": round(max(0.0, avoided - value), 2),
-            "installments_left": sum(1 for m in sched if m > month or (m == month and not already)),
-            "end_month": max(sched).isoformat() if sched else None}
+    plan = payoff_plan(d, on, today)
+    avoided = sum(v for _, v in plan.covered)
+    return {"date": plan.on.isoformat(), "payoff": plan.value, "avoided": round(avoided, 2),
+            "interest_saved": round(max(0.0, avoided - plan.value), 2), "installments_left": len(plan.covered),
+            "end_month": max(sched).isoformat() if sched else None, "monthly_rate": d.monthly_rate}
+
+
+def next_due(d: Debt, today: date) -> date:
+    """Próximo vencimento (padrão para a data da quitação)."""
+    sched = schedule(d, today)
+    later = sorted(due for due in _dues(d, sched).values() if due > today)
+    return later[0] if later else fin.add_months(fin.month_start(today), 1)
+
+
+def due_in_month(d: Debt, month: date, today: date) -> date:
+    """Vencimento da parcela no mês (para "quitar em tal mês"): o dia da parcela; sem prazo, o dia 1."""
+    m = fin.month_start(month)
+    return fin.day_in_month(m, d.first_due.day) if d.first_due else m
 
 
 def impact(db: Session, today: date, a: Action, bases: Bases | None = None) -> dict:
@@ -184,7 +217,7 @@ def impact(db: Session, today: date, a: Action, bases: Bases | None = None) -> d
         d = db.get(Debt, a.debt_id) if a.debt_id else None
         if d and a.month:
             sched = schedule(d, today)
-            after = apply_payoff(d, sched, Effects(payoffs={d.id: max(fin.month_start(a.month), fin.month_start(today))}), today)
+            after = apply_payoff(d, sched, Effects(payoffs={d.id: max(a.month, today)}), today)
             for m in set(sched) | set(after):
                 delta = sched.get(m, 0.0) - after.get(m, 0.0)
                 if m == fin.month_start(today) and d.first_due and fin.day_in_month(m, d.first_due.day) < today:

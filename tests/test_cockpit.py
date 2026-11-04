@@ -80,17 +80,39 @@ def test_payoff_per_debt(salary):
     base = saldo(c)["months"]
     ov = c.get("/api/cockpit").json()
     po = ov["payoffs"][0]
-    assert po["debt_id"] == did and po["active"] is False and po["month"] == ym(1)
+    assert po["debt_id"] == did and po["active"] is False and po["date"] > date.today().isoformat()  # noqa: DTZ011  (próximo vencimento)
 
-    c.put(f"/api/cockpit/payoffs/{did}", json={"active": True, "month": ym(3)})
+    def pv(on: date, months: range) -> float:  # cada parcela a valor presente pelos dias corridos até o vencimento
+        return sum(300 / 1.02 ** ((date.fromisoformat(ym(k)).replace(day=5) - on).days / 30) for k in months)
+
+    # quitar no vencimento da parcela de ym(3): ela entra cheia, as seguintes descontadas
+    due3 = date.fromisoformat(ym(3)).replace(day=5)
+    r = c.put(f"/api/cockpit/payoffs/{did}", json={"active": True, "month": ym(3)})
+    assert r.json()["date"] == due3.isoformat()
     po = c.get("/api/cockpit").json()["payoffs"][0]
-    pv6 = 300 * (1 - 1.02 ** -6) / 0.02
-    assert po["payoff"] == pytest.approx(300 + pv6, abs=0.01) and po["avoided"] == 2100
-    assert po["interest_saved"] == pytest.approx(2100 - 300 - pv6, abs=0.01) and po["installments_left"] == 7
+    value = pv(due3, range(3, 10))
+    assert po["payoff"] == pytest.approx(value, abs=0.01) and po["avoided"] == 2100 and po["installments_left"] == 7
+    assert po["interest_saved"] == pytest.approx(2100 - value, abs=0.01)
     p = saldo(c)["months"]
     debts = [r["dividas"] for r in p]
-    assert debts[2] == pytest.approx(300 + pv6, abs=0.01) and debts[3:] == [0] * 9 and debts[:2] == [300, 300]
-    assert p[-1]["saldo"] - base[-1]["saldo"] == pytest.approx(2100 - 300 - pv6, abs=0.01)
+    assert debts[2] == pytest.approx(value, abs=0.01) and debts[3:] == [0] * 9 and debts[:2] == [300, 300]
+    assert p[-1]["saldo"] - base[-1]["saldo"] == pytest.approx(2100 - value, abs=0.01)
+
+    # quitar no dia 20: a parcela do dia 5 desse mês é paga normalmente; quita as 6 seguintes, descontadas desde o dia 20
+    day20 = due3.replace(day=20)
+    c.put(f"/api/cockpit/payoffs/{did}", json={"active": True, "date": day20.isoformat()})
+    v20 = pv(day20, range(4, 10))
+    info = c.get(f"/api/cockpit/payoffs/{did}").json()
+    assert info["set_date"] == day20.isoformat() and info["payoff"] == pytest.approx(v20, abs=0.01) and info["installments_left"] == 6
+    debts = [r["dividas"] for r in saldo(c)["months"]]
+    assert debts[2] == pytest.approx(300 + v20, abs=0.01) and debts[3:] == [0] * 9
+    # simular outra data sem mudar a marcada
+    prev = c.get(f"/api/cockpit/payoffs/{did}", params={"on": due3.replace(day=10).isoformat()}).json()
+    assert prev["payoff"] == pytest.approx(pv(due3.replace(day=10), range(4, 10)), abs=0.01) and prev["set_date"] == day20.isoformat()
+    # dívidas: valor da quitação na data marcada
+    ov_d = next(x for x in c.get("/api/debts/overview").json()["debts"] if x["id"] == did)
+    assert ov_d["payoff_date"] == day20.isoformat() and ov_d["payoff_at_date"] == pytest.approx(v20, abs=0.01)
+    c.put(f"/api/cockpit/payoffs/{did}", json={"active": True, "month": ym(3)})
     # plano do mês mostra a quitação
     m3 = c.get("/api/plan", params={"month": ym(3)}).json()
     assert [r["name"] for r in m3["sections"]["dividas"]["items"]] == ["PARATI 1 · quitação"]
@@ -142,4 +164,4 @@ def test_payoff_concurrent_create(salary, monkeypatch):
     monkeypatch.setattr(Session, "scalar", racing)
     r = c.put(f"/api/cockpit/payoffs/{did}", json={"active": True, "month": ym(3)})
     monkeypatch.setattr(Session, "scalar", real)
-    assert r.status_code == 200 and r.json() == {"debt_id": did, "active": True, "month": ym(3)}
+    assert r.status_code == 200 and r.json()["active"] is True and r.json()["month"] == ym(3)

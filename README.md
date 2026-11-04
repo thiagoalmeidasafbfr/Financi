@@ -44,8 +44,11 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
     O valor é fixo ou uma **fração de outro previsto** (ex.: 1/3 × Salário de nov/26), então acompanha o previsto.
     Há um modelo de **antecipação de férias** (salário adiantado, 1/3, 10 dias vendidos, 1ª parcela do 13º e o
     salário do mês seguinte só com os dias trabalhados).
-  - **Quitar dívidas**: um liga/desliga e um mês por dívida. A quitação paga a parcela do mês mais o valor presente
-    das seguintes (juros do contrato) e as parcelas depois somem; mostra quanto custa e quanto economiza de juros.
+  - **Quitar dívidas**: um liga/desliga e uma **data** por dívida. O valor de quitação traz cada parcela que vence a
+    partir da data a valor presente pela taxa mensal informada no contrato, proporcional aos dias corridos até o
+    vencimento: parcela ÷ (1 + taxa)^(dias/30). As parcelas que vencem antes da data são pagas normalmente e as
+    seguintes somem do fluxo; mostra quanto custa e quanto economiza de juros. Em Dívidas, o "para quitar hoje" usa
+    o mesmo cálculo com a data de hoje.
 - **Lançamentos**: extrato por mês, busca, filtro por conta, fila de revisão, categorização em massa e
   lançamento manual.
 - **Planejamento**, em duas visões (no modelo de Monarch, Quicken Simplifi e Copilot):

@@ -16,6 +16,8 @@ const MESES_LONGOS = ["janeiro", "fevereiro", "março", "abril", "maio", "junho"
 const mlabel = (iso) => (iso ? `${MESES[+iso.slice(5, 7) - 1]}/${iso.slice(2, 4)}` : "–");
 const mlong = (iso) => (iso ? `${MESES_LONGOS[+iso.slice(5, 7) - 1]} de ${iso.slice(0, 4)}` : "–");
 const dlabel = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "–");
+const dfull = (iso) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "–");
+const RATE_TXT = (r) => (r != null ? `${String(+(r * 100).toFixed(2)).replace(".", ",")}% a.m.` : "sem juros");
 const short = (v) => {
   const a = Math.abs(v);
   if (a >= 1e6) return (v / 1e6).toFixed(1).replace(".", ",") + "M";
@@ -1220,8 +1222,8 @@ async function renderCockpit() {
       ${switchHtml(`data-ck-pay="${d.debt_id}"`, d.active, `Quitar ${d.name}`)}
       <div class="ck-row__main"><button class="ck-row__title link-title" data-open="debt:${d.debt_id}">${esc(d.name)}</button>
         <span class="ck-row__desc">${fmt2(d.installment)}/mês · ${d.installments_left} ${d.installments_left === 1 ? "parcela" : "parcelas"} até ${mlabel(d.end_month)}</span>
-        <span class="ck-row__desc">Quitação ${fmt2(d.payoff)}${d.interest_saved > 0.5 ? ` · economiza ${fmt(d.interest_saved)} de juros` : ""}</span>
-        <label class="ck-pay__month">Quitar em <input type="month" data-ck-paymonth="${d.debt_id}" value="${d.month.slice(0, 7)}"></label></div>
+        <span class="ck-row__desc">Quitação em ${dfull(d.date)}: <b>${fmt2(d.payoff)}</b>${d.interest_saved > 0.5 ? ` · economiza ${fmt(d.interest_saved)} de juros` : ""} · ${RATE_TXT(d.monthly_rate)}</span>
+        <label class="ck-pay__month">Quitar em <input type="date" data-ck-paydate="${d.debt_id}" value="${d.date}"></label></div>
     </div>`).join("") : '<p class="hint">Nenhuma dívida com parcelas pela frente.</p>';
 }
 $("#ck-horizon").addEventListener("click", (e) => {
@@ -1234,13 +1236,13 @@ $("#pv-cockpit").addEventListener("change", async (e) => {
     await api("PATCH", `/api/cockpit/actions/${t.dataset.ckToggle}`, { active: t.checked });
     toast(t.checked ? "Ação ligada: entra no Fluxo e no Mês" : "Ação desligada");
   } else if (t.dataset.ckPay) {
-    const month = $(`[data-ck-paymonth="${t.dataset.ckPay}"]`).value;
-    await api("PUT", `/api/cockpit/payoffs/${t.dataset.ckPay}`, { active: t.checked, month: month ? month + "-01" : null });
-    toast(t.checked ? `Quitação em ${mlabel(month + "-01")} ligada` : "Quitação desligada");
-  } else if (t.dataset.ckPaymonth) {
+    const day = $(`[data-ck-paydate="${t.dataset.ckPay}"]`).value;
+    await api("PUT", `/api/cockpit/payoffs/${t.dataset.ckPay}`, { active: t.checked, date: day || null });
+    toast(t.checked ? `Quitação em ${dfull(day)} ligada` : "Quitação desligada");
+  } else if (t.dataset.ckPaydate) {
     if (!t.value) return;
-    const on = $(`[data-ck-pay="${t.dataset.ckPaymonth}"]`).checked;
-    await api("PUT", `/api/cockpit/payoffs/${t.dataset.ckPaymonth}`, { active: on, month: t.value + "-01" });
+    const on = $(`[data-ck-pay="${t.dataset.ckPaydate}"]`).checked;
+    await api("PUT", `/api/cockpit/payoffs/${t.dataset.ckPaydate}`, { active: on, date: t.value });
   } else return;
   renderCockpit();
 });
@@ -1491,22 +1493,23 @@ async function openRowRef(ref, month) {
   if (kind === "acao") return openRef(`action:${id}`);
 }
 // quitação de uma dívida em qualquer mês, com o custo e os juros economizados (liga a ação do cockpit)
-async function openPayoffSheet(did, month) {
-  const info = await api("GET", `/api/cockpit/payoffs/${did}${month ? `?month=${month}` : ""}`);
-  const m = info.preview_month;
-  const on = info.active && info.month === m;
+async function openPayoffSheet(did, day) {
+  const info = await api("GET", `/api/cockpit/payoffs/${did}${day ? `?on=${day}` : ""}`);
+  const d = info.date;
+  const on = info.active && info.set_date === d;
   openSheet(`<p class="overline">Quitar dívida</p><h2>${esc(info.name)}</h2>
-    <label class="field">Quitar em<input type="month" id="po-month" value="${m.slice(0, 7)}"></label>
-    <div class="tiles">${tile("Para quitar", fmt2(info.payoff))}${tile("Juros economizados", fmt(info.interest_saved))}${tile("Parcelas evitadas", info.installments_left)}</div>
-    <p class="hint">Paga a parcela do mês e o valor presente das seguintes, com os juros do contrato; as parcelas depois somem do fluxo.
-      ${info.active && !on ? `Hoje a quitação está marcada para ${mlabel(info.month)}.` : ""}</p>
-    <div class="qa-actions">${on ? '<button class="secondary" id="po-off">Desfazer quitação</button>' : `<button class="primary" id="po-on">Quitar em ${mlabel(m)}</button>`}</div>
+    <label class="field">Data da quitação<input type="date" id="po-date" value="${d}" min="${new Date().toLocaleDateString("sv")}"></label>
+    <div class="tiles">${tile("Para quitar", fmt2(info.payoff))}${tile("Juros economizados", fmt(info.interest_saved))}${tile("Parcelas quitadas", info.installments_left)}</div>
+    <p class="hint">Cada parcela que vence a partir de ${dfull(d)} é trazida a valor presente pela taxa do contrato (${RATE_TXT(info.monthly_rate)}),
+      proporcional aos dias até o vencimento: parcela ÷ (1 + taxa)<sup>dias/30</sup>. As parcelas que vencem antes são pagas normalmente.
+      ${info.active && !on ? `<br>Hoje a quitação está marcada para ${dfull(info.set_date)}.` : ""}</p>
+    <div class="qa-actions">${on ? '<button class="secondary" id="po-off">Desfazer quitação</button>' : `<button class="primary" id="po-on">Quitar em ${dfull(d)}</button>`}</div>
     <div class="row occ-links"><button class="link" data-open="debt:${did}">Editar dívida</button><button class="link" id="po-ck">Ver no Cockpit</button></div>`);
-  $("#po-month").onchange = (e) => { if (e.target.value) openPayoffSheet(did, e.target.value + "-01"); };
+  $("#po-date").onchange = (e) => { if (e.target.value) openPayoffSheet(did, e.target.value); };
   const put = async (active) => {
-    await api("PUT", `/api/cockpit/payoffs/${did}`, { active, month: m });
+    await api("PUT", `/api/cockpit/payoffs/${did}`, { active, date: d });
     closeSheet();
-    toast(active ? `${info.name}: quitação em ${mlabel(m)}` : "Quitação desfeita");
+    toast(active ? `${info.name}: quitação em ${dfull(d)} (${fmt2(info.payoff)})` : "Quitação desfeita");
     await refresh();
   };
   $("#po-on")?.addEventListener("click", () => put(true));
@@ -1620,14 +1623,16 @@ async function openCatCell(cid, c) {
 }
 
 async function openDebtCell(did, c) {
-  const info = await api("GET", `/api/cockpit/payoffs/${did}`);
+  const info = await api("GET", `/api/cockpit/payoffs/${did}?month=${c.month}`);
   const here = info.active && info.month === c.month;
   openSheet(`<p class="overline">${capFirst(mlong(c.month))}</p><h2>${esc(info.name)}</h2>
-    <p class="hint">${here ? `Quitação neste mês: ${fmt2(c.value)}. Depois disso, as parcelas somem.`
-      : `Parcela de ${fmt2(info.installment)}, do contrato (muda em Dívidas).${info.active ? ` A quitação está marcada para ${mlabel(info.month)}.` : ""}`}</p>
+    <p class="hint">${here ? `Quitação em ${dfull(info.set_date)}: ${fmt2(c.value)}. Depois disso, as parcelas somem.`
+      : `Parcela de ${fmt2(info.installment)}, do contrato (muda em Dívidas).${info.active ? ` A quitação está marcada para ${dfull(info.set_date)}.` : ""}`}</p>
+    ${here ? "" : `<div class="tiles">${tile(`Para quitar em ${dfull(info.date)}`, fmt2(info.payoff))}${tile("Juros economizados", fmt(info.interest_saved))}</div>`}
     <div class="qa-actions">${here ? '<button class="secondary" id="ce-unpay">Desfazer quitação</button>'
-      : `<button class="primary" id="ce-pay">Quitar em ${mlabel(c.month)}</button>`}</div>
-    <p class="hint">A quitação paga a parcela do mês e o valor presente das seguintes (juros do contrato). Fica no Cockpit, onde dá para desligar.</p>
+      : `<button class="primary" id="ce-pay">Quitar em ${dfull(info.date)}</button>`}</div>
+    <p class="hint">Parcelas a partir dessa data a valor presente pela taxa do contrato (${RATE_TXT(info.monthly_rate)}), pelos dias até cada
+      vencimento. Para outra data, use <button class="link" data-open="payoff:${did}">Quitar em outra data</button>.</p>
     <div class="row occ-links"><button class="link" data-open="debt:${did}">Editar dívida</button></div>`);
   const put = async (active) => {
     await api("PUT", `/api/cockpit/payoffs/${did}`, { active, month: c.month });
@@ -1731,10 +1736,10 @@ async function renderDividas() {
   $("#debt-list").innerHTML = d.debts.length ? d.debts.map((x) => {
     const prog = x.total_installments ? x.paid / x.total_installments : null;
     return `<div class="card debt"><div class="card-head"><h3>${esc(x.name)}</h3><button class="link" data-debt="${x.id}">Editar</button></div>
-      <div class="debt-links">${x.remaining > 0 ? `<button class="chip-link" data-open="payoff:${x.id}">${x.payoff_month ? `Quitação em ${mlabel(x.payoff_month)}` : "Quitar…"}</button>` : ""}
+      <div class="debt-links">${x.remaining > 0 ? `<button class="chip-link" data-open="payoff:${x.id}">${x.payoff_date ? `Quitação em ${dfull(x.payoff_date)}: ${fmt2(x.payoff_at_date)}` : "Quitar…"}</button>` : ""}
         <button class="chip-link" data-goto-plan="fluxo">Ver no fluxo</button></div>
       <p class="hint" style="margin:0 0 8px">${DEBT_LABEL[x.kind]}${x.creditor ? ` · ${esc(x.creditor)}` : ""} · ${esc(personName(x.owner_id))}</p>
-      <div class="amount-row"><span class="big">${money(x.balance)}</span><span class="muted">saldo devedor${x.total_installments ? " (valor para quitar hoje)" : ""}</span></div>
+      <div class="amount-row"><span class="big">${money(x.balance)}</span><span class="muted">${x.total_installments ? `para quitar hoje · parcelas a valor presente a ${RATE_TXT(x.monthly_rate)}` : "saldo devedor"}</span></div>
       ${prog != null ? `<div class="meter"><i style="width:${prog * 100}%"></i></div>
         <p class="hint">${x.paid} de ${x.total_installments} parcelas pagas · ${x.remaining} restantes de ${fmt2(x.installment)} · termina ${mlabel(x.end_month)}</p>`
         : x.remaining ? `<p class="hint">Pagando ${fmt2(x.installment)} por mês, faltam cerca de ${x.remaining} parcelas · termina ${mlabel(x.end_month)}</p>` : ""}
@@ -1773,7 +1778,7 @@ function openDebtSheet(x) {
     <p class="hint">Com parcela, 1ª parcela e número de parcelas o app calcula quantas foram pagas, o saldo devedor e o valor para quitar
       hoje. “Texto no extrato” localiza o último pagamento nos lançamentos.</p>
     <div class="row"><button class="primary" id="dv-save">Salvar</button>${x ? '<button class="danger" id="dv-del">Excluir</button>' : ""}</div>
-    ${x ? `<div class="row occ-links"><button class="link" data-open="payoff:${x.id}">${x.payoff_month ? `Quitação em ${mlabel(x.payoff_month)}` : "Simular quitação"}</button>
+    ${x ? `<div class="row occ-links"><button class="link" data-open="payoff:${x.id}">${x.payoff_date ? `Quitação em ${dfull(x.payoff_date)}: ${fmt2(x.payoff_at_date)}` : "Simular quitação"}</button>
       <button class="link" data-goto-plan="fluxo">Ver no fluxo</button></div>` : ""}`);
   $("#dv-save").onclick = async () => {
     const rate = parseNum(sheetVal("dv-rate"));
