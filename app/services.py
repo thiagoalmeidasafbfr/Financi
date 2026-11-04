@@ -13,6 +13,7 @@ from . import planned as planned_mod
 from .models import Account, Action, Budget, Category, Debt, Grouping, Transaction
 
 LIQUID = ("corrente", "poupanca", "dinheiro")
+CARD_GROUP = "Cartões"  # faturas previstas por cartão: seção própria, fora de Dívidas
 
 
 # ---------------------------------------------------------------- filtros
@@ -291,7 +292,9 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
         """Cada previsto é uma linha com o seu nome (previstos de mesmo nome, como os períodos do salário, juntam)."""
         section = "entradas" if o.kind == "receita" else "saidas"
         cat = cats.get(o.category_id)
-        if cat is not None and cat.group == "Dívidas" and o.kind == "despesa":
+        if cat is not None and cat.group == CARD_GROUP and o.kind == "despesa":
+            section, group = "cartoes", "Cartões"
+        elif cat is not None and cat.group == "Dívidas" and o.kind == "despesa":
             section, group = "dividas", "Dívidas e parcelas"
         elif o.kind == "receita":
             group = "Receitas"
@@ -376,22 +379,26 @@ def projection(db: Session, person: str | None, today: date, months: int = 6, de
                 tot[k] += v
                 used[k].add("média")
                 cell(key, section, group, label, i, v, "média")
+        card_planned = 0.0  # faturas previstas (grupo Cartões) somam aos cartões, não às despesas
         for o in items:
-            tot[o.kind] += o.amount
-            used[o.kind].add("previsto")
             key, section, group, label = planned_line(o)
             cell(key, section, group, label, i, o.amount, "previsto")
+            if section == "cartoes":
+                card_planned += o.amount
+                continue
+            tot[o.kind] += o.amount
+            used[o.kind].add("previsto")
         for x in extras_by_month.get(m, []):
             tot[x.kind] += x.amount
             used[x.kind].add("ação")
             cell(*action_line(x), i, x.amount, "ação")
         inc, exp = max(0.0, tot["receita"]), max(0.0, tot["despesa"])
         src = {k: " + ".join(x for x in order if x in v) or "média" for k, v in used.items()}
-        debts, cards = debt_sched.get(m, 0.0), card_sched.get(m, 0.0)
+        debts, cards = debt_sched.get(m, 0.0), card_sched.get(m, 0.0) + card_planned
         for d, sched in debt_rows:
             cell(("debt", d.id), "dividas", "Dívidas e parcelas", d.name, i, sched.get(m, 0.0), "dívida")
         for a, sched in card_rows:
-            cell(("card", a.id), "dividas", "Dívidas e parcelas", f"Parcelas no cartão · {a.name}", i, sched.get(m, 0.0), "cartão")
+            cell(("card", a.id), "cartoes", "Cartões", f"Parcelas no cartão · {a.name}", i, sched.get(m, 0.0), "cartão")
         pend = pending if i == 0 else 0.0  # atrasados e o que ainda vence neste mês (com sinal: entrada +, saída −)
         running += inc - exp - debts - cards + pend
         rows.append({"month": m.isoformat(), "receitas": round(inc, 2), "despesas": round(exp, 2),
@@ -414,7 +421,7 @@ def _table(lines: dict[tuple, dict], rows: list[dict], start_balance: float, pen
         r["ref"] = _ref(key)
 
     sections = []
-    for sec in ("entradas", "saidas", "dividas"):
+    for sec in ("entradas", "saidas", "cartoes", "dividas"):
         sec_lines = [r for r in lines.values() if r["section"] == sec]
         groups: dict[str, list[dict]] = defaultdict(list)
         for r in sec_lines:
@@ -503,13 +510,18 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
     def is_debt_cat(cid):
         return cid in cats and cats[cid].group == "Dívidas"
 
-    entradas, fixas, dividas, variaveis = [], [], [], []
+    def is_card_cat(cid):
+        return cid in cats and cats[cid].group == CARD_GROUP
+
+    entradas, fixas, cartoes, dividas, variaveis = [], [], [], [], []
     planned_cats = {o.category_id for o in occ if o.category_id is not None and o.status != "pulado"}
     for o in occ:
         row = {"type": "previsto", **o.as_dict(), "category": cats[o.category_id].name if o.category_id in cats else None,
                "actual": o.amount if o.status == "pago" else 0.0}
         if o.kind == "receita":
             entradas.append(row)
+        elif is_card_cat(o.category_id):
+            cartoes.append(row)
         elif is_debt_cat(o.category_id):
             dividas.append(row)
         else:
@@ -543,14 +555,14 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
         if a.kind == "cartao":
             v = fin.future_installments(_card_txs(db, a), a.closing_day or 1).get(m)
             if v:
-                dividas.append({"type": "cartao", "account_id": a.id, "name": f"Parcelas no cartão · {a.name}",
+                cartoes.append({"type": "cartao", "account_id": a.id, "name": f"Parcelas no cartão · {a.name}",
                                 "amount": round(v, 2), "due": None, "actual": 0.0, "status": "pendente"})
 
     # orçamento: receitas sem previsto somam às entradas; despesas viram gastos variáveis
     shown = set()
     for cid, amount in budgets.items():
         cat = cats.get(cid)
-        if cat is None or cat.type == "transferencia" or is_debt_cat(cid) or cid in planned_cats:
+        if cat is None or cat.type == "transferencia" or is_debt_cat(cid) or is_card_cat(cid) or cid in planned_cats:
             continue
         spent = _actual(cat, actual.get(cid, 0.0))
         row = {"type": "orcamento", "category_id": cid, "name": cat.name, "group": cat.group, "amount": round(amount, 2),
@@ -559,7 +571,7 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
         shown.add(cid)
     for cid, signed in actual.items():  # gasto sem orçamento também aparece (onde o dinheiro foi)
         cat = cats.get(cid)
-        if cid in shown or cid in planned_cats or (cat and (cat.type != "despesa" or is_debt_cat(cid))):
+        if cid in shown or cid in planned_cats or (cat and (cat.type != "despesa" or is_debt_cat(cid) or is_card_cat(cid))):
             continue
         spent = _actual(cat, signed)
         if spent > 0.005:
@@ -577,10 +589,11 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
     sec = {
         "entradas": {"planned": total(entradas), "actual": max(received, total(entradas, "actual")), "items": entradas},
         "fixas": {"planned": total(fixas), "actual": total(fixas, "actual"), "items": fixas},
+        "cartoes": {"planned": total(cartoes), "actual": total(cartoes, "actual"), "items": cartoes},
         "dividas": {"planned": total(dividas), "actual": total(dividas, "actual"), "items": dividas},
         "variaveis": {"planned": total(variaveis), "actual": total(variaveis, "actual"), "items": variaveis},
     }
-    saidas = sec["fixas"]["planned"] + sec["dividas"]["planned"] + sec["variaveis"]["planned"]
+    saidas = sec["fixas"]["planned"] + sec["cartoes"]["planned"] + sec["dividas"]["planned"] + sec["variaveis"]["planned"]
     late = [o.as_dict() for o in planned_mod.overdue(db, today, person, acc_ids) if o.month < m.isoformat()] if m == current else []
 
     # agrupamentos (informativos): soma com sinal das linhas do mês
@@ -588,7 +601,7 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
     for r in live(entradas):
         ref = {"previsto": f"plan:{r['name']}", "acao": f"acao:{r.get('action_id')}"}.get(r["type"], f"cat:{r.get('category_id')}")
         refs[ref] += r["amount"]
-    for r in live(fixas) + live(dividas) + variaveis:
+    for r in live(fixas) + live(cartoes) + live(dividas) + variaveis:
         key = {"previsto": lambda r: f"plan:{r['name']}", "divida": lambda r: f"debt:{r['debt_id']}",
                "acao": lambda r: f"acao:{r['action_id']}",
                "cartao": lambda r: f"card:{r['account_id']}", "orcamento": lambda r: f"cat:{r['category_id']}"}[r["type"]](r)

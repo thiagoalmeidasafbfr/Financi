@@ -115,3 +115,31 @@ def test_grouping_with_cockpit_row(salary):
     assert r.status_code in (200, 201), r.text
     g = c.get("/api/projection", params={"months": 4, "detail": True}).json()["table"]["groupings"][0]
     assert g["values"][0] == pytest.approx(8000 + 8000 + 2666.67)  # salário + as duas entradas da ação em ym(1)
+
+
+def test_payoff_concurrent_create(salary, monkeypatch):
+    """Dois pedidos que criam a mesma quitação ao mesmo tempo: o segundo atualiza a criada (antes: erro 500)."""
+    from sqlalchemy.orm import Session
+
+    from app.models import Action
+
+    c = salary
+    first_due = add_months(TODAY, -2).replace(day=5).isoformat()
+    did = c.post("/api/debts", json={"name": "D", "kind": "consignado", "installment": 100, "monthly_rate": 0.02,
+                                     "first_due": first_due, "total_installments": 12}).json()["id"]
+    real = Session.scalar
+    calls = {"n": 0}
+
+    def racing(self, stmt, *a, **kw):  # 1ª busca não acha nada, como se o outro pedido ainda não tivesse gravado
+        if "fin_actions" in str(stmt) and calls["n"] == 0:
+            calls["n"] += 1
+            self.add(Action(name="outro pedido", kind="quitacao", debt_id=did, active=False, month=date.fromisoformat(ym(1))))
+            self.flush()
+            self.commit()
+            return None
+        return real(self, stmt, *a, **kw)
+
+    monkeypatch.setattr(Session, "scalar", racing)
+    r = c.put(f"/api/cockpit/payoffs/{did}", json={"active": True, "month": ym(3)})
+    monkeypatch.setattr(Session, "scalar", real)
+    assert r.status_code == 200 and r.json() == {"debt_id": did, "active": True, "month": ym(3)}

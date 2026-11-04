@@ -25,8 +25,10 @@ from .text import strip_accents
 IMPORT_TAG = "Importado da planilha"
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6, "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12}
 SECTIONS = {
-    "receitas": "Receitas", "despesas": "Despesas previstas", "atrasos": "Atrasos", "dividas": "Dívidas", "orcamento": "Orçamento",
+    "receitas": "Receitas", "despesas": "Despesas previstas", "atrasos": "Atrasos", "dividas": "Dívidas", "cartoes": "Cartões",
+    "orcamento": "Orçamento",
 }
+CARD_GROUP, CARD_CATEGORY = "Cartões", "Fatura de cartão"
 DEBT_KINDS = {"consignado": "consignado", "emprestimo": "emprestimo", "financiamento": "financiamento",
               "cheque especial": "cheque_especial", "acordo": "acordo", "outro": "outro"}
 
@@ -64,6 +66,15 @@ SHEETS: dict[str, list[tuple[str, int, str]]] = {
         ("Saldo devedor (sem prazo)", 14, "Só para rotativo/acordo sem nº de parcelas"),
         ("De quem", 14, "Nome da pessoa (vazio = conjunta)"),
         ("Texto no extrato", 18, "Localiza o último pagamento (ex.: CONSIGNADO)"),
+    ],
+    "Cartões": [
+        ("Cartão", 20, "Nome do cartão (ex.: Carrefour, C6, PicPay)"),
+        ("Valor da fatura (R$)", 14, "Total previsto da fatura do mês"),
+        ("Mês", 11, "Mês da fatura: AAAA-MM"),
+        ("Até", 11, "Opcional: repete o mesmo valor todo mês até este mês"),
+        ("Dia do vencimento", 10, "1 a 31 (vazio = fim do mês)"),
+        ("De quem", 14, "Nome da pessoa (vazio = conjunta)"),
+        ("Observação", 34, "O que compõe a fatura (não é importado)"),
     ],
     "Orçamento": [
         ("Categoria", 26, "Escolha da lista"),
@@ -164,6 +175,7 @@ def build_template(categories: list[Category], people: list[Person]) -> bytes:
         ("   Valor que muda com o tempo: uma linha por período (ex.: Salário 8.167 de 2027-01 a 2027-12; 9.600 a partir de 2028-01).", False),
         ("Atrasos: contas vencidas e não pagas. Aparecem como 'em atraso' no app.", False),
         ("Dívidas: empréstimos, consignados, financiamentos e acordos. O app calcula parcelas pagas, saldo e juros.", False),
+        ("Cartões: fatura prevista de cada cartão por mês (uma linha por valor; 'Até' repete o valor). Fica fora de Dívidas.", False),
         ("Orçamento: quanto pretende gastar por categoria. Sem mês = vale para todo mês.", False),
         ("", False),
         ("Meses no formato AAAA-MM (ex.: 2026-11). Valores sempre positivos; o Tipo diz se entra ou sai.", False),
@@ -223,6 +235,7 @@ class Result:
     previstos: int = 0
     atrasos: int = 0
     dividas: int = 0
+    cartoes: int = 0
     orcamento: int = 0
     substituidos: int = 0          # total apagado no modo substituir
     ignorados: int = 0             # já existiam iguais (modo adicionar)
@@ -319,14 +332,18 @@ def import_workbook(db: Session, content: bytes, sections: set[str] | None = Non
                     res.avisos.append(f"{where}: faltou nome, valor ou início; linha ignorada")
                     continue
                 kind = "receita" if _norm(r.get("Tipo")).startswith("rec") else "despesa"
-                if ("receitas" if kind == "receita" else "despesas") not in sections:
+                cat_name = r.get("Categoria")
+                is_card = kind == "despesa" and cat_name and (cats_any.get(_norm(cat_name)) is not None
+                                                             and cats_any[_norm(cat_name)].group == CARD_GROUP)
+                section = "cartoes" if is_card else ("receitas" if kind == "receita" else "despesas")
+                if section not in sections:
                     continue
                 once = _norm(r.get("Frequência")).startswith(("uma", "unic", "pont"))
                 end = None if once else parse_month(r.get("Fim"))
                 if end and end < start:
                     res.avisos.append(f"{where}: fim antes do início; linha ignorada")
                     continue
-                pending["receitas" if kind == "receita" else "despesas"].append(Planned(
+                pending[section].append(Planned(
                     name=name, kind=kind, amount=amount, recurrence="pontual" if once else "mensal",
                     start_month=start, end_month=end, due_day=_day(r.get("Dia do vencimento")),
                     category_id=category(r.get("Categoria"), kind, where), owner_id=person(r.get("De quem")),
@@ -377,6 +394,29 @@ def import_workbook(db: Session, content: bytes, sections: set[str] | None = Non
             except ValueError as exc:
                 res.avisos.append(f"{where}: {exc}; linha ignorada")
 
+    card_cat = category(CARD_CATEGORY, "despesa", "Cartões") if (ws := sheet("Cartões")) and "cartoes" in sections else None
+    if card_cat:
+        db.get(Category, card_cat).group = CARD_GROUP
+        for i, r in _rows(ws, "Cartões"):
+            where = f"Cartões, linha {i}"
+            try:
+                name = str(r.get("Cartão") or "").strip()
+                amount = parse_money(r.get("Valor da fatura (R$)"))
+                start = parse_month(r.get("Mês"))
+                if not name or not amount or not start:
+                    res.avisos.append(f"{where}: faltou cartão, valor ou mês; linha ignorada")
+                    continue
+                end = parse_month(r.get("Até"))
+                if end and end < start:
+                    res.avisos.append(f"{where}: 'Até' antes do mês; linha ignorada")
+                    continue
+                pending["cartoes"].append(Planned(
+                    name=name, kind="despesa", amount=amount, recurrence="mensal" if end and end > start else "pontual",
+                    start_month=start, end_month=end if end and end > start else None, due_day=_day(r.get("Dia do vencimento")),
+                    category_id=card_cat, owner_id=person(r.get("De quem")), notes=IMPORT_TAG))
+            except ValueError as exc:
+                res.avisos.append(f"{where}: {exc}; linha ignorada")
+
     if (ws := sheet("Orçamento")) and "orcamento" in sections:
         for i, r in _rows(ws, "Orçamento"):
             where = f"Orçamento, linha {i}"
@@ -391,6 +431,12 @@ def import_workbook(db: Session, content: bytes, sections: set[str] | None = Non
                 res.avisos.append(f"{where}: {exc}; linha ignorada")
 
     res.secoes = [k for k in SECTIONS if pending[k]]
+    if pending["cartoes"]:  # o cartão cadastrado antes como despesa/dívida (mesmo nome) sai dali em diante
+        n = _retire_same_name(db, {_norm(p.name) for p in pending["cartoes"]}, current, card_cat)
+        if n:
+            res.avisos.append(f"{n} previstos antigos com o nome de um cartão (fora de Cartões) foram trocados a partir de {current:%m/%Y}")
+            res.apagados["cartoes_antigos"] = n
+            res.substituidos += n
     if mode == "substituir":
         for k in res.secoes:  # só apaga a seção que a planilha traz (evita zerar o resto por engano)
             n = 0
@@ -418,6 +464,8 @@ def import_workbook(db: Session, content: bytes, sections: set[str] | None = Non
             db.add(obj)
             if k in ("receitas", "despesas"):
                 res.previstos += 1
+            elif k == "cartoes":
+                res.cartoes += 1
             elif k == "atrasos":
                 res.atrasos += 1
             else:
@@ -433,18 +481,50 @@ def _is_late(p: Planned, current: date) -> bool:
     return p.kind == "despesa" and p.recurrence == "pontual" and p.start_month < current
 
 
+def card_category_ids(db: Session) -> set[int]:
+    return set(db.scalars(select(Category.id).where(Category.group == CARD_GROUP)))
+
+
 def _section_objects(db: Session, section: str, current: date) -> list:
     """Tudo o que pertence à seção (inclusive o cadastrado no app), para o modo substituir."""
     if section == "dividas":
         return list(db.scalars(select(Debt)))
     if section == "orcamento":
         return list(db.scalars(select(Budget)))
+    cards = card_category_ids(db)
     planned = list(db.scalars(select(Planned)))
+    if section == "cartoes":  # faturas previstas; as atrasadas (de meses passados) ficam
+        return [p for p in planned if p.category_id in cards and not _is_late(p, current)]
+    planned = [p for p in planned if p.category_id not in cards]
     if section == "receitas":
         return [p for p in planned if p.kind == "receita"]
     if section == "atrasos":
         return [p for p in planned if _is_late(p, current)]
     return [p for p in planned if p.kind == "despesa" and not _is_late(p, current)]
+
+
+def _retire_same_name(db: Session, names: set[str], current: date, card_cat: int) -> int:
+    """Previstos de despesa com o nome de um cartão importado e fora de Cartões: do mês atual em diante deixam de valer
+    (apaga os que começam agora ou depois; as séries que vêm de antes terminam no mês anterior). Os atrasados ficam,
+    com o mesmo valor e mês, mas passam para a categoria de cartão (saem de Dívidas)."""
+    cards = card_category_ids(db)
+    n = 0
+    for p in list(db.scalars(select(Planned).where(Planned.kind == "despesa"))):
+        if _norm(p.name) not in names or p.category_id in cards:
+            continue
+        if p.start_month >= current:
+            db.delete(p)
+            n += 1
+        elif _is_late(p, current):
+            p.category_id = card_cat
+        elif p.recurrence == "mensal" and (p.end_month is None or p.end_month >= current):
+            p.end_month = fin.add_months(current, -1)
+            for ch in list(p.changes):
+                if ch.month >= current:
+                    db.delete(ch)
+            n += 1
+    db.flush()
+    return n
 
 
 def _exists(db: Session, section: str, obj) -> bool:

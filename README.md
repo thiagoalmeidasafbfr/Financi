@@ -19,6 +19,11 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   categorias mais usadas em um toque e **quando**: *Já paguei / Já recebi* vira lançamento (hoje, ontem ou outra
   data, na conta usada da última vez); *Vou pagar / Vou receber* vira previsto (uma vez ou todo mês). Dá para salvar
   e adicionar outra em seguida, e o aviso traz **Desfazer**. Lançamentos à mão sem categoria passam pelas regras.
+- **Cartões**: seção própria (fora de Dívidas) no Fluxo, no Mês e na projeção, com a fatura prevista de cada cartão
+  (categoria *Fatura de cartão*, grupo Cartões) e as parcelas de cartão dos extratos. A aba **Cartões** do modelo
+  de importação tem uma linha por fatura (Cartão, Valor, Mês e *Até* para repetir o valor). Ao importar um cartão,
+  os previstos de despesa com o mesmo nome fora de Cartões (ex.: cadastrado como parcela de empréstimo) deixam de
+  valer do mês atual em diante; os atrasados ficam, passando para Cartões.
 - **Tudo abre o que mostra** (referências cruzadas): no Início, próximos vencimentos abrem o previsto, contas abrem o
   extrato da conta, a faixa de saldos leva às dívidas, os últimos lançamentos abrem o lançamento; no Mês, parcelas
   abrem a dívida, linhas do Cockpit abrem a ação e agrupamentos abrem o agrupamento; no Fluxo, o nome da linha abre o
@@ -58,7 +63,7 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   mês, pular um mês ou marcar como pago. O que venceu e não foi pago aparece **em atraso** (no Início e no plano do
   mês); o pagamento é reconhecido pelo extrato quando a previsão tem um "texto no extrato".
 - **Planilha de planejamento**: em Importar, **Baixar modelo** gera um .xlsx com as abas Previstos, Atrasos,
-  Dívidas e Orçamento (com listas das categorias e pessoas do app). Preencha no Excel ou Google Planilhas e envie:
+  Dívidas, Cartões e Orçamento (com listas das categorias e pessoas do app). Preencha no Excel ou Google Planilhas e envie:
   tudo é criado de uma vez. Dá para importar **por seção** (Receitas, Despesas previstas, Atrasos, Dívidas,
   Orçamento) em dois modos: **Adicionar** soma ao que existe e ignora o que já existe igual; **Substituir** apaga a
   seção inteira (inclusive o cadastrado no app) e sobe de novo. Só são apagadas as seções que a planilha traz com

@@ -4,6 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .. import cockpit, services
@@ -155,20 +156,30 @@ def delete_action(aid: int, db: Session = Depends(get_session)):
 
 @router.put("/payoffs/{debt_id}")
 def set_payoff(debt_id: int, data: PayoffIn, db: Session = Depends(get_session)):
-    """Liga/desliga a quitação de uma dívida e escolhe o mês (uma ação por dívida)."""
+    """Liga/desliga a quitação de uma dívida e escolhe o mês (uma ação por dívida).
+
+    Dois pedidos quase juntos (trocar o mês e ligar em seguida) podem tentar criar a mesma ação: quem chega
+    depois encontra a criada e só atualiza."""
     d = db.get(Debt, debt_id)
     if d is None:
         raise HTTPException(404, "Dívida não encontrada")
-    a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == debt_id))
-    if a is None:
-        a = Action(name=f"Quitar {d.name}", kind="quitacao", debt_id=d.id)
-        db.add(a)
-    a.active = data.active
-    if data.month:
-        a.month = fin.month_start(data.month)
-    elif a.month is None:
-        a.month = fin.add_months(fin.month_start(date.today()), 1)  # noqa: DTZ011
-    db.commit()
+    for attempt in range(2):
+        a = db.scalar(select(Action).where(Action.kind == "quitacao", Action.debt_id == debt_id))
+        if a is None:
+            a = Action(name=f"Quitar {d.name}", kind="quitacao", debt_id=d.id)
+            db.add(a)
+        a.active = data.active
+        if data.month:
+            a.month = fin.month_start(data.month)
+        elif a.month is None:
+            a.month = fin.add_months(fin.month_start(date.today()), 1)  # noqa: DTZ011
+        try:
+            db.commit()
+            break
+        except IntegrityError:
+            db.rollback()
+            if attempt:
+                raise
     return {"debt_id": d.id, "active": a.active, "month": a.month.isoformat()}
 
 

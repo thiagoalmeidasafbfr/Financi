@@ -726,7 +726,7 @@ async function importFiles(files) {
 }
 // planilha de planejamento (modelo .xlsx): previstos, atrasos, dívidas e orçamento
 // por seção e em dois modos: adicionar (soma) ou substituir (apaga a seção que a planilha traz e sobe de novo)
-const SECTION_NAMES = { receitas: "Receitas", despesas: "Despesas previstas", atrasos: "Atrasos", dividas: "Dívidas", orcamento: "Orçamento" };
+const SECTION_NAMES = { receitas: "Receitas", despesas: "Despesas previstas", atrasos: "Atrasos", dividas: "Dívidas", cartoes: "Cartões", orcamento: "Orçamento", cartoes_antigos: "Previstos antigos com nome de cartão" };
 state.xlsxMode = "adicionar";
 function syncXlsxMode() {
   $$("#xlsx-mode button").forEach((b) => b.classList.toggle("active", b.dataset.m === state.xlsxMode));
@@ -761,7 +761,7 @@ $("#xlsx-file").addEventListener("change", async (e) => {
     // só as seções que vieram na planilha (importar só dívidas não mostra zeros nas outras)
     const got = new Set(r.secoes || []);
     const tiles = [["Previstos", r.previstos, got.has("receitas") || got.has("despesas")], ["Atrasos", r.atrasos, got.has("atrasos")],
-      ["Dívidas", r.dividas, got.has("dividas")], ["Orçamento", r.orcamento, got.has("orcamento")]].filter((x) => x[2]);
+      ["Dívidas", r.dividas, got.has("dividas")], ["Cartões", r.cartoes, got.has("cartoes")], ["Orçamento", r.orcamento, got.has("orcamento")]].filter((x) => x[2]);
     out.innerHTML = `${tiles.length ? `<div class="tiles" style="margin-top:var(--space-4)">${tiles.map(([l, v]) => tile(l, v)).join("")}</div>`
       : `<p class="hint" style="margin-top:var(--space-4)">Nada das seções marcadas veio na planilha.</p>`}
       ${apag ? `<p class="hint">Apagado antes de importar: ${esc(apag)}.</p>` : ""}
@@ -807,6 +807,7 @@ $("#imp-history").addEventListener("click", async (e) => {
 const SECTION_INFO = {
   entradas: { title: "Entradas", add: "Nova entrada" },
   fixas: { title: "Contas fixas", add: "Nova conta fixa" },
+  cartoes: { title: "Cartões", add: "Nova fatura prevista" },
   dividas: { title: "Dívidas e parcelas", add: "Ver dívidas" },
   variaveis: { title: "Gastos variáveis", add: "Orçar categoria" },
 };
@@ -866,10 +867,10 @@ async function renderMes() {
       <b class="${A.end < 0 ? "short" : ""}">${money(A.end)}</b></div>
     <p class="pm-acc__sub">${A.kind === "realizado" ? "Realizado nas contas" : "Previsto"} · começa o mês com ${A.start < 0 ? "−" : ""}${fmt(Math.abs(A.start))}</p>` : "";
   const base = Math.max(p.entradas, p.saidas, 1);
-  const parts = [["fixas", S.fixas.planned], ["dividas", S.dividas.planned], ["variaveis", S.variaveis.planned], ["sobra", Math.max(0, p.sobra)]];
+  const parts = [["fixas", S.fixas.planned], ["cartoes", S.cartoes.planned], ["dividas", S.dividas.planned], ["variaveis", S.variaveis.planned], ["sobra", Math.max(0, p.sobra)]];
   $("#pm-bar").innerHTML = parts.filter(([, v]) => v > 0).map(([k, v]) => `<i class="seg-${k}" style="width:${(v / base) * 100}%"></i>`).join("");
   const done = (k) => (S[k].actual ? `${fmt(S[k].actual)} ${k === "variaveis" ? "gasto" : "pago"}` : "");
-  $("#pm-legend").innerHTML = [["fixas", "Contas fixas"], ["dividas", "Dívidas e parcelas"], ["variaveis", "Gastos variáveis"]]
+  $("#pm-legend").innerHTML = [["fixas", "Contas fixas"], ["cartoes", "Cartões"], ["dividas", "Dívidas e parcelas"], ["variaveis", "Gastos variáveis"]]
     .map(([k, l]) => `<div class="pm-leg"><span class="dot seg-${k}"></span><span class="pm-leg__l">${l}</span>
       <span class="pm-leg__a">${done(k)}</span><b>${fmt(S[k].planned)}</b></div>`).join("") +
     `<div class="pm-leg"><span class="dot seg-sobra"></span><span class="pm-leg__l">${p.sobra >= 0 ? "Sobra" : "Falta"}</span><span class="pm-leg__a"></span><b>${fmt(Math.abs(p.sobra))}</b></div>`;
@@ -883,7 +884,7 @@ async function renderMes() {
   $("#pm-late-total").innerHTML = money(-p.atrasos_total);
   $("#pm-late").innerHTML = p.atrasos.map((o) => { state.occ[occKey(o)] = o; return occRow(o, { late: true }); }).join("");
 
-  $("#pm-sections").innerHTML = ["entradas", "fixas", "dividas", "variaveis"].map((k) => planSection(k, S[k], p)).join("");
+  $("#pm-sections").innerHTML = ["entradas", "fixas", "cartoes", "dividas", "variaveis"].map((k) => planSection(k, S[k], p)).join("");
 }
 
 function planSection(k, sec, p) {
@@ -896,12 +897,14 @@ function planSection(k, sec, p) {
   const sub = {
     entradas: sec.actual ? `${fmt(sec.actual)} recebido` : `${sec.items.length} ${sec.items.length === 1 ? "item" : "itens"}`,
     fixas: sec.actual ? `${fmt(sec.actual)} pago de ${fmt(sec.planned)}` : `${sec.items.length} ${sec.items.length === 1 ? "conta" : "contas"}`,
+    cartoes: `${sec.items.length} ${sec.items.length === 1 ? "fatura" : "faturas"}`,
     dividas: `${sec.items.length} ${sec.items.length === 1 ? "parcela" : "parcelas"}`,
     variaveis: sec.actual ? `${fmt(sec.actual)} gasto de ${fmt(sec.planned)}` : "orçamento por categoria",
   }[k];
   const empty = {
     entradas: "Cadastre salário e outras entradas previstas.",
     fixas: "Aluguel, condomínio, escola, planos… com vencimento.",
+    cartoes: "Nenhuma fatura prevista neste mês. Importe a aba Cartões ou adicione aqui.",
     dividas: "Nenhuma parcela neste mês.",
     variaveis: "Defina quanto pretende gastar por categoria (mercado, transporte…).",
   }[k];
@@ -970,6 +973,10 @@ $("#pv-mes").addEventListener("click", async (e) => {
   if (add) {
     const k = add.dataset.planAdd;
     if (k === "dividas") return goTab("dividas");
+    if (k === "cartoes") {
+      const cat = state.categories.find((c) => c.group === "Cartões" && c.type === "despesa");
+      return openPlannedSheet(null, { kind: "despesa", recurrence: "pontual", start_month: state.plan.month, category_id: cat ? cat.id : null });
+    }
     if (k === "variaveis") return openAddBudgetSheet();
     return openPlannedSheet(null, { kind: k === "entradas" ? "receita" : "despesa", start_month: state.plan.month });
   }
@@ -1362,7 +1369,7 @@ function openActionSheet(a, preset) {
 const NUM = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
 const num = (v) => (Math.round(v) ? NUM.format(Math.round(v)) : "");
 const snum = (v) => `${v < 0 ? "−" : ""}${NUM.format(Math.abs(Math.round(v)))}`;
-const SECTION_TITLE = { entradas: "Entradas", saidas: "Saídas", dividas: "Dívidas e parcelas" };
+const SECTION_TITLE = { entradas: "Entradas", saidas: "Saídas", cartoes: "Cartões", dividas: "Dívidas e parcelas" };
 
 async function renderFluxo() {
   const h = state.plan.horizon || 12;

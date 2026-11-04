@@ -113,3 +113,57 @@ def test_month_and_rate_parsing():
     assert parse_rate("4,39") == pytest.approx(0.0439) and parse_rate(0.0249) == pytest.approx(0.0249)
     with pytest.raises(ValueError):
         parse_month("amanhã")
+
+
+def test_cards_sheet_separate_from_debts(client):
+    """Aba Cartões: faturas previstas por cartão, numa seção própria; o cartão cadastrado antes como dívida sai dali em diante."""
+    c = client
+    cats = {x["name"]: x for x in c.get("/api/categories").json()}
+    emp = cats["Parcela de empréstimo"]["id"]
+    # como veio da planilha antiga: Carrefour e Picpay como parcela de empréstimo, e um atraso de outubro
+    def prev(name, amount, start, end=None, rec="pontual"):
+        r = c.post("/api/planned", json={"name": name, "kind": "despesa", "amount": amount, "recurrence": rec, "start_month": f"{start}-01",
+                                         "end_month": f"{end}-01" if end else None, "category_id": emp})
+        assert r.status_code == 201, r.text
+    prev("Carrefour", 1058.34, ym(0))
+    prev("Carrefour", 889.05, ym(1), ym(2), "mensal")
+    prev("Picpay", 1000, ym(0))
+    prev("Carrefour", 700, ym(-1))
+    c.post("/api/planned", json={"name": "Aluguel", "kind": "despesa", "amount": 2500, "recurrence": "mensal", "start_month": f"{ym(0)}-01"})
+
+    wb = load_workbook(io.BytesIO(c.get("/api/imports/modelo").content))
+    assert "Cartões" in wb.sheetnames
+    ws = wb["Cartões"]
+    ws.append(["C6", 230, ym(0)[:7], ym(9)[:7], None, None, "parcelamento"])
+    ws.append(["Carrefour", "828,34", ym(0)[:7], None, 20, None, "Jim.com 8/10 …"])
+    ws.append(["Carrefour", 659.05, ym(1)[:7], ym(2)[:7], 20])
+    ws.append(["Carrefour", 217.23, ym(3)[:7], ym(7)[:7], 20])
+    ws.append(["PicPay", 1000, ym(0)[:7]])
+    ws.append(["PicPay", 1400, ym(1)[:7]])
+    buf = io.BytesIO()
+    wb.save(buf)
+    r = send(c, buf.getvalue(), modo="substituir", secoes="cartoes").json()
+    assert r["secoes"] == ["cartoes"] and r["cartoes"] == 6 and r["apagados"]["cartoes_antigos"] == 3
+    again = send(c, buf.getvalue(), modo="substituir", secoes="cartoes").json()  # importar de novo não duplica nem apaga o atraso
+    assert again["cartoes"] == 6 and again["apagados"]["cartoes"] == 6
+
+    planned = c.get("/api/planned").json()
+    card_cat = {x["name"]: x for x in c.get("/api/categories").json()}["Fatura de cartão"]
+    assert card_cat["group"] == "Cartões"
+    assert not [p for p in planned if p["category_id"] == emp]  # nada mais do Carrefour/Picpay em Dívidas
+    late = [(p["name"], p["amount"], p["start_month"]) for p in planned
+            if p["category_id"] == card_cat["id"] and p["start_month"] < f"{ym(0)}-01"]
+    assert late == [("Carrefour", 700, f"{ym(-1)}-01")]  # o atraso de outubro fica, agora em Cartões
+    assert any(p["name"] == "Aluguel" for p in planned)  # o resto não muda
+
+    t = c.get("/api/projection", params={"months": 10, "detail": True}).json()
+    sec = {s["key"]: s for s in t["table"]["sections"]}
+    rows = {r["label"]: r for g in sec["cartoes"]["groups"] for r in g["rows"]}
+    assert set(rows) == {"C6", "Carrefour", "PicPay"} and "dividas" not in {k for k, s in sec.items() if s["groups"]}
+    assert rows["Carrefour"]["values"][:8] == [659.05, 659.05, 217.23, 217.23, 217.23, 217.23, 217.23, 0]
+    assert rows["PicPay"]["values"][0] == 1400 and rows["C6"]["values"][8] == 230 and rows["C6"]["values"][9] == 0
+    m1 = t["months"][0]
+    assert m1["parcelas_cartao"] == 659.05 + 230 + 1400 and m1["despesas"] == 2500  # cartões fora das despesas
+    plan = c.get("/api/plan", params={"month": f"{ym(1)}-01"}).json()
+    assert {x["name"] for x in plan["sections"]["cartoes"]["items"]} == {"C6", "Carrefour", "PicPay"}
+    assert plan["sections"]["dividas"]["items"] == [] and plan["saidas"] == 2500 + 659.05 + 230 + 1400

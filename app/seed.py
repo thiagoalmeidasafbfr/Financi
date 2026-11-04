@@ -21,6 +21,7 @@ CATEGORIES = [
     ("Presentes e doações", "despesa", ["Presentes e doações"]),
     ("Impostos e taxas", "despesa", ["Tarifas bancárias", "Impostos", "Juros e encargos"]),
     ("Dívidas", "despesa", ["Parcela de empréstimo", "Consignado", "Financiamento"]),
+    ("Cartões", "despesa", ["Fatura de cartão"]),  # faturas previstas por cartão (fora de Dívidas)
     ("Outros", "despesa", ["Saques", "Outros gastos"]),
     ("Receitas", "receita", ["Salário", "13º e férias", "Bônus e PLR", "Freelance e extras", "Rendimentos",
                              "Reembolsos", "Restituição de IR", "Outras receitas"]),

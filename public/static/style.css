@@ -869,6 +869,8 @@ button.icon { font-size: 16px; }
 .pm-bar i { display: block; height: 100%; }
 .seg-fixas { background: var(--royal-blue); }
 .seg-dividas { background: var(--bright-azure); }
+.seg-cartoes { background: #3d63d6; }
+[data-theme="navy"] .seg-cartoes { background: #c3d3ff; }
 .seg-variaveis { background: #9db8ff; }
 .seg-sobra { background: var(--chart-dim); box-shadow: inset 0 0 0 1px var(--line-strong); }
 [data-theme="navy"] .seg-fixas { background: #ffffff; }
