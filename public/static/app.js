@@ -576,8 +576,9 @@ async function openQuickAdd(preset = {}) {
         <label class="field" id="qa-end-l">Até (opcional)${monthInput("qa-end", null)}</label>
       </div>
     </div>
-    <div class="qa-actions"><button class="primary" id="qa-save">Salvar</button><button class="secondary" id="qa-again">Salvar e adicionar outra</button></div>
-    <button class="link qa-more" id="qa-more" type="button">Mais opções</button>
+    <div class="qa-actions"><button class="primary" id="qa-save">Salvar</button></div>
+    <div class="qa-links"><button class="link" id="qa-again" type="button">Salvar e adicionar outra</button><span aria-hidden="true">·</span>
+      <button class="link" id="qa-more" type="button">Mais opções</button></div>
   </div>`);
   const kindCats = () => state.categories.filter((c) => c.type === v.kind && c.active);
   const paintCats = () => {

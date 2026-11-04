@@ -580,8 +580,9 @@ html[data-theme="light"] .home-top { padding: var(--space-8); border-radius: 24p
 }
 
 @media (max-width: 700px) {
+  /* o iOS 26 desfoca o que fica logo abaixo da barra de status no app instalado: o título começa abaixo dessa faixa */
   header.topbar { position: relative; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none;
-    align-items: flex-start; padding-top: max(var(--space-4), env(safe-area-inset-top)); padding-bottom: var(--space-2); }
+    align-items: flex-start; padding-top: max(var(--space-4), calc(env(safe-area-inset-top) + 18px)); padding-bottom: var(--space-2); }
   .screen-head { display: block; flex: 1; min-width: 0; }
   .screen-head h1 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .top-actions { padding-top: 2px; }
@@ -1068,3 +1069,49 @@ button.hero-stat:hover { background: none; }
 .flow-table th.late { color: var(--ink); }
 :root, [data-theme="light"] { --late-bg: rgba(220, 120, 60, .10); }
 [data-theme="navy"] { --late-bg: rgba(255, 170, 120, .12); }
+
+/* ---------------------------------------------------------------- folhas: controles finos (refinamento do formulário de adicionar) */
+:root, [data-theme="light"] { --seg-track: #eef1f6; --seg-on: #ffffff; --seg-shadow: 0 1px 3px rgba(13, 21, 30, .12), 0 0 0 .5px rgba(13, 21, 30, .06);
+  --chip-bg: #f1f3f7; }
+[data-theme="navy"] { --seg-track: rgba(255, 255, 255, .08); --seg-on: rgba(255, 255, 255, .18); --seg-shadow: none; --chip-bg: rgba(255, 255, 255, .08); }
+/* segmentado no estilo iOS: um trilho só, opção escolhida "levantada" */
+.sheet .segmented { display: flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--seg-track); flex-wrap: nowrap; width: 100%; }
+.sheet .segmented button { flex: 1 1 auto; height: 30px; padding: 0 var(--space-3); border: 0; border-radius: 8px; background: transparent;
+  color: var(--ink-muted); font-size: 13px; line-height: 18px; font-weight: 500; white-space: nowrap; box-shadow: none; }
+.sheet .segmented button:hover { background: transparent; color: var(--ink); }
+.sheet .segmented button.active { background: var(--seg-on); color: var(--ink); box-shadow: var(--seg-shadow); }
+.qa .qa-kind { width: 200px; align-self: center; }
+/* chips preenchidos, sem contorno */
+.qa-chips { gap: 6px; }
+.qa-chips button, .qa-date { height: 30px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--chip-bg);
+  color: var(--ink); font-size: 13px; line-height: 18px; font-weight: 400; }
+.qa-chips button:hover { background: var(--chip-bg); filter: brightness(.97); }
+.qa-chips button.on, .qa-date.on { background: var(--surface-tint); color: var(--link); font-weight: 500; box-shadow: inset 0 0 0 1px var(--link); }
+.qa-date input { height: 28px; font-size: 13px; color: inherit; }
+/* rótulos discretos, valor protagonista */
+.qa .imp-label, .qa .field { font-size: 12px; line-height: 16px; font-weight: 500; color: var(--ink-muted); letter-spacing: 0; text-transform: none; }
+.qa .imp-label { margin: var(--space-5) 0 var(--space-2); }
+.qa-amount { margin: var(--space-5) 0 var(--space-3); }
+.qa-amount span { font-size: 15px; font-weight: 400; }
+.qa .qa-amount input { font-size: 36px; line-height: 44px; height: 48px; letter-spacing: -.02em; }
+.qa .qa-desc { height: 42px; border: 0; border-radius: 12px; background: var(--chip-bg); font-size: 15px; text-align: center; }
+.qa .qa-desc:focus { box-shadow: 0 0 0 1.5px var(--focus-ring); }
+.qa .qa-when { margin-bottom: var(--space-3); }
+.qa .field input, .qa .field select { height: 40px; font-size: 14px; border: 0; background: var(--chip-bg); border-radius: 10px; margin-top: 6px; }
+.qa .form { gap: var(--space-3); margin-top: var(--space-3); }
+.qa .sheet-month { margin-top: 6px; height: 40px; border-radius: 10px; background: var(--chip-bg); padding: 0 2px; }
+.qa .sheet-month input { font-size: 14px; font-weight: 500; background: transparent; border: 0; height: 38px; margin: 0; }
+.qa .sheet-month button { width: 32px; height: 32px; font-size: 16px; color: var(--ink-muted); }
+.qa .qa-actions { margin-top: var(--space-6); }
+.qa .qa-actions button.primary { height: 48px; border-radius: 14px; font-size: 15px; font-weight: 500; }
+.qa-links { display: flex; justify-content: center; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 var(--space-1);
+  color: var(--ink-faint); font-size: 13px; }
+.qa-links button.link { font-size: 13px; font-weight: 500; }
+@media (max-width: 700px) { .sheet { padding-left: var(--space-5); padding-right: var(--space-5); } }
+.qa .qa-amount input:focus { border: 0; box-shadow: none; outline: none; }
+.qa-chips button.on, .qa-date.on { box-shadow: none; }
+.qa .qa-desc:focus, .qa .qa-desc:focus-visible { outline: none; border: 0; box-shadow: 0 0 0 1.5px var(--bright-azure); }
+.cell-amount input:focus, .cell-amount input:focus-visible { border: 0; box-shadow: none; outline: none; }
+.sheet .qa-actions button.primary { height: 48px; border-radius: 14px; font-size: 15px; font-weight: 500; }
+.sheet .qa-actions button.secondary { height: 40px; border: 0; background: transparent; color: var(--link); font-size: 14px; font-weight: 500; }
+.sheet .qa-actions button.secondary:hover { background: var(--chip-bg); }
