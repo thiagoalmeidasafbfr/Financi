@@ -19,6 +19,9 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   categorias mais usadas em um toque e **quando**: *Já paguei / Já recebi* vira lançamento (hoje, ontem ou outra
   data, na conta usada da última vez); *Vou pagar / Vou receber* vira previsto (uma vez ou todo mês). Dá para salvar
   e adicionar outra em seguida, e o aviso traz **Desfazer**. Lançamentos à mão sem categoria passam pelas regras.
+- **Saldo acumulado no Mês**: o resumo da visão Mês mostra o saldo acumulado no fim do mês (o mesmo da linha
+  "Saldo acumulado" do Fluxo, com as ações ligadas do Cockpit) e com quanto o mês começa; nos meses passados, o
+  saldo realizado das contas.
 - **Editar pela tabela** (Planejamento → Fluxo): toque num valor para mudar aquele mês. Previsto: **só neste mês**
   ou **deste mês em diante** (até o fim da previsão; a previsão é dividida e as outras ficam como estão), **Zerar**,
   mover ou marcar como pago. Categoria: orçamento só do mês ou de todo mês (ou voltar à média). Parcela de dívida:

@@ -856,6 +856,11 @@ async function renderMes() {
   $("#pm-sobra").innerHTML = money(Math.abs(p.sobra));
   $("#pm-sobra").classList.toggle("short", p.sobra < 0);
   $("#pm-sub").textContent = `Entradas ${fmt(p.entradas)} − saídas previstas ${fmt(p.saidas)}`;
+  // saldo acumulado no fim do mês (o mesmo da linha "Saldo acumulado" do Fluxo; nos meses passados, o realizado)
+  const A = p.acumulado;
+  $("#pm-acc").innerHTML = A ? `<div class="pm-acc__row"><span>Saldo acumulado no fim de ${monthName}</span>
+      <b class="${A.end < 0 ? "short" : ""}">${money(A.end)}</b></div>
+    <p class="pm-acc__sub">${A.kind === "realizado" ? "Realizado nas contas" : "Previsto"} · começa o mês com ${A.start < 0 ? "−" : ""}${fmt(Math.abs(A.start))}</p>` : "";
   const base = Math.max(p.entradas, p.saidas, 1);
   const parts = [["fixas", S.fixas.planned], ["dividas", S.dividas.planned], ["variaveis", S.variaveis.planned], ["sobra", Math.max(0, p.sobra)]];
   $("#pm-bar").innerHTML = parts.filter(([, v]) => v > 0).map(([k, v]) => `<i class="seg-${k}" style="width:${(v / base) * 100}%"></i>`).join("");

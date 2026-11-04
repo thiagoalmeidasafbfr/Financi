@@ -14,6 +14,7 @@ from ..services import (
     accounts_for,
     balances,
     debts_summary,
+    month_balance,
     month_plan,
     month_view,
     projection,
@@ -61,7 +62,9 @@ def list_budgets(db: Session = Depends(get_session)):
 @router.get("/plan")
 def get_month_plan(month: date | None = None, person: str | None = None, db: Session = Depends(get_session)):
     """Plano do mês: entradas, contas fixas, dívidas e gastos variáveis, com previsto, realizado e sobra."""
-    return month_plan(db, person, month or _today(), _today())
+    out = month_plan(db, person, month or _today(), _today())
+    out["acumulado"] = month_balance(db, person, month or _today(), _today())
+    return out
 
 
 @router.get("/budget/suggest")

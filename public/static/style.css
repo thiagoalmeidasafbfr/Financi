@@ -1032,3 +1032,11 @@ button.ck-row__main:hover { background: none; }
 .cell-amount input { width: 10ch; height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; text-align: left;
   font-size: 32px; line-height: 40px; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--ink); }
 .cell-amount input:focus { box-shadow: none; border: 0; }
+
+/* saldo acumulado na visão Mês */
+.pm-acc { margin: 0 0 var(--space-4); padding: var(--space-3) 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.pm-acc:empty { display: none; }
+.pm-acc__row { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); font-size: 13px; color: var(--ink-muted); }
+.pm-acc__row b { font-size: 18px; line-height: 24px; font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pm-acc__row b.short { color: var(--ink); }
+.pm-acc__sub { margin: 2px 0 0; font-size: 12px; color: var(--ink-muted); }

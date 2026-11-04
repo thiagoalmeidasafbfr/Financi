@@ -597,3 +597,28 @@ def month_plan(db: Session, person: str | None, month: date, today: date) -> dic
         "atrasos": late, "atrasos_total": round(sum(o["amount"] for o in late if o["kind"] == "despesa"), 2),
         "groupings": groupings,
     }
+
+
+def month_balance(db: Session, person: str | None, month: date, today: date) -> dict:
+    """Saldo acumulado no fim do mês (o mesmo da linha "Saldo acumulado" do Fluxo) e com quanto o mês começa.
+
+    Mês futuro: projeção. Mês atual: contas menos faturas abertas, mais o que ainda entra/sai no mês.
+    Mês passado: saldo realizado das contas no fim do mês (sem projeção)."""
+    m, cur = fin.month_start(month), fin.month_start(today)
+    if m < cur:
+        accs = [a for a in accounts_for(db, person) if a.kind in LIQUID]
+        now = sum(balances(db, accs).values())
+
+        def after(d: date) -> float:
+            if not accs:
+                return 0.0
+            return float(db.scalar(select(func.coalesce(func.sum(Transaction.amount), 0)).where(
+                Transaction.account_id.in_([a.id for a in accs]), Transaction.date >= d)) or 0.0)
+        return {"kind": "realizado", "end": round(now - after(fin.add_months(m, 1)), 2), "start": round(now - after(m), 2)}
+    k = fin.months_between(cur, m)
+    p = projection(db, person, today, max(k, 1))
+    now_end = round(p["saldo_inicial"] - p["months"][0]["pendentes"], 2)  # fim do mês atual
+    if k == 0:
+        return {"kind": "previsto", "end": now_end, "start": p["saldo_atual"]}
+    rows = p["months"]
+    return {"kind": "previsto", "end": rows[k - 1]["saldo"], "start": rows[k - 2]["saldo"] if k > 1 else now_end}
