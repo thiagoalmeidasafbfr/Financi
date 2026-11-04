@@ -188,13 +188,17 @@ def download_template(db: Session = Depends(get_session)):
 
 
 @router.post("/imports/planilha")
-async def upload_planilha(file: UploadFile = File(...), replace: bool = Form(True), db: Session = Depends(get_session)):
-    """Importa a planilha do modelo. Com replace, o que veio de uma planilha anterior é substituído."""
+async def upload_planilha(file: UploadFile = File(...), secoes: str = Form(""), modo: str = Form("adicionar"),
+                          db: Session = Depends(get_session)):
+    """Importa a planilha do modelo por seção (receitas, despesas, atrasos, dividas, orcamento; vazio = todas).
+
+    modo "adicionar" soma ao que existe; "substituir" apaga as seções que a planilha traz e importa de novo."""
     content = await file.read()
     if len(content) > MAX_UPLOAD:
         raise HTTPException(413, "Arquivo maior que 4 MB")
     try:
-        res = planilha.import_workbook(db, content, replace=replace)
+        sections = {x.strip() for x in secoes.split(",") if x.strip()}
+        res = planilha.import_workbook(db, content, sections=sections, mode=modo)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(400, str(exc)) from None

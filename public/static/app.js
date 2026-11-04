@@ -566,6 +566,25 @@ async function importFiles(files) {
   await renderImportar();
 }
 // planilha de planejamento (modelo .xlsx): previstos, atrasos, dívidas e orçamento
+// por seção e em dois modos: adicionar (soma) ou substituir (apaga a seção que a planilha traz e sobe de novo)
+const SECTION_NAMES = { receitas: "Receitas", despesas: "Despesas previstas", atrasos: "Atrasos", dividas: "Dívidas", orcamento: "Orçamento" };
+state.xlsxMode = "adicionar";
+function syncXlsxMode() {
+  $$("#xlsx-mode button").forEach((b) => b.classList.toggle("active", b.dataset.m === state.xlsxMode));
+  $("#xlsx-mode-hint").textContent = state.xlsxMode === "adicionar"
+    ? "Soma ao que já existe. O que já existir igual é ignorado."
+    : "Apaga tudo das seções marcadas que a planilha trouxer (inclusive o cadastrado no app) e importa de novo. Seções que a planilha não traz ficam como estão.";
+}
+syncXlsxMode();
+$("#xlsx-mode").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-m]");
+  if (b) { state.xlsxMode = b.dataset.m; syncXlsxMode(); }
+});
+$("#xlsx-file").addEventListener("click", (e) => {
+  const secoes = $$("#xlsx-sections input:checked").map((i) => SECTION_NAMES[i.value]);
+  if (!secoes.length) { e.preventDefault(); return toast("Marque pelo menos uma seção"); }
+  if (state.xlsxMode === "substituir" && !confirm(`Substituir: o que houver de ${secoes.join(", ")} na planilha vai trocar o que existe hoje nessas seções. Continuar?`)) e.preventDefault();
+});
 $("#xlsx-file").addEventListener("change", async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
@@ -574,12 +593,20 @@ $("#xlsx-file").addEventListener("change", async (e) => {
   out.innerHTML = `<p class="hint" style="margin:var(--space-3) 0 0">Importando ${esc(file.name)}…</p>`;
   const fd = new FormData();
   fd.append("file", file);
-  fd.append("replace", $("#xlsx-replace").checked ? "true" : "false");
+  const secoes = $$("#xlsx-sections input:checked").map((i) => i.value);
+  fd.append("secoes", secoes.join(","));
+  fd.append("modo", state.xlsxMode);
   try {
     const r = await api("POST", "/api/imports/planilha", fd);
-    out.innerHTML = `<div class="tiles" style="margin-top:var(--space-4)">${[["Previstos", r.previstos], ["Atrasos", r.atrasos], ["Dívidas", r.dividas], ["Orçamento", r.orcamento]]
-      .map(([l, v]) => tile(l, v)).join("")}</div>
-      ${r.substituidos ? `<p class="hint">${r.substituidos} itens da planilha anterior foram substituídos.</p>` : ""}
+    const apag = Object.entries(r.apagados || {}).map(([k, n]) => `${SECTION_NAMES[k]} (${n})`).join(", ");
+    // só as seções que vieram na planilha (importar só dívidas não mostra zeros nas outras)
+    const got = new Set(r.secoes || []);
+    const tiles = [["Previstos", r.previstos, got.has("receitas") || got.has("despesas")], ["Atrasos", r.atrasos, got.has("atrasos")],
+      ["Dívidas", r.dividas, got.has("dividas")], ["Orçamento", r.orcamento, got.has("orcamento")]].filter((x) => x[2]);
+    out.innerHTML = `${tiles.length ? `<div class="tiles" style="margin-top:var(--space-4)">${tiles.map(([l, v]) => tile(l, v)).join("")}</div>`
+      : `<p class="hint" style="margin-top:var(--space-4)">Nada das seções marcadas veio na planilha.</p>`}
+      ${apag ? `<p class="hint">Apagado antes de importar: ${esc(apag)}.</p>` : ""}
+      ${r.ignorados ? `<p class="hint">${r.ignorados} já existiam iguais e foram ignorados.</p>` : ""}
       ${r.pessoas_criadas.length ? `<p class="hint">Pessoas criadas: ${esc(r.pessoas_criadas.join(", "))}.</p>` : ""}
       ${r.avisos.length ? `<details class="warnings"><summary>${r.avisos.length} ${r.avisos.length === 1 ? "aviso" : "avisos"}</summary><ul>${r.avisos.map((a) => `<li>${esc(a)}</li>`).join("")}</ul></details>` : ""}
       <div class="row"><button class="secondary" data-goto-plan="previstos">Ver previstos</button><button data-goto="dividas">Ver dívidas</button></div>`;

@@ -32,8 +32,11 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   mês); o pagamento é reconhecido pelo extrato quando a previsão tem um "texto no extrato".
 - **Planilha de planejamento**: em Importar, **Baixar modelo** gera um .xlsx com as abas Previstos, Atrasos,
   Dívidas e Orçamento (com listas das categorias e pessoas do app). Preencha no Excel ou Google Planilhas e envie:
-  tudo é criado de uma vez. Importar de novo substitui o que veio da planilha anterior (itens editados no app
-  deixam de ser substituídos). Meses no formato AAAA-MM; valores positivos.
+  tudo é criado de uma vez. Dá para importar **por seção** (Receitas, Despesas previstas, Atrasos, Dívidas,
+  Orçamento) em dois modos: **Adicionar** soma ao que existe e ignora o que já existe igual; **Substituir** apaga a
+  seção inteira (inclusive o cadastrado no app) e sobe de novo. Só são apagadas as seções que a planilha traz com
+  pelo menos uma linha, então um arquivo só com a aba Dívidas troca os consignados sem mexer no resto.
+  Meses no formato AAAA-MM; valores positivos.
 - **Dívidas**: faturas por cartão (com dia de fechamento e vencimento), limite usado, parcelas futuras; empréstimos
   com parcelas pagas, saldo devedor, valor para quitar hoje e juros restantes; ordem sugerida para quitar
   (maior juro primeiro ou menor saldo primeiro).

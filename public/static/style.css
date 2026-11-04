@@ -693,6 +693,16 @@ a.link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
 .warnings summary { cursor: pointer; color: var(--link); }
 .warnings ul { margin: var(--space-2) 0 0; padding-left: 18px; }
 
+/* seções da planilha (chips marcáveis) */
+.imp-label { margin: var(--space-4) 0 var(--space-2); }
+.chip-checks { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.chip-checks label { position: relative; cursor: pointer; }
+.chip-checks input { position: absolute; opacity: 0; pointer-events: none; }
+.chip-checks span { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--space-3); border-radius: 999px; font-size: 13px;
+  border: 1px solid var(--btn-line); color: var(--ink-muted); }
+.chip-checks input:checked + span { background: var(--surface-tint); border-color: transparent; color: var(--link); font-weight: 500; }
+.chip-checks input:focus-visible + span { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+
 /* ---------------------------------------------------------------- Previstos */
 .plan-views { margin: 0 0 var(--space-4); }
 .pl-late { border-color: rgba(255, 255, 255, .22); }

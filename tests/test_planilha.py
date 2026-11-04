@@ -39,8 +39,8 @@ def filled_template(client) -> bytes:
     return buf.getvalue()
 
 
-def send(client, content, replace=True):
-    return client.post("/api/imports/planilha", files={"file": ("plano.xlsx", content)}, data={"replace": str(replace).lower()})
+def send(client, content, modo="adicionar", secoes=""):
+    return client.post("/api/imports/planilha", files={"file": ("plano.xlsx", content)}, data={"modo": modo, "secoes": secoes})
 
 
 def test_import_template_end_to_end(client):
@@ -72,10 +72,35 @@ def test_import_template_end_to_end(client):
     budgets = {(b["category_id"], b["month"]): b["amount"] for b in client.get("/api/budgets").json()}
     assert sorted(budgets.values()) == [700, 1000]
 
-    # reimportar substitui o que veio da planilha (não duplica)
+    # adicionar de novo o mesmo arquivo não duplica (o que já existe igual é ignorado)
     again = send(client, content).json()
-    assert again["substituidos"] == 8
+    assert again["ignorados"] == 8 and again["previstos"] == 0 and again["dividas"] == 0
     assert len(client.get("/api/planned").json()) == 6 and len(client.get("/api/debts").json()) == 2
+    # substituir apaga as seções que a planilha traz (inclusive o cadastrado no app) e importa de novo
+    client.post("/api/debts", json={"name": "Cadastrada à mão", "kind": "outro", "installment": 10})
+    sub = send(client, content, modo="substituir").json()
+    assert sub["apagados"]["dividas"] == 3 and sub["dividas"] == 2
+    assert {d["name"] for d in client.get("/api/debts").json()} == {"PAN 015435447", "Acordo loja"}
+    assert len(client.get("/api/planned").json()) == 6
+
+
+def test_import_by_section(client):
+    """Só a seção escolhida entra; numa planilha só com dívidas, substituir não apaga as outras seções."""
+    content = filled_template(client)
+    r = send(client, content, secoes="receitas").json()
+    assert (r["previstos"], r["atrasos"], r["dividas"], r["orcamento"]) == (2, 0, 0, 0) and r["secoes"] == ["receitas"]
+    assert {p["kind"] for p in client.get("/api/planned").json()} == {"receita"}
+    send(client, content)  # o resto, adicionando
+    # planilha só com dívidas, todas as seções marcadas, modo substituir: só Dívidas é trocada
+    wb = load_workbook(io.BytesIO(client.get("/api/imports/modelo").content))
+    wb["Dívidas"].append(["QI 0365695504", "Consignado", "QI", 199.96, "3,99", "2026-07-05", 48, None, None, None, None])
+    buf = io.BytesIO()
+    wb.save(buf)
+    only = send(client, buf.getvalue(), modo="substituir").json()
+    assert only["secoes"] == ["dividas"] and only["apagados"] == {"dividas": 2}
+    assert [d["name"] for d in client.get("/api/debts").json()] == ["QI 0365695504"]
+    assert len(client.get("/api/planned").json()) == 6  # previstos intactos
+    assert send(client, content, modo="qualquer").status_code == 400
 
 
 def test_import_rejects_other_files(client):

@@ -1,7 +1,9 @@
 """Planilha de importação: modelo (.xlsx com listas) e importação de Previstos, Atrasos, Dívidas e Orçamento.
 
 As colunas são achadas pelo nome do cabeçalho (sem diferença de acento ou maiúsculas), então a ordem pode mudar.
-Tudo o que vem da planilha leva a marca IMPORT_TAG nas observações; importar de novo substitui o que veio antes."""
+A importação é por seção (receitas, despesas previstas, atrasos, dívidas, orçamento) e em dois modos:
+"adicionar" (soma ao que existe; o que já existe igual é ignorado) e "substituir" (apaga a seção inteira e importa
+de novo). Em "substituir" só são apagadas as seções que a planilha traz com pelo menos uma linha válida."""
 from __future__ import annotations
 
 import io
@@ -22,6 +24,9 @@ from .text import strip_accents
 
 IMPORT_TAG = "Importado da planilha"
 MESES = {"jan": 1, "fev": 2, "mar": 3, "abr": 4, "mai": 5, "jun": 6, "jul": 7, "ago": 8, "set": 9, "out": 10, "nov": 11, "dez": 12}
+SECTIONS = {
+    "receitas": "Receitas", "despesas": "Despesas previstas", "atrasos": "Atrasos", "dividas": "Dívidas", "orcamento": "Orçamento",
+}
 DEBT_KINDS = {"consignado": "consignado", "emprestimo": "emprestimo", "financiamento": "financiamento",
               "cheque especial": "cheque_especial", "acordo": "acordo", "outro": "outro"}
 
@@ -76,7 +81,7 @@ def _norm(s) -> str:
 def parse_money(v) -> float | None:
     if v is None or v == "":
         return None
-    if isinstance(v, (int, float)):
+    if isinstance(v, int | float):
         return abs(float(v))
     s = str(v).replace("R$", "").replace(" ", "").strip()
     if not s:
@@ -219,7 +224,10 @@ class Result:
     atrasos: int = 0
     dividas: int = 0
     orcamento: int = 0
-    substituidos: int = 0
+    substituidos: int = 0          # total apagado no modo substituir
+    ignorados: int = 0             # já existiam iguais (modo adicionar)
+    apagados: dict = field(default_factory=dict)   # seção → quantos foram apagados
+    secoes: list = field(default_factory=list)     # seções importadas (com linhas na planilha)
     pessoas_criadas: list[str] = field(default_factory=list)
     categorias_criadas: list[str] = field(default_factory=list)
     avisos: list[str] = field(default_factory=list)
@@ -240,12 +248,18 @@ def _rows(ws, sheet: str):
         if not any(v not in (None, "") for v in rec.values()):
             continue
         # a linha 2 do modelo é a ajuda: texto em todas as colunas e nenhum número
-        if i == 2 and not any(isinstance(v, (int, float, date)) for v in rec.values()):
+        if i == 2 and not any(isinstance(v, int | float | date) for v in rec.values()):
             continue
         yield i, Row(rec)
 
 
-def import_workbook(db: Session, content: bytes, replace: bool = True) -> Result:
+def import_workbook(db: Session, content: bytes, sections: set[str] | None = None, mode: str = "adicionar",
+                    today: date | None = None) -> Result:
+    """Importa as seções escolhidas (todas, se vazio) no modo "adicionar" ou "substituir"."""
+    sections = set(sections or SECTIONS) & set(SECTIONS)
+    if mode not in ("adicionar", "substituir"):
+        raise ValueError("Modo inválido: use adicionar ou substituir")
+    current = fin.month_start(today or date.today())  # noqa: DTZ011
     try:
         wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     except Exception as exc:  # noqa: BLE001  (arquivo corrompido ou não é xlsx)
@@ -289,12 +303,7 @@ def import_workbook(db: Session, content: bytes, replace: bool = True) -> Result
             res.pessoas_criadas.append(p.name)
         return p.id
 
-    if replace:
-        for model in (Planned, Debt):
-            for obj in db.scalars(select(model).where(model.notes == IMPORT_TAG)):
-                db.delete(obj)
-                res.substituidos += 1
-        db.flush()
+    pending: dict[str, list] = {k: [] for k in SECTIONS}  # objetos novos por seção
 
     def sheet(title):
         return wb[names[_norm(title)]] if _norm(title) in names else None
@@ -310,20 +319,22 @@ def import_workbook(db: Session, content: bytes, replace: bool = True) -> Result
                     res.avisos.append(f"{where}: faltou nome, valor ou início; linha ignorada")
                     continue
                 kind = "receita" if _norm(r.get("Tipo")).startswith("rec") else "despesa"
+                if ("receitas" if kind == "receita" else "despesas") not in sections:
+                    continue
                 once = _norm(r.get("Frequência")).startswith(("uma", "unic", "pont"))
                 end = None if once else parse_month(r.get("Fim"))
                 if end and end < start:
                     res.avisos.append(f"{where}: fim antes do início; linha ignorada")
                     continue
-                db.add(Planned(name=name, kind=kind, amount=amount, recurrence="pontual" if once else "mensal",
-                               start_month=start, end_month=end, due_day=_day(r.get("Dia do vencimento")),
-                               category_id=category(r.get("Categoria"), kind, where), owner_id=person(r.get("De quem")),
-                               match_pattern=(str(r.get("Texto no extrato") or "").strip() or None), notes=IMPORT_TAG))
-                res.previstos += 1
+                pending["receitas" if kind == "receita" else "despesas"].append(Planned(
+                    name=name, kind=kind, amount=amount, recurrence="pontual" if once else "mensal",
+                    start_month=start, end_month=end, due_day=_day(r.get("Dia do vencimento")),
+                    category_id=category(r.get("Categoria"), kind, where), owner_id=person(r.get("De quem")),
+                    match_pattern=(str(r.get("Texto no extrato") or "").strip() or None), notes=IMPORT_TAG))
             except ValueError as exc:
                 res.avisos.append(f"{where}: {exc}; linha ignorada")
 
-    if ws := sheet("Atrasos"):
+    if (ws := sheet("Atrasos")) and "atrasos" in sections:
         for i, r in _rows(ws, "Atrasos"):
             where = f"Atrasos, linha {i}"
             try:
@@ -333,14 +344,14 @@ def import_workbook(db: Session, content: bytes, replace: bool = True) -> Result
                 if not name or not amount or not month:
                     res.avisos.append(f"{where}: faltou nome, valor ou mês do vencimento; linha ignorada")
                     continue
-                db.add(Planned(name=name, kind="despesa", amount=amount, recurrence="pontual", start_month=month,
-                               due_day=_day(r.get("Dia do vencimento")), category_id=category(r.get("Categoria"), "despesa", where),
-                               owner_id=person(r.get("De quem")), notes=IMPORT_TAG))
-                res.atrasos += 1
+                pending["atrasos"].append(Planned(
+                    name=name, kind="despesa", amount=amount, recurrence="pontual", start_month=month,
+                    due_day=_day(r.get("Dia do vencimento")), category_id=category(r.get("Categoria"), "despesa", where),
+                    owner_id=person(r.get("De quem")), notes=IMPORT_TAG))
             except ValueError as exc:
                 res.avisos.append(f"{where}: {exc}; linha ignorada")
 
-    if ws := sheet("Dívidas"):
+    if (ws := sheet("Dívidas")) and "dividas" in sections:
         for i, r in _rows(ws, "Dívidas"):
             where = f"Dívidas, linha {i}"
             try:
@@ -357,16 +368,16 @@ def import_workbook(db: Session, content: bytes, replace: bool = True) -> Result
                     res.avisos.append(f"{where}: última parcela antes da primeira; linha ignorada")
                     continue
                 kind = DEBT_KINDS.get(_norm(r.get("Tipo")), "emprestimo")
-                db.add(Debt(name=name, kind=kind, creditor=(str(r.get("Credor") or "").strip() or None),
-                            installment=parse_money(r.get("Parcela (R$)")) or 0, monthly_rate=parse_rate(r.get("Juros a.m. (%)")),
-                            first_due=first, total_installments=total, balance=parse_money(r.get("Saldo devedor (sem prazo)")),
-                            owner_id=person(r.get("De quem")), match_pattern=(str(r.get("Texto no extrato") or "").strip() or None),
-                            notes=IMPORT_TAG))
-                res.dividas += 1
+                pending["dividas"].append(Debt(
+                    name=name, kind=kind, creditor=(str(r.get("Credor") or "").strip() or None),
+                    installment=parse_money(r.get("Parcela (R$)")) or 0, monthly_rate=parse_rate(r.get("Juros a.m. (%)")),
+                    first_due=first, total_installments=total, balance=parse_money(r.get("Saldo devedor (sem prazo)")),
+                    owner_id=person(r.get("De quem")), match_pattern=(str(r.get("Texto no extrato") or "").strip() or None),
+                    notes=IMPORT_TAG))
             except ValueError as exc:
                 res.avisos.append(f"{where}: {exc}; linha ignorada")
 
-    if ws := sheet("Orçamento"):
+    if (ws := sheet("Orçamento")) and "orcamento" in sections:
         for i, r in _rows(ws, "Orçamento"):
             where = f"Orçamento, linha {i}"
             try:
@@ -375,19 +386,76 @@ def import_workbook(db: Session, content: bytes, replace: bool = True) -> Result
                     res.avisos.append(f"{where}: faltou categoria ou valor; linha ignorada")
                     continue
                 cid = category(r.get("Categoria"), "despesa", where)
-                month = parse_month(r.get("Mês"))
-                cond = Budget.month.is_(None) if month is None else Budget.month == month
-                row = db.scalar(select(Budget).where(Budget.category_id == cid, cond))
-                if row:
-                    row.amount = amount
-                else:
-                    db.add(Budget(category_id=cid, month=month, amount=amount))
-                res.orcamento += 1
+                pending["orcamento"].append(Budget(category_id=cid, month=parse_month(r.get("Mês")), amount=amount))
             except ValueError as exc:
                 res.avisos.append(f"{where}: {exc}; linha ignorada")
 
+    res.secoes = [k for k in SECTIONS if pending[k]]
+    if mode == "substituir":
+        for k in res.secoes:  # só apaga a seção que a planilha traz (evita zerar o resto por engano)
+            n = 0
+            for obj in _section_objects(db, k, current):
+                db.delete(obj)
+                n += 1
+            res.apagados[k] = n
+            res.substituidos += n
+        db.flush()
+
+    for k in res.secoes:
+        for obj in pending[k]:
+            if mode == "adicionar" and _exists(db, k, obj):
+                res.ignorados += 1
+                continue
+            if k == "orcamento":
+                cond = Budget.month.is_(None) if obj.month is None else Budget.month == obj.month
+                row = db.scalar(select(Budget).where(Budget.category_id == obj.category_id, cond))
+                if row:
+                    row.amount = obj.amount
+                else:
+                    db.add(obj)
+                res.orcamento += 1
+                continue
+            db.add(obj)
+            if k in ("receitas", "despesas"):
+                res.previstos += 1
+            elif k == "atrasos":
+                res.atrasos += 1
+            else:
+                res.dividas += 1
+    if res.ignorados:
+        res.avisos.append(f"{res.ignorados} itens já existiam iguais e foram ignorados (use Substituir para atualizar a seção)")
     db.commit()
     return res
+
+
+def _is_late(p: Planned, current: date) -> bool:
+    """Atraso = despesa de uma vez num mês que já passou."""
+    return p.kind == "despesa" and p.recurrence == "pontual" and p.start_month < current
+
+
+def _section_objects(db: Session, section: str, current: date) -> list:
+    """Tudo o que pertence à seção (inclusive o cadastrado no app), para o modo substituir."""
+    if section == "dividas":
+        return list(db.scalars(select(Debt)))
+    if section == "orcamento":
+        return list(db.scalars(select(Budget)))
+    planned = list(db.scalars(select(Planned)))
+    if section == "receitas":
+        return [p for p in planned if p.kind == "receita"]
+    if section == "atrasos":
+        return [p for p in planned if _is_late(p, current)]
+    return [p for p in planned if p.kind == "despesa" and not _is_late(p, current)]
+
+
+def _exists(db: Session, section: str, obj) -> bool:
+    """No modo adicionar, não duplica o que já existe igual."""
+    if section == "dividas":
+        return any(_norm(d.name) == _norm(obj.name) for d in db.scalars(select(Debt)))
+    if section == "orcamento":
+        return False  # orçamento é atualizado no lugar
+    return any(_norm(p.name) == _norm(obj.name) and p.kind == obj.kind and abs(p.amount - obj.amount) < 0.005
+               and p.recurrence == obj.recurrence and p.start_month == obj.start_month and p.end_month == obj.end_month
+               for p in db.scalars(select(Planned)))
 
 
 def _day(v) -> int | None:

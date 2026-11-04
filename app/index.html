@@ -138,11 +138,21 @@
       <div class="card-head"><h3>Planilha de planejamento</h3><a class="link-btn" href="/api/imports/modelo" download>Baixar modelo</a></div>
       <p class="hint">Traga previstos, atrasos, dívidas (consignados, empréstimos) e orçamento de uma vez: baixe o modelo,
         preencha no Excel ou Google Planilhas e envie aqui.</p>
-      <label class="dropzone dropzone--sm" id="xlsx-zone">
+      <p class="overline imp-label">O que importar</p>
+      <div class="chip-checks" id="xlsx-sections">
+        <label><input type="checkbox" value="receitas" checked><span>Receitas</span></label>
+        <label><input type="checkbox" value="despesas" checked><span>Despesas previstas</span></label>
+        <label><input type="checkbox" value="atrasos" checked><span>Atrasos</span></label>
+        <label><input type="checkbox" value="dividas" checked><span>Dívidas</span></label>
+        <label><input type="checkbox" value="orcamento" checked><span>Orçamento</span></label>
+      </div>
+      <p class="overline imp-label">Como</p>
+      <div class="segmented" id="xlsx-mode"><button data-m="adicionar" class="active">Adicionar</button><button data-m="substituir">Substituir</button></div>
+      <p class="hint" id="xlsx-mode-hint" style="margin-top:var(--space-2)"></p>
+      <label class="dropzone dropzone--sm" style="margin-top:var(--space-4)" id="xlsx-zone">
         <input type="file" id="xlsx-file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
         <span class="dz-title">Enviar planilha (.xlsx)</span>
       </label>
-      <label class="check" style="margin-top:var(--space-3)"><input type="checkbox" id="xlsx-replace" checked> Substituir o que veio da planilha anterior</label>
       <div id="xlsx-result"></div>
     </div>
     <div class="card"><h3>Importações</h3><div class="table-wrap"><table id="imp-history"></table></div></div>
