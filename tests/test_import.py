@@ -36,8 +36,8 @@ def test_learning_from_correction(client, db):
     acc = client.get("/api/accounts").json()[0]["id"]
     new = client.post("/api/transactions", json={"account_id": acc, "date": "2026-11-02", "amount": -12.0,
                                                  "description": "LOJA DO SEU ZE ME"}).json()
-    assert new["category_id"] is None  # manual sem categoria não passa pelas regras...
-    client.post("/api/rules/apply")  # ...até reaplicar
+    assert new["category_id"] == cid and new["categorized_by"] == "regra"  # o lançamento à mão também passa pelas regras
+    client.post("/api/rules/apply")
     t = client.get("/api/transactions", params={"q": "SEU ZE"}).json()
     assert {x["category_id"] for x in t} == {cid}
 

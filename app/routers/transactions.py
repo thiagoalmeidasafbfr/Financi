@@ -8,7 +8,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import schemas
-from ..categorize import apply_ai, learn
+from ..categorize import apply_ai, apply_rules, learn
 from ..db import get_session
 from ..finance import add_months, month_start
 from ..importing import import_ofx
@@ -72,6 +72,8 @@ def create_transaction(data: schemas.TransactionIn, db: Session = Depends(get_se
                     merchant=merchant_key(data.description), category_id=data.category_id,
                     categorized_by="manual" if data.category_id else None, reviewed=bool(data.category_id),
                     installment_n=n, installment_total=total, notes=data.notes, dedupe_key=f"manual-{uuid.uuid4().hex}")
+    if data.category_id is None:
+        apply_rules(db, [t])  # sem categoria escolhida: as regras categorizam como na importação
     db.add(t)
     db.commit()
     return _tx_out(t)

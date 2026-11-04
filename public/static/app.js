@@ -534,8 +534,152 @@ function openNewTx() {
     await renderLancamentos();
   };
 }
-$("#tx-add").onclick = openNewTx;
-$("#tx-add-m").onclick = openNewTx;
+// ------------------------------------------------------------------ ADICIONAR (rápido): despesa ou receita, já acontecida ou prevista
+// Um só formulário: valor primeiro, descrição (a categoria é sugerida pelo texto), categoria em um toque e "quando".
+// "Já paguei/recebi" vira lançamento numa conta; "Vou pagar/receber" vira previsto (uma vez ou todo mês).
+const QA_LAST_ACC = "financi-qa-conta";
+const today = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 10);
+const shiftDay = (iso, n) => { const d = new Date(iso + "T12:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
+async function openQuickAdd(preset = {}) {
+  const q = await api("GET", "/api/quick");
+  const banks = state.accounts.filter((a) => a.active);
+  const v = { kind: "despesa", when: banks.length ? "ja" : "vai", rec: "pontual", date: today(), month: thisMonth(), ...preset };
+  let catId = null, catTouched = false, more = false;
+  const remembered = +store("l", QA_LAST_ACC);
+  const accId = banks.some((a) => a.id === remembered) ? remembered : q.account_id ?? banks[0]?.id;
+  openSheet(`<div class="qa">
+    <div class="segmented qa-kind" id="qa-kind"><button data-k="despesa">Despesa</button><button data-k="receita">Receita</button></div>
+    <label class="qa-amount"><span>R$</span><input id="qa-amount" inputmode="decimal" placeholder="0,00" autocomplete="off" aria-label="Valor"></label>
+    <input id="qa-desc" class="qa-desc" placeholder="Descrição" autocomplete="off" aria-label="Descrição">
+    <p class="overline imp-label">Categoria</p>
+    <div class="qa-chips" id="qa-cats"></div>
+    <select id="qa-cat-all" aria-label="Outra categoria" hidden></select>
+    <p class="overline imp-label">Quando</p>
+    <div class="segmented qa-when" id="qa-when"><button data-w="ja"></button><button data-w="vai"></button></div>
+    <div id="qa-ja" class="qa-sub">
+      <div class="qa-chips" id="qa-days"><button data-d="0">Hoje</button><button data-d="-1">Ontem</button><label class="qa-date"><input type="date" id="qa-date" aria-label="Outra data"></label></div>
+      ${banks.length ? `<label class="field">Conta<select id="qa-acc">${banks.map((a) => `<option value="${a.id}" ${a.id === accId ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>`
+        : '<p class="hint">Para lançar o que já aconteceu, cadastre uma conta em Ajustes ou importe um extrato.</p>'}
+    </div>
+    <div id="qa-vai" class="qa-sub">
+      <div class="segmented" id="qa-rec"><button data-r="pontual">Uma vez</button><button data-r="mensal">Todo mês</button></div>
+      <div class="form">
+        <label class="field"><span id="qa-month-t">Mês</span>${monthInput("qa-month", v.month)}</label>
+        <label class="field">Dia (opcional)<input id="qa-day" inputmode="numeric" placeholder="vencimento"></label>
+        <label class="field" id="qa-end-l">Até (opcional)${monthInput("qa-end", null)}</label>
+      </div>
+    </div>
+    <div class="qa-actions"><button class="primary" id="qa-save">Salvar</button><button class="secondary" id="qa-again">Salvar e adicionar outra</button></div>
+    <button class="link qa-more" id="qa-more" type="button">Mais opções</button>
+  </div>`);
+  const kindCats = () => state.categories.filter((c) => c.type === v.kind && c.active);
+  const paintCats = () => {
+    const ids = q.frequent[v.kind] || [];
+    const chosenExtra = catId && !ids.includes(catId) ? [catId] : [];
+    $("#qa-cats").innerHTML = [...ids, ...chosenExtra].map((id) => catById(id)).filter(Boolean)
+      .map((c) => `<button data-c="${c.id}" class="${c.id === catId ? "on" : ""}">${esc(c.name)}</button>`).join("") +
+      `<button data-c="more" class="${more ? "on" : ""}">Outras…</button>`;
+    $("#qa-cat-all").hidden = !more;
+    $("#qa-cat-all").innerHTML = '<option value="">Escolha a categoria</option>' + kindCats().map((c) => `<option value="${c.id}" ${c.id === catId ? "selected" : ""}>${esc(c.name)}</option>`).join("");
+  };
+  const sync = () => {
+    $$("#qa-kind button").forEach((b) => b.classList.toggle("active", b.dataset.k === v.kind));
+    $$("#qa-when button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.w === v.when);
+      b.textContent = b.dataset.w === "ja" ? (v.kind === "despesa" ? "Já paguei" : "Já recebi") : (v.kind === "despesa" ? "Vou pagar" : "Vou receber");
+    });
+    $$("#qa-rec button").forEach((b) => b.classList.toggle("active", b.dataset.r === v.rec));
+    $("#qa-ja").hidden = v.when !== "ja";
+    $("#qa-vai").hidden = v.when !== "vai";
+    $("#qa-end-l").hidden = v.rec !== "mensal";
+    $("#qa-month-t").textContent = v.rec === "mensal" ? "A partir de" : "Mês";
+    const d = v.date === today() ? "0" : v.date === shiftDay(today(), -1) ? "-1" : null;
+    $$("#qa-days [data-d]").forEach((b) => b.classList.toggle("on", b.dataset.d === d));
+    $(".qa-date").classList.toggle("on", d === null);
+    $("#qa-date").value = v.date;
+    $("#qa-save").textContent = v.when === "ja" ? "Salvar" : "Salvar previsto";
+    paintCats();
+  };
+  sync();
+  setTimeout(() => $("#qa-amount").focus(), 30);
+
+  $("#qa-kind").onclick = (e) => { const b = e.target.closest("[data-k]"); if (b && b.dataset.k !== v.kind) { v.kind = b.dataset.k; catId = null; catTouched = false; more = false; sync(); guess(); } };
+  $("#qa-when").onclick = (e) => {
+    const b = e.target.closest("[data-w]");
+    if (!b) return;
+    if (b.dataset.w === "ja" && !banks.length) return toast("Cadastre uma conta em Ajustes para lançar o que já aconteceu");
+    v.when = b.dataset.w; sync();
+  };
+  $("#qa-rec").onclick = (e) => { const b = e.target.closest("[data-r]"); if (b) { v.rec = b.dataset.r; sync(); } };
+  $("#qa-days").onclick = (e) => { const b = e.target.closest("[data-d]"); if (b) { v.date = shiftDay(today(), +b.dataset.d); sync(); } };
+  $("#qa-date").onchange = (e) => { if (e.target.value) { v.date = e.target.value; sync(); } };
+  $("#qa-cats").onclick = (e) => {
+    const b = e.target.closest("[data-c]");
+    if (!b) return;
+    if (b.dataset.c === "more") { more = !more; }
+    else { catId = catId === +b.dataset.c ? null : +b.dataset.c; catTouched = true; }
+    paintCats();
+  };
+  $("#qa-cat-all").onchange = (e) => { catId = e.target.value ? +e.target.value : null; catTouched = true; more = false; paintCats(); };
+  // a categoria vem sozinha pela descrição (regras e previstos com o mesmo nome) enquanto não for escolhida à mão
+  let gt;
+  const guess = () => {
+    clearTimeout(gt);
+    gt = setTimeout(async () => {
+      const text = $("#qa-desc")?.value.trim();
+      if (!text || catTouched) return;
+      const r = await api("GET", `/api/quick/guess?kind=${v.kind}&description=${encodeURIComponent(text)}`).catch(() => null);
+      if (r && !catTouched && $("#qa-desc")?.value.trim() === text) { catId = r.category_id; paintCats(); }
+    }, 350);
+  };
+  $("#qa-desc").oninput = guess;
+
+  const save = async (again) => {
+    const amount = parseNum($("#qa-amount").value);
+    const desc = $("#qa-desc").value.trim();
+    if (!amount || amount < 0) { $("#qa-amount").focus(); return toast("Informe o valor"); }
+    if (!desc) { $("#qa-desc").focus(); return toast("Informe a descrição"); }
+    let undo;
+    if (v.when === "ja") {
+      const acc = +$("#qa-acc").value;
+      store("l", QA_LAST_ACC, String(acc));
+      const t = await api("POST", "/api/transactions", { account_id: acc, date: v.date, amount: v.kind === "despesa" ? -amount : amount,
+        description: desc, category_id: catId });
+      undo = () => api("DELETE", `/api/transactions/${t.id}`);
+    } else {
+      if (!$("#qa-month").value) return toast("Informe o mês");
+      const p = await api("POST", "/api/planned", { name: desc, kind: v.kind, amount, recurrence: v.rec, start_month: $("#qa-month").value + "-01",
+        end_month: v.rec === "mensal" && $("#qa-end").value ? $("#qa-end").value + "-01" : null,
+        due_day: parseInt($("#qa-day").value, 10) || null, category_id: catId, owner_id: null, match_pattern: null });
+      undo = () => api("DELETE", `/api/planned/${p.id}`);
+    }
+    const what = `${v.kind === "despesa" ? "Despesa" : "Receita"} de ${fmt2(amount)} ${v.when === "ja" ? "lançada" : "prevista"}`;
+    toast(what, { label: "Desfazer", run: async () => { await undo(); toast("Desfeito"); refresh(); } });
+    if (again) {
+      $("#qa-amount").value = ""; $("#qa-desc").value = ""; catId = null; catTouched = false; more = false;
+      paintCats(); $("#qa-amount").focus();
+    } else closeSheet();
+    refresh();
+  };
+  $("#qa-save").onclick = () => save(false);
+  $("#qa-again").onclick = () => save(true);
+  $("#qa-amount").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); $("#qa-desc").focus(); } };
+  $("#qa-desc").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); save(false); } };
+  // previsto com tudo (de quem, texto no extrato): abre o formulário completo com o que já foi preenchido
+  $("#qa-more").onclick = () => {
+    const amount = parseNum($("#qa-amount").value);
+    if (v.when === "ja") return openNewTx();
+    openPlannedSheet(null, { name: $("#qa-desc").value.trim(), kind: v.kind, amount: amount || null, recurrence: v.rec,
+      start_month: ($("#qa-month").value || thisMonth().slice(0, 7)) + "-01", category_id: catId, due_day: parseInt($("#qa-day").value, 10) || null });
+  };
+}
+$("#tx-add").onclick = () => openQuickAdd({ when: "ja" });
+$("#tx-add-m").onclick = () => openQuickAdd({ when: "ja" });
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-quick]");
+  if (b) openQuickAdd(b.dataset.quick === "receita" ? { kind: "receita" } : {});
+});
 
 // ------------------------------------------------------------------ IMPORTAR
 async function renderImportar() {

@@ -323,7 +323,7 @@ code { font-family: var(--font-mono); background: var(--surface-sunken); padding
   background: var(--toast-bg); color: var(--toast-ink); box-shadow: var(--shadow-card); transition: opacity var(--base) var(--ease), transform var(--base) var(--ease);
 }
 .toast.show { opacity: 1; transform: translateX(-50%); }
-.toast.has-action { pointer-events: auto; }
+.toast.has-action .toast-action { pointer-events: auto; } /* só o botão pega o toque; o resto do aviso deixa passar */
 .toast-action { height: 30px; padding: 0 var(--space-3); border-color: rgba(255, 255, 255, .35); color: #ffffff; }
 .toast-action:hover { background: rgba(255, 255, 255, .1); }
 
@@ -666,8 +666,9 @@ button.tile--link:active { transform: none; }
 /* computador: cartões desenhados ao lado do saldo */
 @media (min-width: 701px) {
   .home-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-8); align-items: start; }
-  .home-top .az-balance, .home-top .hero-stats { grid-column: 1; }
-  .home-top .cardviz-row { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; width: 320px; }
+  .home-top .az-balance, .home-top .hero-stats, .home-top .home-actions { grid-column: 1; }
+  .home-top .home-actions { max-width: 360px; }
+  .home-top .cardviz-row { grid-column: 2; grid-row: 1 / span 3; margin-top: 0; width: 320px; }
   .home-top .cardviz { width: 100%; }
 }
 .values-hidden .hero-stat b, .values-hidden #home-big .tile__value, .values-hidden #h-proj-value { filter: blur(8px); user-select: none; }
@@ -945,3 +946,29 @@ body.locked { overflow: hidden; }
 .lock button.primary { height: 44px; background: var(--bright-azure); border-color: var(--bright-azure); color: #ffffff; }
 .lock-msg { min-height: 20px; margin: var(--space-3) 0 0; font-size: 13px; color: #ffd2d2; }
 .sec-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
+
+/* ---------------------------------------------------------------- adicionar (rápido) */
+.home-actions { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); margin-top: var(--space-4); }
+.home-actions button { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1); height: 40px;
+  border-radius: 999px; border: 1px solid var(--btn-line); background: var(--card-bg); color: var(--ink); font-size: 13px; font-weight: 500; }
+.home-actions svg { width: 16px; height: 16px; }
+.qa { display: flex; flex-direction: column; }
+.qa-kind { align-self: center; }
+.qa-amount { display: flex; align-items: baseline; justify-content: center; gap: var(--space-2); margin: var(--space-5) 0 var(--space-3); }
+.qa-amount span { font-size: 15px; color: var(--ink-muted); }
+.qa .qa-amount input { width: 9ch; height: 44px; padding: 0; border: 0; background: transparent; box-shadow: none; text-align: left;
+  font-size: 32px; line-height: 40px; font-weight: 400; font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: var(--ink); }
+.qa .qa-amount input::placeholder { color: var(--ink-faint); }
+.qa .qa-desc { height: 44px; text-align: center; }
+.qa-chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.qa-chips button, .qa-date { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--space-3); border-radius: 999px;
+  border: 1px solid var(--btn-line); background: transparent; color: var(--ink-muted); font-size: 13px; font-weight: 400; }
+.qa-chips button.on, .qa-date.on { background: var(--surface-tint); border-color: transparent; color: var(--link); font-weight: 500; }
+.qa-date input { height: 30px; width: 8.5em; padding: 0; border: 0; background: transparent; box-shadow: none; color: inherit; font-size: 13px; }
+#qa-cat-all { margin-top: var(--space-2); }
+.qa-when { margin-bottom: var(--space-3); }
+.qa-sub { display: flex; flex-direction: column; gap: var(--space-3); }
+.qa-sub[hidden] { display: none; }
+.qa-actions { display: grid; gap: var(--space-2); margin-top: var(--space-5); }
+.qa-actions button { height: 44px; }
+.qa-more { align-self: center; margin-top: var(--space-2); }

@@ -14,6 +14,11 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   2. **Palavras-chave padrão** (UBER, IFOOD, POSTO, DROGA, NETFLIX, SALARIO, TARIFA…).
   3. **IA (Claude)** para o que sobrar, se `ANTHROPIC_API_KEY` estiver configurada. Respostas muito confiantes
      viram regras; as pouco confiantes ficam na fila **Para revisar**.
+- **Adicionar**: o **+** no topo (em qualquer tela) e os atalhos **Despesa** / **Receita** no Início abrem um
+  formulário curto: valor, descrição (a categoria vem sozinha pelas regras ou por um previsto com o mesmo nome),
+  categorias mais usadas em um toque e **quando**: *Já paguei / Já recebi* vira lançamento (hoje, ontem ou outra
+  data, na conta usada da última vez); *Vou pagar / Vou receber* vira previsto (uma vez ou todo mês). Dá para salvar
+  e adicionar outra em seguida, e o aviso traz **Desfazer**. Lançamentos à mão sem categoria passam pelas regras.
 - **Lançamentos**: extrato por mês, busca, filtro por conta, fila de revisão, categorização em massa e
   lançamento manual.
 - **Planejamento**, em duas visões (no modelo de Monarch, Quicken Simplifi e Copilot):
