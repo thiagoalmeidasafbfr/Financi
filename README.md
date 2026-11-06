@@ -37,6 +37,11 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   ou **deste mês em diante** (até o fim da previsão; a previsão é dividida e as outras ficam como estão), **Zerar**,
   mover ou marcar como pago. Categoria: orçamento só do mês ou de todo mês (ou voltar à média). Parcela de dívida:
   **quitar naquele mês** (vira a quitação do Cockpit). Linha do Cockpit: abre a ação.
+- **Compromissos** (Planejamento → Compromissos): quanto de cada mês já está comprometido. Linha do tempo com uma
+  coluna por mês (contas fixas, parcelas de dívidas e cartões, pontuais e o variável estimado) e a renda como linha;
+  tocar num mês mostra o comprometido, o % da renda, a sobra ou falta. **Próximos alívios**: o que termina ou diminui
+  (última parcela, fim de uma conta) e quanto sobra por mês a partir de quando. **Por categoria, no tempo**: cada grupo
+  com a tendência, e os itens abrem o previsto, a dívida ou a ação. Usa as mesmas regras do Fluxo (e as ações ligadas).
 - **Cockpit** (Planejamento → Cockpit): ações com liga/desliga para simular decisões. Ligada, a ação entra no
   Fluxo, no Mês e no saldo projetado; desligada, fica guardada sem mudar nada. O gráfico compara o saldo sem e com
   as ações ligadas (saldo final e menor saldo).

@@ -180,7 +180,7 @@
   <section class="tab" id="tab-planejamento">
     <div class="page-head"><p class="overline">Plano do mês e fluxo futuro</p><h1>Planejamento</h1></div>
     <div class="plan-top">
-      <div class="segmented" id="plan-view"><button data-view="mes" class="active">Mês</button><button data-view="fluxo">Fluxo</button><button data-view="cockpit">Cockpit</button></div>
+      <div class="segmented" id="plan-view"><button data-view="mes" class="active">Mês</button><button data-view="fluxo">Fluxo</button><button data-view="comp">Compromissos</button><button data-view="cockpit">Cockpit</button></div>
     </div>
 
     <div id="pv-mes">
@@ -217,6 +217,21 @@
       </div>
       <div class="card tb-card"><div class="table-wrap tb-wrap"><table id="tb-table" class="flow-table"></table></div>
         <p class="hint tb-tip">Toque num valor para mudar só aquele mês ou dali em diante.</p></div>
+    </div>
+
+    <!-- compromissos: quanto de cada mês já está comprometido e quando alivia -->
+    <div id="pv-comp" hidden>
+      <div class="cm-bubble" id="cm-bubble"></div>
+      <div class="card cm-card">
+        <div class="card-head"><h3>Linha do tempo</h3>
+          <div class="segmented cm-horizon" id="cm-horizon"><button data-h="6">6m</button><button data-h="12">12m</button><button data-h="18">18m</button></div></div>
+        <div class="cm-legend" id="cm-legend"></div>
+        <div class="cm-scroll"><div class="cm-chart" id="cm-chart"></div></div>
+        <div class="cm-month" id="cm-month"></div>
+      </div>
+      <div class="card"><div class="card-head"><h3>Próximos alívios</h3></div><div class="list" id="cm-reliefs"></div></div>
+      <div class="card"><div class="card-head"><h3>Por categoria, no tempo</h3><span class="hint" style="margin:0">toque para abrir</span></div>
+        <div class="list" id="cm-groups"></div></div>
     </div>
 
     <!-- cockpit: ações com liga/desliga; ligadas entram no Fluxo e no Mês -->

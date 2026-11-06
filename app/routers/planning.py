@@ -67,6 +67,13 @@ def get_month_plan(month: date | None = None, person: str | None = None, db: Ses
     return out
 
 
+@router.get("/commitments")
+def get_commitments(months: int = 12, person: str | None = None, db: Session = Depends(get_session)):
+    """Quanto de cada mês já está comprometido (fixas, parcelas, pontuais), o variável, a renda e os próximos alívios."""
+    from ..commitments import commitments
+    return commitments(db, person, _today(), months)
+
+
 @router.get("/budget/suggest")
 def budget_suggestions(month: date | None = None, person: str | None = None, db: Session = Depends(get_session)):
     return suggest_budgets(db, month or _today(), person)

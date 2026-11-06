@@ -815,13 +815,14 @@ const SECTION_INFO = {
   variaveis: { title: "Gastos variáveis", add: "Orçar categoria" },
 };
 async function renderPlanejamento() {
-  const view = state.plan.view === "cockpit" ? "cockpit" : ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
+  const view = ["cockpit", "comp"].includes(state.plan.view) ? state.plan.view : ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
   state.plan.view = view;
   $$("#plan-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $("#pv-mes").hidden = view !== "mes";
   $("#pv-fluxo").hidden = view !== "fluxo";
   $("#pv-cockpit").hidden = view !== "cockpit";
-  return view === "fluxo" ? renderFluxo() : view === "cockpit" ? renderCockpit() : renderMes();
+  $("#pv-comp").hidden = view !== "comp";
+  return { fluxo: renderFluxo, cockpit: renderCockpit, comp: renderCompromissos }[view]?.() ?? renderMes();
 }
 $("#plan-view").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
@@ -1167,6 +1168,97 @@ function openPlannedSheet(p, preset = {}) {
 }
 
 
+// ------------------------------------------------------------------ COMPROMISSOS: quanto de cada mês já está comprometido
+const CM_KINDS = [["fixas", "Contas fixas"], ["parcelas", "Parcelas"], ["pontuais", "Pontuais"], ["variavel", "Variável"]];
+const CM_LABEL = Object.fromEntries(CM_KINDS);
+const mshort = (iso) => MESES[+iso.slice(5, 7) - 1];
+function spark(values, w = 64, h = 20) {
+  const max = Math.max(...values, 1), n = values.length;
+  const pts = values.map((v, i) => `${((i / Math.max(n - 1, 1)) * (w - 2) + 1).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`).join(" ");
+  return `<svg class="cm-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}"/></svg>`;
+}
+async function renderCompromissos() {
+  const h = state.plan.cmHorizon || 12;
+  $$("#cm-horizon button").forEach((b) => b.classList.toggle("active", +b.dataset.h === h));
+  const c = await api("GET", withPerson(`/api/commitments?months=${h}`));
+  state.cm = c;
+  const keep = state.plan.cmSel && c.months.some((m) => m.month === state.plan.cmSel);
+  c.sel = keep ? state.plan.cmSel : c.months[0].month; // mês escolhido continua escolhido ao trocar o horizonte
+  // frase do topo: queda do comprometido, peso na renda e o próximo alívio
+  const M = c.months, cur = M[0];
+  const low = M.slice(1).reduce((a, m) => (m.committed < a.committed ? m : a), cur);
+  const parts = [];
+  if (low !== cur && cur.committed - low.committed > 100) parts.push(`Seu comprometido cai de <b>${fmt(cur.committed)}</b> em ${mlabel(cur.month)} para <b>${fmt(low.committed)}</b> em ${mlabel(low.month)}.`);
+  if (cur.pct != null) parts.push(cur.pct >= 1 ? `Neste mês o comprometido passa da renda (<b>${pct(cur.pct)}</b>).`
+    : `Já são <b>${pct(cur.pct)}</b> da renda comprometidos neste mês${cur.pct >= 0.8 ? ". Fica de olho pra não apertar." : "."}`);
+  const next = c.reliefs[0];
+  if (next) parts.push(`Próximo alívio: ${esc(next.label)}, <b>+${fmt(next.amount)}/mês</b> a partir de ${mlabel(next.from_month)}.`);
+  $("#cm-bubble").innerHTML = `<span class="cm-bubble__icon">${ICON.chart}</span><p>${parts.join(" ") || "Cadastre previstos e dívidas para ver o que já está comprometido."}</p>`;
+  $("#cm-legend").innerHTML = CM_KINDS.map(([k, l]) => `<span><i class="cm-${k}"></i>${l}</span>`).join("") + '<span><i class="cm-income"></i>Renda</span>';
+  paintCmChart();
+  paintCmMonth();
+  $("#cm-reliefs").innerHTML = c.reliefs.length ? c.reliefs.map((r) => `<div class="az-insight is-link" data-open="row:${esc(r.ref)}|${r.last_month}">
+      ${well(esc(initials(r.label)))}<div class="az-insight__text"><div class="az-insight__title">${esc(r.label)}</div>
+      <div class="az-insight__desc">${esc(r.detail || (r.ends ? `termina em ${mlabel(r.last_month)}` : "diminui"))} · ${CM_LABEL[r.kind].toLowerCase()}</div></div>
+      <div class="tx-right"><span class="amount in">+${fmt(r.amount)}/mês</span><span class="tx-date">a partir de ${mlabel(r.from_month)}</span></div></div>`).join("")
+    : '<p class="hint">Nenhuma conta fixa ou parcela termina nos próximos anos.</p>';
+  paintCmGroups();
+}
+function paintCmChart() {
+  const c = state.cm, M = c.months;
+  const top = Math.max(...M.map((m) => Math.max(m.total, m.income)), 1) * 1.08;
+  const H = 150, W = 68, GAP = 8;
+  const y = (v) => H - (v / top) * H;
+  const cols = M.map((m) => {
+    const seg = CM_KINDS.map(([k]) => (m[k] > 0 ? `<i class="cm-${k}" style="height:${(m[k] / top) * H}px" title="${CM_LABEL[k]}: ${fmt(m[k])}"></i>` : "")).join("");
+    return `<button class="cm-col ${m.month === c.sel ? "on" : ""} ${m.pct != null && m.pct >= 1 ? "over" : ""}" data-cm-month="${m.month}" style="width:${W}px">
+      <span class="cm-col__m">${capFirst(mshort(m.month))}${m.month.slice(5, 7) === "01" ? ` ${m.month.slice(2, 4)}` : ""}</span>
+      <span class="cm-col__v">${fmt(m.committed)}</span>
+      <span class="cm-col__bar" style="height:${H}px">${seg}</span></button>`;
+  }).join("");
+  // renda: linha tracejada por cima das colunas (o teto do mês)
+  const pts = M.map((m, i) => `${i * (W + GAP) + W / 2},${y(m.income).toFixed(1)}`).join(" ");
+  const width = M.length * (W + GAP) - GAP;
+  $("#cm-chart").style.width = `${width}px`;
+  $("#cm-chart").innerHTML = `<div class="cm-cols" style="gap:${GAP}px">${cols}</div>
+    <svg class="cm-line" width="${width}" height="${H}" viewBox="0 0 ${width} ${H}" aria-hidden="true"><polyline points="${pts}"/>
+      ${M.map((m, i) => `<circle cx="${i * (W + GAP) + W / 2}" cy="${y(m.income).toFixed(1)}" r="2.5"/>`).join("")}</svg>`;
+}
+function paintCmMonth() {
+  const c = state.cm, m = c.months.find((x) => x.month === c.sel) || c.months[0];
+  const p = m.pct;
+  const bar = m.income > 0 ? CM_KINDS.slice(0, 3).map(([k]) => `<i class="cm-${k}" style="width:${Math.min(100, (m[k] / m.income) * 100)}%"></i>`).join("") : "";
+  $("#cm-month").innerHTML = `<div class="cm-month__head"><span>${capFirst(mlong(m.month))} · comprometido</span>
+      ${p != null ? `<span class="badge ${p >= 1 ? "strong" : "tint"}">${pct(p)} da renda</span>` : ""}</div>
+    <div class="cm-month__big">${money(m.committed)}</div>
+    ${bar ? `<div class="cm-meter">${bar}</div>` : ""}
+    <div class="cm-rows">${CM_KINDS.map(([k, l]) => `<div><span><i class="cm-${k}"></i>${l}${k === "variavel" ? " (estimado)" : ""}</span><b>${fmt2(m[k])}</b></div>`).join("")}
+      <div class="cm-sum"><span>Renda prevista</span><b>${fmt2(m.income)}</b></div>
+      <div class="cm-sum"><span>${m.margin >= 0 ? "Sobra" : "Falta"}</span><b class="${m.margin < 0 ? "neg" : ""}">${fmt2(Math.abs(m.margin))}</b></div></div>
+    <div class="row occ-links"><button class="link" data-cm-goto="mes">Ver o mês</button><button class="link" data-cm-goto="fluxo">Ver no fluxo</button></div>`;
+}
+function paintCmGroups() {
+  const c = state.cm, i = Math.max(0, c.months.findIndex((m) => m.month === c.sel));
+  const open = state.plan.cmOpen || {};
+  $("#cm-groups").innerHTML = c.groups.map((g) => `<div class="cm-group ${open[g.group] ? "open" : ""}">
+      <button class="az-insight cm-group__head" data-cm-group="${esc(g.group)}">${well(esc(initials(g.group)))}
+        <span class="az-insight__text"><span class="az-insight__title">${esc(g.group)}</span><span class="az-insight__desc">${g.kinds.map((k) => CM_LABEL[k]).join(" · ")}</span></span>
+        ${spark(g.values)}<span class="amount">${fmt(g.values[i])}</span><span class="cm-chev">${svg('<path d="M6 9l6 6 6-6"/>')}</span></button>
+      ${open[g.group] ? `<div class="cm-items">${g.items.map((it) => `<div class="cm-item is-link" data-open="row:${esc(it.ref)}|${c.sel}">
+          <span class="cm-item__l"><i class="cm-${it.kind}"></i>${esc(it.label)}</span>${spark(it.values, 48, 16)}<b>${fmt(it.values[i])}</b></div>`).join("")}</div>` : ""}
+    </div>`).join("") || '<p class="hint">Sem previstos, dívidas ou orçamento ainda.</p>';
+}
+$("#pv-comp").addEventListener("click", (e) => {
+  const col = e.target.closest("[data-cm-month]");
+  if (col) { state.cm.sel = state.plan.cmSel = col.dataset.cmMonth; paintCmChart(); paintCmMonth(); paintCmGroups(); return; }
+  const g = e.target.closest("[data-cm-group]");
+  if (g) { const k = g.dataset.cmGroup; state.plan.cmOpen = { ...(state.plan.cmOpen || {}), [k]: !(state.plan.cmOpen || {})[k] }; paintCmGroups(); return; }
+  const h = e.target.closest("#cm-horizon [data-h]");
+  if (h) { state.plan.cmHorizon = +h.dataset.h; renderCompromissos(); return; }
+  const go = e.target.closest("[data-cm-goto]");
+  if (go) { state.plan.view = go.dataset.cmGoto; if (go.dataset.cmGoto === "mes") state.plan.month = state.cm.sel; renderPlanejamento(); }
+});
+
 // ------------------------------------------------------------------ COCKPIT: ações com liga/desliga
 // Cada ação ligada muda o fluxo (Fluxo e Mês). Ajustes: linhas que somam entradas/saídas ou substituem um previsto no mês,
 // com valor fixo ou fração de outro previsto (ex.: 1/3 do Salário). Quitação: um liga/desliga e um mês por dívida.
@@ -1467,6 +1559,7 @@ async function openRef(ref) {
     return openGroupingEditor((state.table.groupings || []).find((g) => g.id === +id));
   }
   if (kind === "planned") return openPlannedSheet((await api("GET", "/api/planned")).find((p) => p.id === +id));
+  if (kind === "row") { const [r, m] = id.split("|"); return openRowRef(r, m || thisMonth()); }
 }
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-open]");

@@ -1115,3 +1115,70 @@ button.hero-stat:hover { background: none; }
 .sheet .qa-actions button.primary { height: 48px; border-radius: 14px; font-size: 15px; font-weight: 500; }
 .sheet .qa-actions button.secondary { height: 40px; border: 0; background: transparent; color: var(--link); font-size: 14px; font-weight: 500; }
 .sheet .qa-actions button.secondary:hover { background: var(--chip-bg); }
+
+/* ---------------------------------------------------------------- Compromissos */
+:root, [data-theme="light"] { --cm-fixas: #1f3f9e; --cm-parcelas: #5889fa; --cm-pontuais: #a9c0ff;
+  --cm-var: repeating-linear-gradient(135deg, #dbe4fb 0 4px, #c7d4f7 4px 7px); --cm-income: #0d151e; --cm-col-bg: #f4f6fb; }
+[data-theme="navy"] { --cm-fixas: #ffffff; --cm-parcelas: #7fa3ff; --cm-pontuais: #c3d3ff;
+  --cm-var: repeating-linear-gradient(135deg, rgba(255,255,255,.18) 0 4px, rgba(255,255,255,.08) 4px 7px); --cm-income: #ffd8a8; --cm-col-bg: rgba(255,255,255,.05); }
+.cm-fixas { background: var(--cm-fixas); }
+.cm-parcelas { background: var(--cm-parcelas); }
+.cm-pontuais { background: var(--cm-pontuais); }
+.cm-variavel { background: var(--cm-var); }
+.cm-income { background: none; border-top: 2px dashed var(--cm-income); height: 0 !important; width: 12px; margin-top: 4px; }
+.cm-bubble { display: flex; gap: var(--space-3); align-items: flex-start; margin: 0 0 var(--space-4); padding: var(--space-3) var(--space-4);
+  border-radius: 18px; background: var(--card-bg); border: 1px solid var(--card-line); }
+.cm-bubble p { margin: 0; font-size: 13px; line-height: 19px; color: var(--ink-muted); }
+.cm-bubble p b { color: var(--ink); font-weight: 500; }
+.cm-bubble__icon { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-tint); color: var(--link); }
+.cm-bubble__icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.cm-card .card-head { align-items: center; }
+.cm-horizon { width: auto; }
+.cm-horizon button { height: 28px; padding: 0 10px; font-size: 12px; }
+.cm-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0 0 var(--space-3); font-size: 11px; color: var(--ink-muted); }
+.cm-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.cm-legend i { display: inline-block; width: 9px; height: 9px; border-radius: 3px; }
+.cm-scroll { overflow-x: auto; margin: 0 calc(-1 * var(--space-4)); padding: 0 var(--space-4) var(--space-2); scrollbar-width: none; }
+.cm-scroll::-webkit-scrollbar { display: none; }
+.cm-chart { position: relative; }
+.cm-cols { display: flex; align-items: flex-end; }
+.cm-col { flex: none; display: flex; flex-direction: column; align-items: stretch; height: auto; padding: 6px 4px 4px; border: 1px solid transparent;
+  border-radius: 14px; background: var(--cm-col-bg); color: inherit; font-weight: 400; cursor: pointer; }
+.cm-col:hover { background: var(--cm-col-bg); border-color: var(--line); }
+.cm-col.on { border-color: var(--link); background: var(--surface-tint); }
+.cm-col__m { font-size: 11px; line-height: 14px; color: var(--ink-muted); text-align: center; }
+.cm-col__v { font-size: 11px; line-height: 15px; font-weight: 500; text-align: center; font-variant-numeric: tabular-nums; margin-bottom: 4px; white-space: nowrap; }
+.cm-col.over .cm-col__v { color: var(--ink); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.cm-col__bar { display: flex; flex-direction: column-reverse; justify-content: flex-start; border-radius: 9px; overflow: hidden; gap: 1px; }
+.cm-col__bar i { display: block; width: 100%; flex: none; }
+.cm-line { position: absolute; left: 0; bottom: 4px; pointer-events: none; overflow: visible; }
+.cm-line polyline { fill: none; stroke: var(--cm-income); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: .8; }
+.cm-line circle { fill: var(--cm-income); }
+.cm-month { margin-top: var(--space-4); padding-top: var(--space-4); border-top: 1px solid var(--line); }
+.cm-month__head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); font-size: 12px; color: var(--ink-muted); }
+.cm-month__big { margin: 4px 0 var(--space-3); font-size: 26px; line-height: 32px; font-weight: 500; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.cm-meter { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--chart-dim); gap: 2px; margin-bottom: var(--space-3); }
+.cm-meter i { display: block; height: 100%; }
+.cm-rows > div { display: flex; justify-content: space-between; align-items: center; min-height: 28px; font-size: 13px; }
+.cm-rows span { display: inline-flex; align-items: center; gap: 8px; color: var(--ink-muted); }
+.cm-rows i { width: 9px; height: 9px; border-radius: 3px; display: inline-block; }
+.cm-rows b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.cm-rows .cm-sum { border-top: 1px dashed var(--line); }
+.cm-rows b.neg { color: var(--ink); }
+.cm-rows b.neg::before { content: "−"; }
+.cm-group__head { width: 100%; height: auto; padding: var(--space-3) 0; border: 0; border-radius: 0; background: none; color: inherit; text-align: left; font-weight: 400; gap: var(--space-3); }
+.cm-group__head:hover { background: none; }
+.cm-group + .cm-group { border-top: 1px solid var(--line); }
+.cm-group__head .amount { min-width: 64px; text-align: right; }
+.cm-spark { flex: none; }
+.cm-spark polyline { fill: none; stroke: var(--link); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+.cm-chev svg { width: 16px; height: 16px; fill: none; stroke: var(--ink-faint); stroke-width: 2; transition: transform .15s; }
+.cm-group.open .cm-chev svg { transform: rotate(180deg); }
+.cm-items { padding: 0 0 var(--space-3) 52px; }
+.cm-item { display: flex; align-items: center; gap: var(--space-3); min-height: 32px; font-size: 13px; border-radius: 8px; }
+.cm-item:hover { background: var(--surface-tint); }
+.cm-item__l { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cm-item__l i { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.cm-item b { min-width: 60px; text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+#plan-view button { padding: 0 var(--space-3); }
+@media (max-width: 700px) { #plan-view { display: flex; } #plan-view button { flex: 1 1 auto; font-size: 12.5px; padding: 0 8px; } }
