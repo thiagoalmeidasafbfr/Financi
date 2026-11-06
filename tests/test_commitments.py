@@ -52,3 +52,22 @@ def test_commitments_by_kind_and_reliefs(client):
     r = c.get("/api/commitments", params={"months": 6}).json()
     q = next(x for x in r["reliefs"] if x["label"] == "Consignado")
     assert q["from_month"] == ym(2) and q["detail"].startswith("quitação em")
+
+
+def test_commitments_table_balance_and_scenarios(client):
+    """Tabela por tipo (com receitas), saldo acumulado igual ao do Fluxo e cenários do Cockpit para ligar na página."""
+    c = client
+    c.post("/api/accounts", json={"name": "Conta", "opening_balance": 1000})
+    c.post("/api/planned", json={"name": "Salário", "kind": "receita", "amount": 8000, "recurrence": "mensal", "start_month": ym(1)})
+    c.post("/api/planned", json={"name": "Aluguel", "kind": "despesa", "amount": 2500, "recurrence": "mensal", "start_month": ym(1)})
+    aid = c.post("/api/cockpit/actions", json={"name": "Bônus", "lines": [
+        {"month": ym(2), "label": "Bônus", "op": "somar", "direction": "entrada", "amount": 3000}]}).json()["id"]
+    r = c.get("/api/commitments", params={"months": 6}).json()
+    assert [it["label"] for it in r["kinds"]["renda"]] == ["Salário"] and r["kinds"]["fixas"][0]["values"][1] == 2500
+    fluxo = c.get("/api/projection", params={"months": 5, "detail": True}).json()["table"]["totais"]["acumulado"]
+    assert r["months"][0]["balance_end"] == fluxo["now"] and [m["balance_end"] for m in r["months"][1:]] == fluxo["values"]
+    assert r["scenarios"]["actions"] == [{"id": aid, "name": "Bônus", "active": False, "total": 3000}]
+    c.patch(f"/api/cockpit/actions/{aid}", json={"active": True})
+    r2 = c.get("/api/commitments", params={"months": 6}).json()
+    assert r2["kinds"]["renda"][-1]["ref"] == f"acao:{aid}" and r2["months"][2]["income"] == 11000
+    assert r2["months"][-1]["balance_end"] - r["months"][-1]["balance_end"] == 3000

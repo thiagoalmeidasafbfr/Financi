@@ -220,182 +220,15 @@ async function refresh() {
   await (RENDER[state.tab] || (() => {}))();
 }
 
-// ------------------------------------------------------------------ INÍCIO
-// olho do saldo: esconde os valores do topo do Início (fica salvo neste aparelho)
-let hideValues = false;
-try { hideValues = localStorage.getItem("financi-ocultar") === "1"; } catch (_) { /* navegação privada */ }
-function applyHidden() {
-  $("#tab-inicio").classList.toggle("values-hidden", hideValues);
-  $("#h-eye").setAttribute("aria-label", hideValues ? "Mostrar valores" : "Ocultar valores");
-}
-$("#h-eye").addEventListener("click", () => {
-  hideValues = !hideValues;
-  try { localStorage.setItem("financi-ocultar", hideValues ? "1" : "0"); } catch (_) { /* navegação privada */ }
-  applyHidden();
-});
-async function renderInicio() {
-  const d = await api("GET", withPerson(`/api/dashboard`));
-  const empty = !d.has_data;
-  $("#home-empty").hidden = !empty;
-  $("#home-content").hidden = empty;
-  $("#home-crumb").textContent = mlong(d.month);
-  if (empty) return;
-  if (!state.monthSynced) {
-    // na primeira visita com dados, Lançamentos e Planejamento abrem no mesmo mês que o Início mostra
-    state.monthSynced = true;
-    state.tx.month = d.month;
-  }
-  if (state.tab === "inicio") screenHead("inicio");
-  const T = d.month_totals, DT = d.debts_totals;
-  $("#h-saldo").innerHTML = money(d.saldo_contas);
-  const net = T.receitas - T.despesas;
-  const arrow = svg(net >= 0 ? '<path d="M12 19V5M6 11l6-6 6 6"/>' : '<path d="M12 5v14M6 13l6 6 6-6"/>', "i");
-  $("#h-trend").innerHTML = `<b>${arrow}${net >= 0 ? "+" : "−"}${fmt(Math.abs(net))}</b> em ${MESES_LONGOS[+d.month.slice(5, 7) - 1]}`;
-  // faixa de saldos: investido, faturas abertas e o que sobra depois de pagar as faturas
-  const livre = d.saldo_contas - DT.faturas_abertas;
-  $("#h-stats").innerHTML = [["Investido", fmt(d.investido), "ajustes"], ["Faturas abertas", fmt(DT.faturas_abertas), "dividas"],
-    ["Livre após faturas", `${livre < 0 ? "−" : ""}${fmt(Math.abs(livre))}`, "dividas"]]
-    .map(([l, v, go]) => `<button class="hero-stat" data-goto="${go}"><span>${l}</span><b class="money">${v}</b></button>`).join("");
-
-  // big numbers (cada um leva à sua tela)
-  const P = d.previstos_mes || { receitas: 0, despesas: 0 };
-  const proj = d.projecao || { meses: [] };
-  const last = proj.meses[proj.meses.length - 1];
-  const big = [
-    ["Entradas do mês", fmt(T.receitas), P.receitas || T.receitas_previstas ? `previsto ${fmt(P.receitas || T.receitas_previstas)}` : "sem previsão", "lancamentos"],
-    ["Saídas do mês", fmt(T.despesas), T.despesas_orcadas || P.despesas ? `orçado ${fmt(T.despesas_orcadas + P.despesas)}` : "sem orçamento", "orcamento"],
-    ["Em atraso", fmt(d.overdue ? d.overdue.total : 0), d.overdue && d.overdue.count ? `${d.overdue.count} ${d.overdue.count === 1 ? "conta" : "contas"}` : "nada vencido", "previstos"],
-    ["Dívidas", fmt(DT.saldo_devedor), DT.comprometimento != null ? `${fmt(DT.parcelas_mes)}/mês · ${pct(DT.comprometimento)} da renda` : `${fmt(DT.parcelas_mes)}/mês`, "dividas"],
-    ["Faturas abertas", fmt(DT.faturas_abertas), DT.parcelas_cartao_futuras ? `+ ${fmt(DT.parcelas_cartao_futuras)} a cair` : "sem parcelas futuras", "dividas"],
-    ["Saldo em 6 meses", last ? `${last.saldo < 0 ? "−" : ""}${fmt(Math.abs(last.saldo))}` : "–", proj.menor ? `menor: ${fmt(proj.menor.saldo)} em ${mlabel(proj.menor.month)}` : "", "projecao"],
-  ];
-  $("#home-big").innerHTML = big.map(([l, v, sub, go]) => `<button class="tile tile--link" data-big="${go}"><span class="tile__label">${l}</span>
-    <span class="tile__value">${v}</span><span class="tile__sub">${sub}</span></button>`).join("");
-
-  // saldo projetado: número grande + minigráfico
-  if (last) {
-    $("#h-proj-value").innerHTML = money(last.saldo);
-    $("#h-proj-sub").textContent = `em ${mlabel(last.month)} · começa em ${fmt(proj.saldo_inicial)} (contas menos faturas)`;
-    chart("chart-home-proj").setOption({
-      animationDuration: 400, grid: { left: 0, right: 0, top: 8, bottom: 0, containLabel: true },
-      tooltip: { ...baseOption().tooltip, trigger: "axis" },
-      xAxis: { type: "category", data: proj.meses.map((x) => mlabel(x.month)), axisLine: { show: false }, axisTick: { show: false },
-        axisLabel: { color: "#6b7079", fontSize: 10 } },
-      yAxis: { type: "value", show: false, scale: true },
-      series: [{ type: "line", data: proj.meses.map((x) => x.saldo), smooth: true, symbol: "circle", symbolSize: 5, color: "#405fad",
-        lineStyle: { width: 2 }, areaStyle: { color: "#e6ecfd", opacity: 0.8 },
-        markLine: { symbol: "none", silent: true, label: { show: false }, lineStyle: { color: "#7f8a9c", type: "dashed" }, data: [{ yAxis: 0 }] } }],
-    }, true);
-  }
-
-  // próximos vencimentos (previstos dos próximos 30 dias)
-  state.homeOcc = {};
-  $("#home-next").innerHTML = (d.proximos || []).map((o) => `<div class="az-insight is-link" data-open="occ:${(state.homeOcc[occKey(o)] = o, occKey(o))}">${well(esc(initials(o.name)))}
-    <div class="az-insight__text"><div class="az-insight__title">${esc(o.name)}</div><div class="az-insight__desc">vence ${dlabel(o.due)}</div></div>
-    <div class="tx-right"><span class="amount ${o.kind === "receita" ? "in" : ""}">${money(o.kind === "receita" ? o.amount : -o.amount, { plus: true })}</span></div></div>`).join("")
-    || '<p class="hint" style="margin:0">Nada vencendo nos próximos 30 dias. Cadastre contas e receitas em Planejamento → Previstos.</p>';
-
-  // destaques escritos como constatação + o que significa (InsightRow)
-  const ins = [];
-  if (d.overdue && d.overdue.count) {
-    const names = d.overdue.items.map((o) => o.name).slice(0, 2).join(", ");
-    ins.push({ icon: "clock", title: `${d.overdue.count} ${d.overdue.count === 1 ? "conta em atraso" : "contas em atraso"}`,
-      desc: `${fmt(d.overdue.total)} vencidos · ${names}${d.overdue.count > 2 ? "…" : ""}`, go: "atrasos" });
-  }
-  if (d.uncategorized) {
-    ins.push({ icon: "tag", title: `${d.uncategorized} ${d.uncategorized === 1 ? "lançamento sem categoria" : "lançamentos sem categoria"}`,
-      desc: "Categorize para o orçamento ficar certo", go: "review" });
-  }
-  if (T.despesas_orcadas) {
-    const left = T.despesas_orcadas - T.despesas;
-    ins.push({ icon: "chart", title: `Gastos em ${pct(T.despesas / T.despesas_orcadas)} do orçamento`,
-      desc: left >= 0 ? `Ainda pode gastar ${fmt(left)} este mês` : `${fmt(-left)} acima do orçado`, go: "planejamento" });
-  } else {
-    ins.push({ icon: "chart", title: `Gastos de ${fmt(T.despesas)} no mês`, desc: "Defina um orçamento para acompanhar", go: "planejamento" });
-  }
-  const moves = d.groups.filter((g) => g.group !== "Sem categoria").map((g) => {
-    const cur = g.values[g.values.length - 1], prev = g.values[g.values.length - 2];
-    return { group: g.group, cur, prev, ch: prev > 0 && cur > 0 ? cur / prev - 1 : null };  // só compara meses com gasto nos dois
-  }).filter((m) => m.ch != null && Math.abs(m.ch) >= 0.1).sort((a, b) => Math.abs(b.cur - b.prev) - Math.abs(a.cur - a.prev));
-  if (moves.length) {
-    const m = moves[0];
-    ins.push({ icon: m.ch > 0 ? "up" : "down", title: `${m.group} ${m.ch > 0 ? "subiu" : "caiu"}`, badge: `${m.ch > 0 ? "+" : "−"}${pct(Math.abs(m.ch))}`,
-      desc: `${fmt(m.cur)} neste mês contra ${fmt(m.prev)} no anterior`, go: "planejamento" });
-  }
-  if (DT.faturas_abertas || DT.parcelas_cartao_futuras) {
-    ins.push({ icon: "card", title: `Faturas abertas somam ${fmt(DT.faturas_abertas)}`,
-      desc: DT.parcelas_cartao_futuras ? `Mais ${fmt(DT.parcelas_cartao_futuras)} em parcelas a cair` : "Sem parcelas futuras", go: "dividas" });
-  }
-  if (DT.saldo_devedor) {
-    ins.push({ icon: "debt", title: DT.comprometimento != null ? `Parcelas levam ${pct(DT.comprometimento)} da renda` : `Dívidas somam ${fmt(DT.saldo_devedor)}`,
-      desc: `${fmt(DT.parcelas_mes)} por mês · saldo devedor ${fmt(DT.saldo_devedor)}`, go: "dividas" });
-  }
-  $("#home-insights").innerHTML = ins.map((i) => `<a class="az-insight" href="#" data-go="${i.go}">${well(ICON[i.icon])}
-    <div class="az-insight__text"><div class="az-insight__title">${esc(i.title)}${i.badge ? `<span class="az-badge">${i.badge}</span>` : ""}</div>
-    <div class="az-insight__desc">${esc(i.desc)}</div></div>${CHEV}</a>`).join("");
-
-  const liquid = d.accounts.filter((a) => a.kind !== "cartao");
-  const total = liquid.reduce((sum, a) => sum + Math.max(0, a.balance), 0);
-  $("#home-accounts").innerHTML = liquid.map((a) => `<div class="az-insight is-link" data-open="txacc:${a.id}">${well(esc(initials(a.name)))}
-    <div class="az-insight__text"><div class="az-insight__title">${esc(a.name)}</div><div class="az-insight__desc">${KIND_LABEL[a.kind]} · ${esc(personName(a.owner_id))}</div></div>
-    <div class="tx-right"><span class="amount">${money(a.balance)}</span><span class="tx-date share">${total > 0 && a.balance > 0 ? pct(a.balance / total) : ""}</span></div></div>`).join("")
-    || '<p class="hint" style="margin:0">Nenhuma conta ainda. Envie o extrato OFX da conta em Importações para ver os saldos reais.</p>';
-
-  // cartões desenhados sob o saldo (como o cartão da foto de referência)
-  $("#home-cardviz").innerHTML = d.cards.map((c) => {
-    const last4 = (c.name.match(/(\d{4})\s*$/) || [, "••••"])[1];
-    const label = c.name.replace(/\s*\d{4}\s*$/, "").replace(/^Cartão\s+/i, "");
-    return `<button class="cardviz" data-goto="dividas" aria-label="Fatura do ${esc(c.name)}">
-      <span class="cardviz__brand">${esc(label)}</span><span class="cardviz__chip"></span>
-      <span class="cardviz__num">•••• ${esc(last4)}</span>
-      <span class="cardviz__foot"><span><small>${c.configured ? `Fatura ${mlabel(c.invoice.month)}` : "Fatura atual"}</small>${money(c.invoice.amount)}</span>
-        <span><small>Vence</small>${c.configured ? dlabel(c.invoice.due) : "–"}</span></span></button>`;
-  }).join("");
-  $("#home-cardviz").hidden = !d.cards.length;
-  applyHidden();
-
-  const recent = await api("GET", withPerson("/api/transactions?limit=5"));
-  state.homeRecent = recent;
-  $("#home-recent").innerHTML = recent.map((t) => txRow(t)).join("") || '<p class="hint">Nenhum lançamento ainda.</p>';
-
-  $("#home-groups").innerHTML = d.groups.length ? d.groups.map((g) => {
-    const max = Math.max(...g.values, 1), cur = g.values[g.values.length - 1];
-    const withData = g.values.filter((v) => v > 0);
-    const avg = withData.length ? withData.reduce((a, b) => a + b, 0) / withData.length : 0;
-    const bars = g.values.map((v, i) => `<i class="${i === g.values.length - 1 ? "on" : ""}" style="height:${Math.max(6, (v / max) * 100)}%" title="${mlabel(g.months[i])}: ${fmt(v)}"></i>`).join("");
-    return `<div class="az-insight cat-row is-link" data-goto-plan="mes">${well(esc(initials(g.group)))}<div class="az-insight__text"><div class="az-insight__title">${esc(g.group)}</div>
-      <div class="az-insight__desc">média ${fmt(avg)}/mês</div></div><div class="spark">${bars}</div>
-      <div class="tx-right"><span class="amount">${money(cur)}</span></div></div>`;
-  }).join("") : '<p class="hint">Sem gastos categorizados ainda.</p>';
-}
-document.addEventListener("click", (e) => {
-  const review = e.target.closest("#home-insights [data-go=review]");
-  const go = e.target.closest("#home-insights [data-go]");
-  const recent = e.target.closest("#home-recent .tx-row");
-  if (recent) {
-    const t = (state.homeRecent || []).find((x) => x.id === +recent.dataset.id);
-    if (t) return openTxSheet(t);
-    state.tx.status = "";
-    goTab("lancamentos");
-    return;
-  }
-  if (review) {
-    e.preventDefault();
-    state.tx.status = "revisar";
-    goTab("lancamentos");
-  } else if (go) {
-    e.preventDefault();
-    if (go.dataset.go === "atrasos") {
-      state.plan.view = "previstos";
-      return goTab("planejamento");
-    }
-    goTab(go.dataset.go);
-  }
-});
-
 // ------------------------------------------------------------------ LANÇAMENTOS
 async function renderLancamentos() {
   const f = state.tx;
+  // na primeira visita, se o mês atual ainda não tem lançamentos, abre no último mês com extrato
+  if (!f.monthPicked) {
+    f.monthPicked = true;
+    const [last] = await api("GET", withPerson("/api/transactions?limit=1"));
+    if (last && last.date.slice(0, 7) < f.month.slice(0, 7)) f.month = last.date.slice(0, 7) + "-01";
+  }
   $("#tx-month").value = f.month.slice(0, 7);
   $("#tx-account").innerHTML = accountOptions(f.account ? +f.account : null, { all: true, label: "Todas as contas" });
   if (isMobile()) $("#tx-account").options[0].textContent = "Contas";
@@ -502,9 +335,9 @@ $("#tx-status").addEventListener("click", (e) => {
   state.tx.selected.clear();
   renderLancamentos();
 });
-$("#tx-month").addEventListener("change", (e) => { if (e.target.value) { state.tx.month = e.target.value + "-01"; state.tx.status = ""; renderLancamentos(); } });
-$("#tx-prev").onclick = () => { state.tx.month = addMonths(state.tx.month, -1); state.tx.status = ""; renderLancamentos(); };
-$("#tx-next").onclick = () => { state.tx.month = addMonths(state.tx.month, 1); state.tx.status = ""; renderLancamentos(); };
+$("#tx-month").addEventListener("change", (e) => { if (e.target.value) { state.tx.monthPicked = true; state.tx.month = e.target.value + "-01"; state.tx.status = ""; renderLancamentos(); } });
+$("#tx-prev").onclick = () => { state.tx.monthPicked = true; state.tx.month = addMonths(state.tx.month, -1); state.tx.status = ""; renderLancamentos(); };
+$("#tx-next").onclick = () => { state.tx.monthPicked = true; state.tx.month = addMonths(state.tx.month, 1); state.tx.status = ""; renderLancamentos(); };
 $("#tx-account").addEventListener("change", (e) => { state.tx.account = e.target.value; renderLancamentos(); });
 let qTimer;
 $("#tx-q").addEventListener("input", (e) => {
@@ -685,7 +518,7 @@ $("#tx-add").onclick = () => openQuickAdd({ when: "ja" });
 $("#tx-add-m").onclick = () => openQuickAdd({ when: "ja" });
 document.addEventListener("click", (e) => {
   const b = e.target.closest("[data-quick]");
-  if (b) openQuickAdd(b.dataset.quick === "receita" ? { kind: "receita" } : {});
+  if (b) openQuickAdd({ ...(b.dataset.quick === "receita" ? { kind: "receita" } : {}), ...(b.dataset.quickMonth ? { when: "vai", month: b.dataset.quickMonth } : {}) });
 });
 
 // ------------------------------------------------------------------ IMPORTAR
@@ -815,14 +648,12 @@ const SECTION_INFO = {
   variaveis: { title: "Gastos variáveis", add: "Orçar categoria" },
 };
 async function renderPlanejamento() {
-  const view = ["cockpit", "comp"].includes(state.plan.view) ? state.plan.view : ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
+  const view = ["fluxo", "tabela", "projecao"].includes(state.plan.view) ? "fluxo" : "mes";
   state.plan.view = view;
   $$("#plan-view button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
   $("#pv-mes").hidden = view !== "mes";
   $("#pv-fluxo").hidden = view !== "fluxo";
-  $("#pv-cockpit").hidden = view !== "cockpit";
-  $("#pv-comp").hidden = view !== "comp";
-  return { fluxo: renderFluxo, cockpit: renderCockpit, comp: renderCompromissos }[view]?.() ?? renderMes();
+  return view === "fluxo" ? renderFluxo() : renderMes();
 }
 $("#plan-view").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-view]");
@@ -1168,24 +999,51 @@ function openPlannedSheet(p, preset = {}) {
 }
 
 
-// ------------------------------------------------------------------ COMPROMISSOS: quanto de cada mês já está comprometido
+// ------------------------------------------------------------------ INÍCIO: o plano, mês a mês (página principal)
+// Quanto de cada mês já está comprometido (contas fixas, parcelas, pontuais) e o variável estimado, contra a renda.
+// Cenários do Cockpit para ligar ali mesmo, linha do tempo, receitas × despesas, tabela por tipo com detalhamento até o
+// item (tudo editável: tocar num valor muda aquele mês), alívios, vencimentos e categorias no tempo.
 const CM_KINDS = [["fixas", "Contas fixas"], ["parcelas", "Parcelas"], ["pontuais", "Pontuais"], ["variavel", "Variável"]];
-const CM_LABEL = Object.fromEntries(CM_KINDS);
+const CM_LABEL = { ...Object.fromEntries(CM_KINDS), renda: "Receitas" };
+const KIND_ROWS = [["renda", "Receitas"], ...CM_KINDS];
 const mshort = (iso) => MESES[+iso.slice(5, 7) - 1];
+const sfmt = (v) => `${v < 0 ? "−" : ""}${fmt(Math.abs(v))}`;
+const CHEV_DOWN = svg('<path d="M6 9l6 6 6-6"/>');
+state.home = { open: null, bk: null };
 function spark(values, w = 64, h = 20) {
   const max = Math.max(...values, 1), n = values.length;
   const pts = values.map((v, i) => `${((i / Math.max(n - 1, 1)) * (w - 2) + 1).toFixed(1)},${(h - 2 - (v / max) * (h - 4)).toFixed(1)}`).join(" ");
   return `<svg class="cm-spark" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}"/></svg>`;
 }
-async function renderCompromissos() {
+const selIdx = () => Math.max(0, state.cm.months.findIndex((m) => m.month === state.cm.sel));
+
+async function renderInicio() {
   const h = state.plan.cmHorizon || 12;
   $$("#cm-horizon button").forEach((b) => b.classList.toggle("active", +b.dataset.h === h));
-  const c = await api("GET", withPerson(`/api/commitments?months=${h}`));
+  const [c, flow] = await Promise.all([api("GET", withPerson(`/api/commitments?months=${h}`)), api("GET", withPerson("/api/planned/flow?months=2"))]);
   state.cm = c;
   const keep = state.plan.cmSel && c.months.some((m) => m.month === state.plan.cmSel);
-  c.sel = keep ? state.plan.cmSel : c.months[0].month; // mês escolhido continua escolhido ao trocar o horizonte
-  // frase do topo: queda do comprometido, peso na renda e o próximo alívio
-  const M = c.months, cur = M[0];
+  c.sel = keep ? state.plan.cmSel : c.months[0].month; // o mês escolhido continua ao trocar o horizonte
+  const empty = c.months.every((m) => !m.total && !m.income) && !flow.overdue.length;
+  $("#home-empty").hidden = !empty;
+  $("#home-content").hidden = empty;
+  if (empty) return;
+  if (state.home.open == null) state.home.open = Object.fromEntries(KIND_ROWS.map(([k]) => [k, !isMobile()]));
+  paintBubble();
+  paintScenarios();
+  paintKpis();
+  paintLate(flow);
+  paintNext(flow);
+  $("#cm-legend").innerHTML = CM_KINDS.map(([k, l]) => `<span><i class="cm-${k}"></i>${l}</span>`).join("") + '<span><i class="cm-income"></i>Renda</span>';
+  paintSel();
+  paintReliefs();
+}
+function paintSel() { paintCmChart(); paintCmMonth(); paintRxd(); paintHmTable(); paintCmGroups(); }
+function selectMonth(m) { state.cm.sel = state.plan.cmSel = m; paintSel(); }
+
+// frase do topo: queda do comprometido, peso na renda e o próximo alívio
+function paintBubble() {
+  const c = state.cm, M = c.months, cur = M[0];
   const low = M.slice(1).reduce((a, m) => (m.committed < a.committed ? m : a), cur);
   const parts = [];
   if (low !== cur && cur.committed - low.committed > 100) parts.push(`Seu comprometido cai de <b>${fmt(cur.committed)}</b> em ${mlabel(cur.month)} para <b>${fmt(low.committed)}</b> em ${mlabel(low.month)}.`);
@@ -1194,15 +1052,45 @@ async function renderCompromissos() {
   const next = c.reliefs[0];
   if (next) parts.push(`Próximo alívio: ${esc(next.label)}, <b>+${fmt(next.amount)}/mês</b> a partir de ${mlabel(next.from_month)}.`);
   $("#cm-bubble").innerHTML = `<span class="cm-bubble__icon">${ICON.chart}</span><p>${parts.join(" ") || "Cadastre previstos e dívidas para ver o que já está comprometido."}</p>`;
-  $("#cm-legend").innerHTML = CM_KINDS.map(([k, l]) => `<span><i class="cm-${k}"></i>${l}</span>`).join("") + '<span><i class="cm-income"></i>Renda</span>';
-  paintCmChart();
-  paintCmMonth();
-  $("#cm-reliefs").innerHTML = c.reliefs.length ? c.reliefs.map((r) => `<div class="az-insight is-link" data-open="row:${esc(r.ref)}|${r.last_month}">
-      ${well(esc(initials(r.label)))}<div class="az-insight__text"><div class="az-insight__title">${esc(r.label)}</div>
-      <div class="az-insight__desc">${esc(r.detail || (r.ends ? `termina em ${mlabel(r.last_month)}` : "diminui"))} · ${CM_LABEL[r.kind].toLowerCase()}</div></div>
-      <div class="tx-right"><span class="amount in">+${fmt(r.amount)}/mês</span><span class="tx-date">a partir de ${mlabel(r.from_month)}</span></div></div>`).join("")
-    : '<p class="hint">Nenhuma conta fixa ou parcela termina nos próximos anos.</p>';
-  paintCmGroups();
+}
+// cenários: as ações e quitações do Cockpit ligam e desligam aqui mesmo, e a página toda recalcula
+function paintScenarios() {
+  const sc = state.cm.scenarios;
+  const chip = (on, attrs, label, value) => `<button class="scen ${on ? "on" : ""}" ${attrs} aria-pressed="${on}"><i></i><span>${label}</span><b>${value}</b></button>`;
+  $("#hm-scen").innerHTML = `<span class="hm-scen__l">Cenários</span>` +
+    sc.actions.map((a) => chip(a.active, `data-scen="a:${a.id}"`, esc(a.name), signedMoney(a.total))).join("") +
+    sc.payoffs.map((p) => chip(p.active, `data-scen="p:${p.debt_id}" data-date="${p.date}"`, `Quitar ${esc(p.name)} em ${dfull(p.date)}`, `−${fmt(p.payoff)}`)).join("") +
+    '<button class="scen add" data-scen-new>+ Novo cenário</button><button class="scen add" data-goto="cockpit">Simular quitação</button>';
+}
+function paintKpis() {
+  const c = state.cm, M = c.months, cur = M[0], last = M[M.length - 1];
+  const low = M.reduce((a, m) => (m.balance_end < a.balance_end ? m : a), M[0]);
+  const k = (label, value, sub, month, cls = "") => `<button class="tile tile--link hm-kpi ${cls}" data-cm-month="${month}"><span class="tile__label">${label}</span>
+    <span class="tile__value">${value}</span><span class="tile__sub">${sub}</span></button>`;
+  $("#hm-kpis").innerHTML = [
+    k(`Comprometido em ${mlabel(cur.month)}`, fmt(cur.committed), cur.pct != null ? `${pct(cur.pct)} da renda` : "sem renda prevista", cur.month, cur.pct >= 1 ? "warn" : ""),
+    k(`${cur.margin >= 0 ? "Sobra" : "Falta"} em ${mlabel(cur.month)}`, fmt(Math.abs(cur.margin)), `renda de ${fmt(cur.income)}`, cur.month, cur.margin < 0 ? "warn" : ""),
+    k(`Saldo no fim de ${mlabel(last.month)}`, sfmt(last.balance_end), `hoje ${sfmt(c.start_balance)} nas contas`, last.month),
+    k("Menor saldo", sfmt(low.balance_end), `em ${mlabel(low.month)}`, low.month, low.balance_end < 0 ? "warn" : ""),
+  ].join("");
+}
+function paintLate(flow) {
+  const el = $("#hm-late"), n = flow.overdue.length;
+  el.hidden = !n;
+  if (n) el.innerHTML = `${well(ICON.clock)}<span class="hm-late__t"><b>${fmt(flow.overdue_total)} em atraso</b> · ${n} ${n === 1 ? "conta" : "contas"}:
+    ${esc(flow.overdue.slice(0, 3).map((o) => o.name).join(", "))}${n > 3 ? "…" : ""}</span><span class="link">Ver e marcar como pago</span>`;
+}
+function paintNext(flow) {
+  const today = new Date().toLocaleDateString("sv"), lim = shiftDay(today, 30);
+  state.homeOcc = {};
+  const items = flow.months.flatMap((m) => m.items).filter((o) => o.status === "pendente" && o.due >= today && o.due <= lim)
+    .sort((a, b) => a.due.localeCompare(b.due)).slice(0, 8);
+  $("#home-next").innerHTML = items.map((o) => {
+    state.homeOcc[occKey(o)] = o;
+    return `<div class="az-insight is-link" data-open="occ:${occKey(o)}">${well(esc(initials(o.name)))}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(o.name)}</div><div class="az-insight__desc">${o.kind === "receita" ? "cai" : "vence"} ${dlabel(o.due)}</div></div>
+      <div class="tx-right"><span class="amount ${o.kind === "receita" ? "in" : ""}">${money(o.kind === "receita" ? o.amount : -o.amount, { plus: true })}</span></div></div>`;
+  }).join("") || '<p class="hint">Nada vencendo nos próximos 30 dias.</p>';
 }
 function paintCmChart() {
   const c = state.cm, M = c.months;
@@ -1224,39 +1112,121 @@ function paintCmChart() {
     <svg class="cm-line" width="${width}" height="${H}" viewBox="0 0 ${width} ${H}" aria-hidden="true"><polyline points="${pts}"/>
       ${M.map((m, i) => `<circle cx="${i * (W + GAP) + W / 2}" cy="${y(m.income).toFixed(1)}" r="2.5"/>`).join("")}</svg>`;
 }
+// detalhamento do mês: cada tipo abre os itens daquele mês; cada item abre a edição do valor
+function kindItems(k, i) {
+  return (state.cm.kinds[k] || []).filter((it) => Math.abs(it.values[i]) > 0.005).sort((a, b) => b.values[i] - a.values[i]);
+}
 function paintCmMonth() {
-  const c = state.cm, m = c.months.find((x) => x.month === c.sel) || c.months[0];
-  const p = m.pct;
+  const c = state.cm, i = selIdx(), m = c.months[i], bk = state.home.bk, p = m.pct;
   const bar = m.income > 0 ? CM_KINDS.slice(0, 3).map(([k]) => `<i class="cm-${k}" style="width:${Math.min(100, (m[k] / m.income) * 100)}%"></i>`).join("") : "";
+  const row = (k, label, v) => `<button class="cm-row ${bk === k ? "open" : ""}" data-bk="${k}"><span><i class="cm-${k}"></i>${label}</span><b>${fmt2(v)}</b><span class="cm-chev">${CHEV_DOWN}</span></button>` +
+    (bk === k ? `<div class="cm-bk">${kindItems(k, i).map((it) => `<button class="cm-bk__it" data-edit="${esc(it.ref)}" data-label="${esc(it.label)}" data-v="${it.values[i]}">
+        <span>${esc(it.label)}${it.group ? `<small>${esc(it.group)}</small>` : ""}</span><b>${fmt2(it.values[i])}</b></button>`).join("") || '<p class="hint">Nada neste mês.</p>'}
+      <button class="link cm-bk__add" data-quick="${k === "renda" ? "receita" : "despesa"}" data-quick-month="${m.month}">+ Adicionar em ${mlabel(m.month)}</button></div>` : "");
   $("#cm-month").innerHTML = `<div class="cm-month__head"><span>${capFirst(mlong(m.month))} · comprometido</span>
       ${p != null ? `<span class="badge ${p >= 1 ? "strong" : "tint"}">${pct(p)} da renda</span>` : ""}</div>
     <div class="cm-month__big">${money(m.committed)}</div>
     ${bar ? `<div class="cm-meter">${bar}</div>` : ""}
-    <div class="cm-rows">${CM_KINDS.map(([k, l]) => `<div><span><i class="cm-${k}"></i>${l}${k === "variavel" ? " (estimado)" : ""}</span><b>${fmt2(m[k])}</b></div>`).join("")}
-      <div class="cm-sum"><span>Renda prevista</span><b>${fmt2(m.income)}</b></div>
-      <div class="cm-sum"><span>${m.margin >= 0 ? "Sobra" : "Falta"}</span><b class="${m.margin < 0 ? "neg" : ""}">${fmt2(Math.abs(m.margin))}</b></div></div>
+    <div class="cm-rows">${CM_KINDS.map(([k, l]) => row(k, k === "variavel" ? "Variável (estimado)" : l, m[k])).join("")}
+      ${row("renda", "Renda prevista", m.income)}
+      <div class="cm-sum"><span>${m.margin >= 0 ? "Sobra" : "Falta"} no mês</span><b class="${m.margin < 0 ? "neg" : ""}">${fmt2(Math.abs(m.margin))}</b></div>
+      <div class="cm-sum"><span>Saldo acumulado no fim do mês</span><b>${sfmt(m.balance_end)}</b></div></div>
     <div class="row occ-links"><button class="link" data-cm-goto="mes">Ver o mês</button><button class="link" data-cm-goto="fluxo">Ver no fluxo</button></div>`;
 }
+// receitas × despesas (despesas empilhadas por tipo) e o saldo acumulado
+function paintRxd() {
+  const c = state.cm, M = c.months, i = selIdx(), labels = M.map((m) => mlabel(m.month));
+  const ch = chart("chart-rxd");
+  if (!ch) return;
+  ch.setOption({
+    ...baseOption(), grid: { left: 8, right: 8, top: isMobile() ? 72 : 60, bottom: 8, containLabel: true },
+    xAxis: { ...baseOption().xAxis, data: labels },
+    yAxis: [{ ...baseOption().yAxis }, { ...baseOption().yAxis, splitLine: { show: false } }],
+    series: [
+      { name: "Receitas", type: "bar", stack: "r", data: M.map((m) => m.income), barMaxWidth: 16, itemStyle: { color: css("--cm-income"), borderRadius: [3, 3, 0, 0] },
+        markArea: { silent: true, itemStyle: { color: css("--surface-tint"), opacity: 0.7 }, data: [[{ xAxis: labels[i] }, { xAxis: labels[i] }]] } },
+      ...CM_KINDS.map(([k, l]) => ({ name: l, type: "bar", stack: "d", data: M.map((m) => m[k]), barMaxWidth: 16, itemStyle: { color: css(`--cm-${k}-solid`) } })),
+      { name: "Saldo acumulado", type: "line", yAxisIndex: 1, data: M.map((m) => m.balance_end), smooth: true, symbolSize: 5, color: LIT(), lineStyle: { width: 2 } },
+    ],
+  }, true);
+  ch.off("click");
+  ch.on("click", (e) => { if (e.dataIndex != null) selectMonth(M[e.dataIndex].month); });
+  ch.resize();
+}
+// tabela por tipo: receitas e cada tipo de despesa abrem os itens; os valores dos itens são editáveis
+function paintHmTable() {
+  const c = state.cm, M = c.months, open = state.home.open;
+  const sel = (j) => (M[j].month === c.sel ? "sel" : "");
+  const tds = (vals, f = num) => vals.map((v, j) => `<td class="${sel(j)}">${f(v)}</td>`).join("");
+  let body = "";
+  for (const [k, l] of KIND_ROWS) {
+    if (k === "fixas") body += `<tr class="sec"><td class="lbl">Despesas</td>${tds(M.map((m) => m.total))}</tr>`;
+    body += `<tr class="${k === "renda" ? "sec" : "grp"} hm-kind" data-hm-kind="${k}"><td class="lbl"><span class="hm-tog">${open[k] ? "▾" : "▸"}</span><i class="cm-dot cm-${k}"></i>${l}</td>${tds(M.map((m) => (k === "renda" ? m.income : m[k])))}</tr>`;
+    if (open[k]) {
+      for (const it of c.kinds[k]) {
+        body += `<tr><td class="lbl sub lnk" data-open="row:${esc(it.ref)}|${c.sel}" title="${esc(it.label)}${it.group ? ` · ${esc(it.group)}` : ""}">${esc(it.label)}</td>` +
+          it.values.map((v, j) => `<td class="ed ${sel(j)}" data-ref="${esc(it.ref)}" data-m="${M[j].month}" data-label="${esc(it.label)}" data-v="${v}">${num(v)}</td>`).join("") + "</tr>";
+      }
+    }
+  }
+  body += `<tr class="total first"><td class="lbl">Saldo do mês</td>${tds(M.map((m) => m.income - m.total), snum)}</tr>
+    <tr class="acc"><td class="lbl">Saldo acumulado</td>${tds(M.map((m) => m.balance_end), snum)}</tr>
+    <tr class="info"><td class="lbl">% da renda comprometida</td>${tds(M.map((m) => m.pct), (v) => (v == null ? "–" : pct(v)))}</tr>`;
+  $("#hm-table").innerHTML = `<thead><tr><th class="lbl">R$</th>${M.map((m, j) => `<th class="${sel(j)}"><button class="th-month" data-cm-month="${m.month}">${mlabel(m.month)}</button></th>`).join("")}</tr></thead><tbody>${body}</tbody>`;
+  $("#hm-expand").textContent = Object.values(open).every(Boolean) ? "Fechar tudo" : "Abrir tudo";
+}
+function paintReliefs() {
+  const c = state.cm;
+  $("#cm-reliefs").innerHTML = c.reliefs.length ? c.reliefs.map((r) => `<div class="az-insight is-link" data-open="row:${esc(r.ref)}|${r.last_month}">
+      ${well(esc(initials(r.label)))}<div class="az-insight__text"><div class="az-insight__title">${esc(r.label)}</div>
+      <div class="az-insight__desc">${esc(r.detail || (r.ends ? `termina em ${mlabel(r.last_month)}` : "diminui"))} · ${CM_LABEL[r.kind].toLowerCase()}</div></div>
+      <div class="tx-right"><span class="amount in">+${fmt(r.amount)}/mês</span><span class="tx-date">a partir de ${mlabel(r.from_month)}</span></div></div>`).join("")
+    : '<p class="hint">Nenhuma conta fixa ou parcela termina nos próximos anos.</p>';
+}
 function paintCmGroups() {
-  const c = state.cm, i = Math.max(0, c.months.findIndex((m) => m.month === c.sel));
+  const c = state.cm, i = selIdx();
   const open = state.plan.cmOpen || {};
   $("#cm-groups").innerHTML = c.groups.map((g) => `<div class="cm-group ${open[g.group] ? "open" : ""}">
       <button class="az-insight cm-group__head" data-cm-group="${esc(g.group)}">${well(esc(initials(g.group)))}
         <span class="az-insight__text"><span class="az-insight__title">${esc(g.group)}</span><span class="az-insight__desc">${g.kinds.map((k) => CM_LABEL[k]).join(" · ")}</span></span>
-        ${spark(g.values)}<span class="amount">${fmt(g.values[i])}</span><span class="cm-chev">${svg('<path d="M6 9l6 6 6-6"/>')}</span></button>
+        ${spark(g.values)}<span class="amount">${fmt(g.values[i])}</span><span class="cm-chev">${CHEV_DOWN}</span></button>
       ${open[g.group] ? `<div class="cm-items">${g.items.map((it) => `<div class="cm-item is-link" data-open="row:${esc(it.ref)}|${c.sel}">
           <span class="cm-item__l"><i class="cm-${it.kind}"></i>${esc(it.label)}</span>${spark(it.values, 48, 16)}<b>${fmt(it.values[i])}</b></div>`).join("")}</div>` : ""}
     </div>`).join("") || '<p class="hint">Sem previstos, dívidas ou orçamento ainda.</p>';
 }
-$("#pv-comp").addEventListener("click", (e) => {
+$("#tab-inicio").addEventListener("click", async (e) => {
+  const scen = e.target.closest("[data-scen]");
+  if (scen) {
+    const [t, id] = scen.dataset.scen.split(":"), active = !scen.classList.contains("on");
+    scen.classList.toggle("on", active);
+    if (t === "a") await api("PATCH", `/api/cockpit/actions/${id}`, { active });
+    else await api("PUT", `/api/cockpit/payoffs/${id}`, { active, date: scen.dataset.date });
+    toast(`${active ? "Cenário ligado" : "Cenário desligado"}: ${scen.querySelector("span").textContent}`);
+    return renderInicio();
+  }
+  if (e.target.closest("[data-scen-new]")) { state.cockpit = await api("GET", "/api/cockpit"); return openActionSheet(null); }
+  if (e.target.closest("#hm-late")) { state.plan.month = thisMonth(); state.plan.view = "mes"; return goTab("planejamento"); }
+  const td = e.target.closest("#hm-table td[data-ref]");
+  if (td) return openCellSheet({ ref: td.dataset.ref, month: td.dataset.m, label: td.dataset.label, value: +td.dataset.v, source: "" });
+  const kind = e.target.closest("[data-hm-kind]");
+  if (kind) { state.home.open[kind.dataset.hmKind] = !state.home.open[kind.dataset.hmKind]; return paintHmTable(); }
+  if (e.target.closest("#hm-expand")) {
+    const all = Object.values(state.home.open).every(Boolean);
+    state.home.open = Object.fromEntries(KIND_ROWS.map(([k]) => [k, !all]));
+    return paintHmTable();
+  }
+  const edit = e.target.closest("[data-edit]");
+  if (edit) return openCellSheet({ ref: edit.dataset.edit, month: state.cm.sel, label: edit.dataset.label, value: +edit.dataset.v, source: "" });
+  const bk = e.target.closest("[data-bk]");
+  if (bk) { state.home.bk = state.home.bk === bk.dataset.bk ? null : bk.dataset.bk; return paintCmMonth(); }
   const col = e.target.closest("[data-cm-month]");
-  if (col) { state.cm.sel = state.plan.cmSel = col.dataset.cmMonth; paintCmChart(); paintCmMonth(); paintCmGroups(); return; }
+  if (col) return selectMonth(col.dataset.cmMonth);
   const g = e.target.closest("[data-cm-group]");
-  if (g) { const k = g.dataset.cmGroup; state.plan.cmOpen = { ...(state.plan.cmOpen || {}), [k]: !(state.plan.cmOpen || {})[k] }; paintCmGroups(); return; }
+  if (g) { const k = g.dataset.cmGroup; state.plan.cmOpen = { ...(state.plan.cmOpen || {}), [k]: !(state.plan.cmOpen || {})[k] }; return paintCmGroups(); }
   const h = e.target.closest("#cm-horizon [data-h]");
-  if (h) { state.plan.cmHorizon = +h.dataset.h; renderCompromissos(); return; }
+  if (h) { state.plan.cmHorizon = +h.dataset.h; return renderInicio(); }
   const go = e.target.closest("[data-cm-goto]");
-  if (go) { state.plan.view = go.dataset.cmGoto; if (go.dataset.cmGoto === "mes") state.plan.month = state.cm.sel; renderPlanejamento(); }
+  if (go) { state.plan.view = go.dataset.cmGoto; if (go.dataset.cmGoto === "mes") state.plan.month = state.cm.sel; return goTab("planejamento"); }
 });
 
 // ------------------------------------------------------------------ COCKPIT: ações com liga/desliga
@@ -1608,18 +1578,19 @@ async function openPayoffSheet(did, day) {
   };
   $("#po-on")?.addEventListener("click", () => put(true));
   $("#po-off")?.addEventListener("click", () => put(false));
-  $("#po-ck").onclick = () => { closeSheet(); state.plan.view = "cockpit"; goTab("planejamento"); };
+  $("#po-ck").onclick = () => { closeSheet(); goTab("cockpit"); };
 }
 
 // ------------------------------------------------------------------ editar pela tabela: toque num valor
 // Previsto: só neste mês ou deste mês em diante (até o fim da previsão). Categoria: orçamento do mês ou de todo mês.
 // Dívida: quitar neste mês (vira ação do cockpit). Ação do cockpit: abre a ação.
 async function afterCellEdit(ref, month) {
-  const wrap = $(".tb-wrap"), x = wrap ? wrap.scrollLeft : 0, y = window.scrollY;
-  await renderFluxo();
-  if (wrap) wrap.scrollLeft = x;
+  const wrap = $(".tab.active .table-wrap"), x = wrap ? wrap.scrollLeft : 0, y = window.scrollY;
+  await refresh();
+  const again = $(".tab.active .table-wrap");
+  if (again) again.scrollLeft = x;
   window.scrollTo(0, y);
-  const cell = $(`#tb-table td[data-ref="${CSS.escape(ref)}"][data-m="${month}"]`);
+  const cell = $(`.tab.active td[data-ref="${CSS.escape(ref)}"][data-m="${month}"]`);
   if (cell) { cell.classList.add("flash"); setTimeout(() => cell.classList.remove("flash"), 1600); }
 }
 const cellAmountInput = (v) => `<label class="qa-amount cell-amount"><span>R$</span><input id="ce-amount" inputmode="decimal" value="${v ? String(v.toFixed(2)).replace(".", ",") : ""}" placeholder="0,00" autocomplete="off" aria-label="Valor"></label>`;
@@ -2069,18 +2040,20 @@ $("#add-rule").onclick = () => {
 };
 
 // ------------------------------------------------------------------ navegação, tema e início
-const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, dividas: renderDividas, ajustes: renderAjustes };
+const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, cockpit: renderCockpit,
+  dividas: renderDividas, ajustes: renderAjustes };
 
-const TITLES = { inicio: "Início", lancamentos: "Lançamentos", importar: "Importações", planejamento: "Planejamento", dividas: "Dívidas", ajustes: "Ajustes" };
+const TITLES = { inicio: "Início", lancamentos: "Extrato", importar: "Importações", planejamento: "Planejamento", cockpit: "Cockpit", dividas: "Dívidas", ajustes: "Ajustes" };
 const SUBTITLES = {
   inicio: "", lancamentos: "Busque e categorize gastos", importar: "Extratos e faturas em OFX",
-  planejamento: "Plano do mês e fluxo futuro", dividas: "Cartões, empréstimos e acordos", ajustes: "Pessoas, contas e preferências",
+  planejamento: "Plano do mês e fluxo futuro", cockpit: "Cenários: ligue e desligue para comparar", dividas: "Cartões, empréstimos e acordos",
+  ajustes: "Pessoas, contas e preferências",
 };
 function screenHead(tab) {
   if (tab === "inicio") {
     const who = state.person !== "all" && state.person !== "conjunto" ? personName(+state.person) : "família";
     $("#screen-title").textContent = `Olá, ${who}`;
-    $("#screen-sub").textContent = mlong(state.tx.month || thisMonth());
+    $("#screen-sub").textContent = "Seu plano, mês a mês";
   } else {
     $("#screen-title").textContent = TITLES[tab];
     $("#screen-sub").textContent = SUBTITLES[tab];

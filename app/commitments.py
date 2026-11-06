@@ -28,8 +28,8 @@ RELIEF_MIN = 20.0       # alívio menor que isso é ruído (ajuste de centavos, 
 RELIEF_HORIZON = 48     # meses olhados para achar os próximos alívios
 
 
-def _lines(db: Session, person: str | None, today: date, months: int, variable: bool = True) -> tuple[list[date], dict, list[float], dict]:
-    """Linhas (tipo, grupo, rótulo, ref) → valores por mês; renda por mês; e detalhes das dívidas."""
+def _lines(db: Session, person: str | None, today: date, months: int, variable: bool = True) -> tuple[list[date], dict, list[float], dict, dict]:
+    """Linhas (tipo, grupo, rótulo, ref) → valores por mês; renda por mês; detalhes das dívidas; receitas por item."""
     cur = fin.month_start(today)
     ms = [fin.add_months(cur, k) for k in range(months)]
     idx = {m: i for i, m in enumerate(ms)}
@@ -40,11 +40,17 @@ def _lines(db: Session, person: str | None, today: date, months: int, variable: 
     everyone = person in (None, "", "all")
     lines: dict[tuple, list[float]] = defaultdict(lambda: [0.0] * months)
     income = [0.0] * months
+    income_lines: dict[tuple, list[float]] = defaultdict(lambda: [0.0] * months)  # (rótulo, ref) → receita por mês
     debt_info: dict[str, dict] = {}
 
     def add(kind: str, group: str, label: str, ref: str, m: date, v: float) -> None:
         if v and m in idx:
             lines[(kind, group, label, ref)][idx[m]] += v
+
+    def add_income(label: str, ref: str, m: date, v: float) -> None:
+        if v and m in idx:
+            income[idx[m]] += v
+            income_lines[(label, ref)][idx[m]] += v
 
     # previstos (mês cheio: inclui os já pagos; pulados não contam), com as substituições das ações do Cockpit
     occ = cockpit.apply_overrides(planned_mod.occurrences(db, today, cur, ms[-1], person, acc_ids), eff)
@@ -56,8 +62,7 @@ def _lines(db: Session, person: str | None, today: date, months: int, variable: 
         if o.category_id is not None:
             planned_cats[m].add(o.category_id)
         if o.kind == "receita":
-            if m in idx:
-                income[idx[m]] += o.amount
+            add_income(o.name, f"plan:{o.name}", m, o.amount)
             continue
         cat = cats.get(o.category_id)
         group = cat.group if cat else "Outros"
@@ -72,7 +77,7 @@ def _lines(db: Session, person: str | None, today: date, months: int, variable: 
     for x in eff.extras if everyone else []:
         if x.month in idx:
             if x.kind == "receita":
-                income[idx[x.month]] += x.amount
+                add_income(x.label, f"acao:{x.action_id}", x.month, x.amount)
             else:
                 add("pontuais", f"{cockpit.GROUP} · {x.action}", x.label, f"acao:{x.action_id}", x.month, x.amount)
 
@@ -109,12 +114,12 @@ def _lines(db: Session, person: str | None, today: date, months: int, variable: 
             if cid in planned_cats[m] or (cat and (cat.type == "transferencia" or cat.group in ("Dívidas", CARD_GROUP))):
                 continue
             if cat is not None and cat.type == "receita":
-                income[idx[m]] += b[cid] if cid in b else max(0.0, hist[cid])
+                add_income(cat.name, f"cat:{cid}", m, b[cid] if cid in b else max(0.0, hist[cid]))
                 continue
             v = b[cid] if cid in b else max(0.0, -hist[cid])
             ref = f"cat:{cid if cid is not None else 'none'}"
             add("variavel", cat.group if cat else "Outros", cat.name if cat else "Sem categoria", ref, m, v)
-    return ms, lines, income, debt_info
+    return ms, lines, income, debt_info, income_lines
 
 
 def _reliefs(ms: list[date], lines: dict, debt_info: dict, today: date) -> list[dict]:
@@ -146,7 +151,7 @@ def _reliefs(ms: list[date], lines: dict, debt_info: dict, today: date) -> list[
 
 def commitments(db: Session, person: str | None, today: date, months: int = 12) -> dict:
     months = max(3, min(months, 36))
-    ms, lines, income, debt_info = _lines(db, person, today, months)
+    ms, lines, income, debt_info, income_lines = _lines(db, person, today, months)
     rows = []
     for i, m in enumerate(ms):
         tot = {k: round(sum(v[i] for (kind, *_), v in lines.items() if kind == k), 2) for k in KINDS}
@@ -167,11 +172,44 @@ def commitments(db: Session, person: str | None, today: date, months: int = 12) 
         g["kinds"] = sorted({it["kind"] for it in g["items"]}, key=KINDS.index)
     # alívios num horizonte maior (uma parcela de 48 meses termina depois do gráfico)
     if months < RELIEF_HORIZON:
-        long_ms, long_lines, _, long_debts = _lines(db, person, today, RELIEF_HORIZON, variable=False)
+        long_ms, long_lines, _, long_debts, _ = _lines(db, person, today, RELIEF_HORIZON, variable=False)
     else:
         long_ms, long_lines, long_debts = ms, lines, debt_info
+    # tabela por tipo (receitas e cada tipo de despesa, com os itens), como o Fluxo mas pela ótica do comprometido
+    kinds = {"renda": [{"label": lab, "ref": ref, "values": [round(v, 2) for v in vals]}
+                       for (lab, ref), vals in sorted(income_lines.items(), key=lambda kv: -sum(kv[1])) if any(vals)]}
+    for k in KINDS:
+        items = [{"label": lab, "group": grp, "ref": ref, "values": [round(v, 2) for v in vals]}
+                 for (kind, grp, lab, ref), vals in lines.items() if kind == k and any(abs(v) > 0.005 for v in vals)]
+        kinds[k] = sorted(items, key=lambda it: -sum(it["values"]))
+    # saldo acumulado no fim de cada mês (igual ao do Fluxo: contas hoje + o que ainda entra e sai)
+    from .services import projection
+    p = projection(db, person, today, max(len(ms) - 1, 1))
+    ends = [round(p["saldo_inicial"] - p["months"][0]["pendentes"], 2)] + [r["saldo"] for r in p["months"]][: len(ms) - 1]
+    for r, e in zip(rows, ends, strict=False):
+        r["balance_end"] = e
     return {
         "months": rows,
+        "start_balance": p["saldo_atual"],
+        "kinds": kinds,
         "groups": sorted(groups.values(), key=lambda g: -sum(g["values"])),
         "reliefs": _reliefs(long_ms, long_lines, long_debts, today)[:10],
+        "scenarios": _scenarios(db, today),
     }
+
+
+def _scenarios(db: Session, today: date) -> dict:
+    """Ações do Cockpit (para ligar/desligar direto na página) e as quitações marcadas."""
+    acts = cockpit.load(db, active_only=False)
+    bases = cockpit.Bases(db, today, cockpit._months([a for a in acts if a.kind == "ajuste"]))
+    actions = [{"id": a.id, "name": a.name, "active": a.active, "total": cockpit.impact(db, today, a, bases)["total"]}
+               for a in acts if a.kind == "ajuste"]
+    payoffs = []
+    for a in acts:
+        if a.kind == "quitacao" and a.month and a.debt_id:
+            d = db.get(Debt, a.debt_id)
+            if d is not None:
+                info = cockpit.payoff_info(d, a.month, today)
+                payoffs.append({"debt_id": d.id, "name": d.name, "active": a.active, "date": info["date"], "payoff": info["payoff"],
+                                "interest_saved": info["interest_saved"]})
+    return {"actions": actions, "payoffs": payoffs}

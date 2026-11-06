@@ -36,10 +36,11 @@
   <div class="screen-head"><h1 id="screen-title">Início</h1><p id="screen-sub"></p></div>
   <nav class="rail" id="nav" aria-label="Navegação">
     <button data-tab="inicio" class="active">Início</button>
-    <button data-tab="lancamentos">Lançamentos</button>
-    <button data-tab="importar">Importações</button>
     <button data-tab="planejamento">Planejamento</button>
+    <button data-tab="cockpit">Cockpit</button>
     <button data-tab="dividas">Dívidas</button>
+    <button data-tab="lancamentos">Extrato</button>
+    <button data-tab="importar" class="rail-minor">Importações</button>
     <button data-tab="ajustes">Ajustes</button>
   </nav>
   <div class="top-actions">
@@ -59,47 +60,52 @@
 <main>
   <!-- INÍCIO -->
   <section class="tab active" id="tab-inicio">
-    <div class="page-head"><p class="overline" id="home-crumb"></p><h1>Início</h1></div>
+    <div class="page-head"><p class="overline">Planejamento</p><h1>Início</h1></div>
     <div class="card onboarding" id="home-empty" hidden>
       <p class="overline">Primeiros passos</p>
-      <h2>Seus extratos, organizados.<span>Importe o primeiro e o resto é automático.</span></h2>
+      <h2>Seu plano, mês a mês.<span>Cadastre o que entra e o que sai; o resto o app calcula.</span></h2>
       <ol class="az-steps">
-        <li><b>01 — Cadastre quem usa</b><span>Em Ajustes, adicione vocês dois. Contas e dívidas podem ter titular ou ser conjuntas.</span></li>
-        <li><b>02 — Exporte o OFX</b><span>No app do banco, exporte o extrato da conta e a fatura do cartão no formato OFX.</span></li>
-        <li><b>03 — Envie em Importações</b><span>O extrato OFX cria as contas e categoriza os gastos sozinho. A planilha de planejamento traz previstos, atrasos, dívidas e orçamento de uma vez.</span></li>
+        <li><b>01 — Receitas e despesas previstas</b><span>Toque em + e cadastre salário, aluguel, escola… todo mês ou uma vez.</span></li>
+        <li><b>02 — Dívidas e cartões</b><span>Consignados, empréstimos e faturas: o app calcula parcelas, quitação e quando alivia.</span></li>
+        <li><b>03 — Ou traga a sua planilha</b><span>O modelo de importação traz previstos, atrasos, dívidas, cartões e orçamento de uma vez.</span></li>
       </ol>
-      <div class="row"><button class="primary" data-goto="importar">Ir para Importações</button><button data-goto="ajustes">Cadastrar pessoas</button></div>
+      <div class="row"><button class="primary" data-quick>Adicionar previsto</button><button data-goto="importar">Importar planilha</button></div>
     </div>
     <div id="home-content">
-      <div class="home-top" data-theme="navy">
-        <div class="az-balance">
-          <span class="az-balance__label">Saldo em contas
-            <button class="eye" id="h-eye" aria-label="Ocultar valores"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span>
-          <span class="az-balance__value" id="h-saldo">–</span>
-          <span class="az-trend" id="h-trend"></span>
-        </div>
-        <div class="hero-stats" id="h-stats"></div>
-        <div class="home-actions">
-          <button data-quick="despesa"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Despesa</button>
+      <div class="hm-head">
+        <div class="cm-bubble" id="cm-bubble"></div>
+        <div class="home-actions hm-quick">
           <button data-quick="receita"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Receita</button>
-        </div>
-        <div class="cardviz-row" id="home-cardviz"></div>
-      </div>
-      <div class="home-sheet" data-theme="light">
-        <div class="tiles big-numbers" id="home-big"></div>
-        <div class="card proj-card">
-          <div class="card-head"><h3>Saldo projetado</h3><button class="link" data-goto-plan="projecao">Ver projeção</button></div>
-          <div class="proj-head"><span class="proj-value" id="h-proj-value"></span><span class="hint" id="h-proj-sub" style="margin:0"></span></div>
-          <div id="chart-home-proj" class="chart chart--mini"></div>
-        </div>
-        <div class="sheet-grid">
-          <div class="card"><div class="card-head"><h3>Próximos vencimentos</h3><button class="link" data-goto-plan="previstos">Ver previstos</button></div><div class="list" id="home-next"></div></div>
-          <div class="card"><div class="card-head"><h3>Destaques do mês</h3></div><div class="insight-list" id="home-insights"></div></div>
-          <div class="card"><div class="card-head"><h3>Minhas contas</h3><button class="link" data-goto="ajustes">Ver todas</button></div><div class="list" id="home-accounts"></div></div>
-          <div class="card"><div class="card-head"><h3>Gastos por grupo</h3><button class="link" data-goto-plan="orcamento">Ver orçamento</button></div><div class="list" id="home-groups"></div></div>
-          <div class="card sheet-grid__wide"><div class="card-head"><h3>Últimos lançamentos</h3><button class="link" data-goto="lancamentos">Ver todos</button></div><div class="list" id="home-recent"></div></div>
+          <button data-quick="despesa"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Despesa</button>
         </div>
       </div>
+      <div class="hm-scen" id="hm-scen"></div>
+      <div class="hm-kpis" id="hm-kpis"></div>
+      <button class="card hm-late" id="hm-late" hidden></button>
+      <div class="hm-grid">
+        <div class="card cm-card">
+          <div class="card-head"><h3>Linha do tempo</h3>
+            <div class="segmented cm-horizon" id="cm-horizon"><button data-h="6">6m</button><button data-h="12">12m</button><button data-h="18">18m</button><button data-h="24">24m</button></div></div>
+          <div class="cm-legend" id="cm-legend"></div>
+          <div class="cm-scroll"><div class="cm-chart" id="cm-chart"></div></div>
+          <div class="cm-month" id="cm-month"></div>
+        </div>
+        <div class="card hm-rxd">
+          <div class="card-head"><h3>Receitas × despesas</h3><span class="hint" style="margin:0">toque num mês</span></div>
+          <div id="chart-rxd" class="chart chart--rxd"></div>
+        </div>
+      </div>
+      <div class="card hm-table-card">
+        <div class="card-head"><h3>Mês a mês</h3><button class="link" id="hm-expand"></button></div>
+        <div class="table-wrap hm-wrap"><table id="hm-table" class="flow-table hm-table"></table></div>
+        <p class="hint tb-tip">Toque no tipo para abrir os itens; toque num valor para mudar só aquele mês ou dali em diante.</p>
+      </div>
+      <div class="hm-grid">
+        <div class="card"><div class="card-head"><h3>Próximos alívios</h3></div><div class="list" id="cm-reliefs"></div></div>
+        <div class="card"><div class="card-head"><h3>Próximos vencimentos</h3><button class="link" data-goto-plan="mes">Ver o mês</button></div><div class="list" id="home-next"></div></div>
+      </div>
+      <div class="card"><div class="card-head"><h3>Por categoria, no tempo</h3><span class="hint" style="margin:0">toque para abrir</span></div>
+        <div class="list" id="cm-groups"></div></div>
     </div>
   </section>
 
@@ -114,6 +120,7 @@
         <input id="tx-q" type="search" placeholder="Buscar descrição" aria-label="Buscar">
         <button class="az-icon-btn mobile-only" id="tx-add-m" aria-label="Novo lançamento" title="Novo lançamento"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         <button class="primary desktop-only" id="tx-add">Novo lançamento</button>
+        <button class="secondary" data-goto="importar">Importar</button>
       </div>
       <div class="row"><div class="segmented scroll-x" id="tx-status">
         <button data-s="" class="active">Do mês</button><button data-s="revisar">Para revisar</button><button data-s="sem_categoria">Sem categoria</button>
@@ -180,7 +187,7 @@
   <section class="tab" id="tab-planejamento">
     <div class="page-head"><p class="overline">Plano do mês e fluxo futuro</p><h1>Planejamento</h1></div>
     <div class="plan-top">
-      <div class="segmented" id="plan-view"><button data-view="mes" class="active">Mês</button><button data-view="fluxo">Fluxo</button><button data-view="comp">Compromissos</button><button data-view="cockpit">Cockpit</button></div>
+      <div class="segmented" id="plan-view"><button data-view="mes" class="active">Mês</button><button data-view="fluxo">Fluxo</button></div>
     </div>
 
     <div id="pv-mes">
@@ -219,23 +226,13 @@
         <p class="hint tb-tip">Toque num valor para mudar só aquele mês ou dali em diante.</p></div>
     </div>
 
-    <!-- compromissos: quanto de cada mês já está comprometido e quando alivia -->
-    <div id="pv-comp" hidden>
-      <div class="cm-bubble" id="cm-bubble"></div>
-      <div class="card cm-card">
-        <div class="card-head"><h3>Linha do tempo</h3>
-          <div class="segmented cm-horizon" id="cm-horizon"><button data-h="6">6m</button><button data-h="12">12m</button><button data-h="18">18m</button></div></div>
-        <div class="cm-legend" id="cm-legend"></div>
-        <div class="cm-scroll"><div class="cm-chart" id="cm-chart"></div></div>
-        <div class="cm-month" id="cm-month"></div>
-      </div>
-      <div class="card"><div class="card-head"><h3>Próximos alívios</h3></div><div class="list" id="cm-reliefs"></div></div>
-      <div class="card"><div class="card-head"><h3>Por categoria, no tempo</h3><span class="hint" style="margin:0">toque para abrir</span></div>
-        <div class="list" id="cm-groups"></div></div>
-    </div>
+  </section>
 
+  <!-- COCKPIT: cenários com liga/desliga -->
+  <section class="tab" id="tab-cockpit">
+    <div class="page-head"><p class="overline">Cenários</p><h1>Cockpit</h1></div>
     <!-- cockpit: ações com liga/desliga; ligadas entram no Fluxo e no Mês -->
-    <div id="pv-cockpit" hidden>
+    <div id="pv-cockpit">
       <div class="card ck-card">
         <div class="ck-kpis" id="ck-kpis"></div>
         <div id="chart-cockpit" class="chart chart--ck"></div>
@@ -293,11 +290,11 @@
 </main>
 
 <nav class="bottomnav" id="bottomnav" aria-label="Navegação">
-  <button class="az-tab" data-tab="lancamentos"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg></span>Extrato</button>
   <button class="az-tab" data-tab="planejamento"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 20V10M12 20V4M17 20v-7"/></svg></span>Planejar</button>
+  <button class="az-tab" data-tab="cockpit"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="10" rx="5"/><circle cx="16" cy="12" r="3"/></svg></span>Cockpit</button>
   <button class="az-tab az-tab--ai tab-main" data-tab="inicio" aria-current="page"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7v9H4z"/><path d="M10 20v-5h4v5"/></svg></span>Início</button>
   <button class="az-tab" data-tab="dividas"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/></svg></span>Dívidas</button>
-  <button class="az-tab" data-tab="importar"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5"/><path d="M4 15v4h16v-4"/></svg></span>Importações</button>
+  <button class="az-tab" data-tab="lancamentos"><span class="az-tab__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></svg></span>Extrato</button>
 </nav>
 <div class="sheet-backdrop" id="sheet-backdrop" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" hidden><div class="sheet-grip"></div><div id="sheet-body"></div></div>

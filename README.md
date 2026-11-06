@@ -37,12 +37,20 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
   ou **deste mês em diante** (até o fim da previsão; a previsão é dividida e as outras ficam como estão), **Zerar**,
   mover ou marcar como pago. Categoria: orçamento só do mês ou de todo mês (ou voltar à média). Parcela de dívida:
   **quitar naquele mês** (vira a quitação do Cockpit). Linha do Cockpit: abre a ação.
-- **Compromissos** (Planejamento → Compromissos): quanto de cada mês já está comprometido. Linha do tempo com uma
-  coluna por mês (contas fixas, parcelas de dívidas e cartões, pontuais e o variável estimado) e a renda como linha;
-  tocar num mês mostra o comprometido, o % da renda, a sobra ou falta. **Próximos alívios**: o que termina ou diminui
-  (última parcela, fim de uma conta) e quanto sobra por mês a partir de quando. **Por categoria, no tempo**: cada grupo
-  com a tendência, e os itens abrem o previsto, a dívida ou a ação. Usa as mesmas regras do Fluxo (e as ações ligadas).
-- **Cockpit** (Planejamento → Cockpit): ações com liga/desliga para simular decisões. Ligada, a ação entra no
+- **Início = o plano, mês a mês** (página principal; o foco é planejamento, não importar extrato): quanto de cada
+  mês já está comprometido (contas fixas, parcelas de dívidas e cartões, pontuais) e o variável estimado, contra a renda.
+  - **Cenários**: as ações e quitações do Cockpit ligam e desligam ali mesmo, e a página toda recalcula.
+  - **Indicadores**: comprometido e % da renda do mês, sobra/falta, saldo no fim do horizonte e menor saldo (tocar
+    leva ao mês); aviso do que está em atraso.
+  - **Linha do tempo** (6 a 24 meses) e **receitas × despesas** (despesas empilhadas por tipo, saldo acumulado);
+    tocar num mês mostra o **detalhamento**: cada tipo abre os itens do mês, e cada item abre a edição do valor.
+  - **Mês a mês** (tabela, pensada para o PC): receitas e cada tipo de despesa abrem os itens; tocar num valor muda só
+    aquele mês ou dali em diante; saldo do mês, saldo acumulado e % da renda comprometida.
+  - **Próximos alívios**, **próximos vencimentos** e **por categoria, no tempo**.
+  Mesmas regras do Fluxo e as ações ligadas do Cockpit. API: `GET /api/commitments`.
+- **Navegação**: Planejar (Mês, Fluxo) · Cockpit · **Início** · Dívidas · Extrato. Importar extratos e a planilha fica
+  no Extrato (botão Importar) e no menu do computador.
+- **Cockpit** (aba própria): ações com liga/desliga para simular decisões. Ligada, a ação entra no
   Fluxo, no Mês e no saldo projetado; desligada, fica guardada sem mudar nada. O gráfico compara o saldo sem e com
   as ações ligadas (saldo final e menor saldo).
   - **Ações de ajuste**: linhas por mês que somam uma entrada/saída ou **substituem** o valor de um previsto (0 zera).
