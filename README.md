@@ -48,8 +48,13 @@ ajuda a planejar o mês e acompanha as dívidas (cartões, empréstimos, consign
     aquele mês ou dali em diante; saldo do mês, saldo acumulado e % da renda comprometida.
   - **Próximos alívios**, **próximos vencimentos** e **por categoria, no tempo**.
   Mesmas regras do Fluxo e as ações ligadas do Cockpit. API: `GET /api/commitments`.
-- **Navegação**: Planejar (Mês, Fluxo) · Cockpit · **Início** · Dívidas · Extrato. Importar extratos e a planilha fica
-  no Extrato (botão Importar) e no menu do computador.
+- **Gastos**: o que já foi pago no mês, contra o previsto. Entram os previstos marcados como pagos (no mês em que foram
+  pagos: conta de outubro paga em novembro é gasto de novembro) e os lançamentos de saída (à mão, "Já paguei", ou do
+  extrato), sem transferências e sem contar duas vezes o previsto reconhecido pelo extrato. **Falta pagar** lista os
+  previstos do mês e os atrasados, com **Pagar** em um toque (com Desfazer); por grupo, filtro, últimos 6 meses
+  (gasto × previsto). "Já paguei" sem conta cadastrada cria a conta Carteira.
+- **Navegação**: Planejar (Mês, Fluxo) · Cockpit · **Início** · Gastos · Dívidas. O extrato completo e a importação
+  ficam em Gastos (links no fim) e no menu do computador.
 - **Cockpit** (aba própria): ações com liga/desliga para simular decisões. Ligada, a ação entra no
   Fluxo, no Mês e no saldo projetado; desligada, fica guardada sem mudar nada. O gráfico compara o saldo sem e com
   as ações ligadas (saldo final e menor saldo).
@@ -124,8 +129,9 @@ aparelhos com biometria e permite remover. Scripts podem seguir usando usuário 
    | `FINANCI_SECRET` | opcional: chave das sessões (padrão: derivada da senha) |
    | `ANTHROPIC_API_KEY` | opcional: liga a categorização por IA (crie em console.anthropic.com) |
 
-4. *Deploy* (ou *Redeploy* depois de mudar uma variável). As tabelas são criadas no primeiro acesso; a versão do
-   esquema fica em `fin_meta`, e as subidas seguintes fazem uma consulta só (em vez de conferir tabela por tabela).
+4. *Deploy* (ou *Redeploy* depois de mudar uma variável). As tabelas são criadas no primeiro acesso, e colunas novas
+   em tabelas existentes são acrescentadas sozinhas; a versão do esquema fica em `fin_meta`, e as subidas seguintes
+   fazem uma consulta só (em vez de conferir tabela por tabela).
 
 `vercel.json` coloca a função em São Paulo (`gru1`), na mesma região do Neon (`sa-east-1`); `/healthz`
 responde sem senha. O limite de upload no Vercel é de 4 MB por arquivo: para extratos grandes, exporte um

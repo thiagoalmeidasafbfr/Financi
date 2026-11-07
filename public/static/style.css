@@ -1269,3 +1269,31 @@ nav.rail button.rail-minor { opacity: .7; }
 .cm-rows > .cm-bk { display: block; min-height: 0; }
 .cm-bk__it span { align-items: flex-start; text-align: left; flex: 1; }
 .cm-bk__it small { margin-top: 1px; }
+
+/* ---------------------------------------------------------------- Gastos */
+.gs-top { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.gs-top .pm-nav { margin: 0; flex: 1; max-width: 360px; }
+.gs-top .primary { height: 38px; }
+.gs-paid { background: var(--bright-azure); }
+.gs-topay { background: var(--cm-income); }
+.gs-rest { background: var(--chart-dim); }
+.gs-meter { margin: var(--space-3) 0 var(--space-2); }
+.gs-summary .cm-legend { margin: 0; }
+.gs-pay { flex: none; height: 30px; padding: 0 12px; margin-left: var(--space-2); }
+#gs-pending .az-insight { align-items: center; }
+.gs-groups { display: grid; gap: 4px; }
+.gs-group { display: grid; grid-template-columns: minmax(90px, 1fr) 2fr auto; align-items: center; gap: var(--space-3); width: 100%; height: auto;
+  min-height: 34px; padding: 4px 8px; border: 0; border-radius: 8px; background: none; color: inherit; font-size: 13px; font-weight: 400; text-align: left; }
+.gs-group:hover, .gs-group.on { background: var(--sel-col); }
+.gs-group.on .gs-group__l { color: var(--link); font-weight: 500; }
+.gs-group__l { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs-group__bar { height: 8px; border-radius: 999px; background: var(--chart-dim); overflow: hidden; }
+.gs-group__bar i { display: block; height: 100%; background: var(--bright-azure); border-radius: 999px; }
+.gs-group b { font-weight: 500; font-variant-numeric: tabular-nums; min-width: 70px; text-align: right; }
+.chart--gs { height: 220px; }
+#gs-filter button { height: 28px; padding: 0 10px; font-size: 12px; }
+@media (max-width: 700px) {
+  .gs-top .pm-nav { max-width: none; }
+  .card-head:has(#gs-filter) { flex-wrap: wrap; gap: var(--space-2); }
+}
+.list .az-insight button.gs-pay, .list .az-insight button.gs-pay:hover { background: var(--bright-azure); border-color: var(--bright-azure); color: #ffffff; font-weight: 500; }

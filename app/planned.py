@@ -29,6 +29,7 @@ class Occurrence:
     due: str
     status: str         # pago | pendente | atrasado | pulado
     paid_auto: bool     # pago reconhecido pelo extrato
+    paid_on: str | None  # dia em que foi marcado como pago à mão
     moved: bool
     changed: bool       # valor diferente da série
     start_month: str
@@ -120,6 +121,7 @@ def occurrences(db: Session, today: date, start: date | None, end: date, person:
                 planned_id=p.id, name=p.name, kind=p.kind, category_id=p.category_id, owner_id=p.owner_id,
                 recurrence=p.recurrence, month=month.isoformat(), original=orig.isoformat(), amount=round(float(amount), 2),
                 due=due.isoformat(), status=status, paid_auto=paid_auto, moved=month != orig,
+                paid_on=ch.paid_on.isoformat() if ch and ch.paid and ch.paid_on else None,
                 changed=bool(ch and ch.amount is not None), start_month=p.start_month.isoformat(),
                 end_month=p.end_month.isoformat() if p.end_month else None,
             ))

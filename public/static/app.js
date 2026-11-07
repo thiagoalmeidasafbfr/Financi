@@ -399,7 +399,7 @@ async function openQuickAdd(preset = {}) {
     <div id="qa-ja" class="qa-sub">
       <div class="qa-chips" id="qa-days"><button data-d="0">Hoje</button><button data-d="-1">Ontem</button><label class="qa-date"><input type="date" id="qa-date" aria-label="Outra data"></label></div>
       ${banks.length ? `<label class="field">Conta<select id="qa-acc">${banks.map((a) => `<option value="${a.id}" ${a.id === accId ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>`
-        : '<p class="hint">Para lançar o que já aconteceu, cadastre uma conta em Ajustes ou importe um extrato.</p>'}
+        : '<p class="hint">Sem conta cadastrada: o gasto entra numa conta “Carteira”, criada agora.</p>'}
     </div>
     <div id="qa-vai" class="qa-sub">
       <div class="segmented" id="qa-rec"><button data-r="pontual">Uma vez</button><button data-r="mensal">Todo mês</button></div>
@@ -448,7 +448,6 @@ async function openQuickAdd(preset = {}) {
   $("#qa-when").onclick = (e) => {
     const b = e.target.closest("[data-w]");
     if (!b) return;
-    if (b.dataset.w === "ja" && !banks.length) return toast("Cadastre uma conta em Ajustes para lançar o que já aconteceu");
     v.when = b.dataset.w; sync();
   };
   $("#qa-rec").onclick = (e) => { const b = e.target.closest("[data-r]"); if (b) { v.rec = b.dataset.r; sync(); } };
@@ -482,7 +481,11 @@ async function openQuickAdd(preset = {}) {
     if (!desc) { $("#qa-desc").focus(); return toast("Informe a descrição"); }
     let undo;
     if (v.when === "ja") {
-      const acc = +$("#qa-acc").value;
+      let acc = banks.length ? +$("#qa-acc").value : null;
+      if (!acc) { // sem conta: cria a Carteira (dinheiro) para guardar o que já foi pago
+        acc = (await api("POST", "/api/accounts", { name: "Carteira", kind: "dinheiro", opening_balance: 0 })).id;
+        await loadBase();
+      }
       store("l", QA_LAST_ACC, String(acc));
       const t = await api("POST", "/api/transactions", { account_id: acc, date: v.date, amount: v.kind === "despesa" ? -amount : amount,
         description: desc, category_id: catId });
@@ -1227,6 +1230,101 @@ $("#tab-inicio").addEventListener("click", async (e) => {
   if (h) { state.plan.cmHorizon = +h.dataset.h; return renderInicio(); }
   const go = e.target.closest("[data-cm-goto]");
   if (go) { state.plan.view = go.dataset.cmGoto; if (go.dataset.cmGoto === "mes") state.plan.month = state.cm.sel; return goTab("planejamento"); }
+});
+
+// ------------------------------------------------------------------ GASTOS: o que já foi pago no mês
+// Previstos marcados como pagos e lançamentos de saída (sem transferências), contra o previsto do mês; e o que falta pagar,
+// com "Pagar" em um toque (vai para os pagos). Tudo abre o item: previsto (desmarcar, mudar valor) ou lançamento.
+state.gs = { month: thisMonth(), filter: "", group: null };
+async function renderGastos() {
+  const g = state.gs;
+  const s = await api("GET", withPerson(`/api/spending?month=${g.month}`));
+  g.data = s;
+  $("#gs-month").textContent = capFirst(mlong(g.month));
+  $("#gs-month").classList.toggle("is-current", g.month === thisMonth());
+  const name = MESES_LONGOS[+g.month.slice(5, 7) - 1];
+  const base = Math.max(s.planned, s.spent + s.to_pay, 1);
+  $("#gs-summary").innerHTML = `<p class="pm-label">Gasto em ${name}</p><div class="pm-big">${money(s.spent)}</div>
+    <p class="pm-sub">${s.planned ? `de ${fmt(s.planned)} previstos (${pct(s.spent / s.planned)})` : "sem previsto no mês"}${s.to_pay ? ` · falta pagar ${fmt(s.to_pay)}` : ""}</p>
+    <div class="cm-meter gs-meter"><i class="gs-paid" style="width:${(s.spent / base) * 100}%"></i><i class="gs-topay" style="width:${(s.to_pay / base) * 100}%"></i></div>
+    <div class="cm-legend"><span><i class="gs-paid"></i>Pago ${fmt(s.spent)}</span><span><i class="gs-topay"></i>Falta pagar ${fmt(s.to_pay)}</span>
+      ${s.planned > s.spent + s.to_pay ? `<span><i class="gs-rest"></i>Resto do previsto ${fmt(s.planned - s.spent - s.to_pay)}</span>` : ""}</div>`;
+  $("#gs-topay").innerHTML = s.to_pay ? money(-s.to_pay) : "";
+  state.gsOcc = {};
+  const many = s.pending.length > 7 && !g.allPending; // lista longa: 6 e "Ver todas"
+  $("#gs-pending").innerHTML = (many ? s.pending.slice(0, 6) : s.pending).map((o) => {
+    const k = occKey(o);
+    state.gsOcc[k] = o;
+    return `<div class="az-insight is-link" data-gs-occ="${k}">${well(esc(initials(o.name)))}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(o.name)}</div>
+        <div class="az-insight__desc">${o.status === "atrasado" ? '<span class="badge strong">em atraso</span> ' : ""}vence ${dlabel(o.due)}${o.category ? ` · ${esc(o.category)}` : ""}</div></div>
+      <span class="amount">${money(-o.amount)}</span><button class="sm primary gs-pay" data-gs-pay="${k}">Pagar</button></div>`;
+  }).join("") + (many ? `<button class="link pm-more" data-gs-all>Ver todas (${s.pending.length})</button>` : "")
+    || '<p class="hint">Tudo o que estava previsto para o mês já foi pago.</p>';
+  const max = Math.max(...s.by_group.map((x) => x.amount), 1);
+  $("#gs-groups").innerHTML = s.by_group.map((x) => `<button class="gs-group ${g.group === x.group ? "on" : ""}" data-gs-group="${esc(x.group)}">
+      <span class="gs-group__l">${esc(x.group)}</span><span class="gs-group__bar"><i style="width:${(x.amount / max) * 100}%"></i></span><b>${fmt(x.amount)}</b></button>`).join("")
+    || '<p class="hint">Nada pago ainda neste mês.</p>';
+  $("#gs-group-clear").hidden = !g.group;
+  paintGsList();
+  paintGsChart();
+}
+function paintGsList() {
+  const g = state.gs, s = g.data;
+  $$("#gs-filter button").forEach((b) => b.classList.toggle("active", b.dataset.f === g.filter));
+  const items = s.items.filter((it) => (!g.filter || it.type === g.filter) && (!g.group || it.group === g.group));
+  $("#gs-list-title").textContent = g.group ? `Pagos no mês · ${g.group}` : "Pagos no mês";
+  $("#gs-list").innerHTML = items.map((it) => `<div class="az-insight is-link" data-gs-item="${it.type}:${esc(it.key)}">${well(esc(initials(it.name)))}
+      <div class="az-insight__text"><div class="az-insight__title">${esc(it.name)}</div>
+        <div class="az-insight__desc">${dlabel(it.date)} · ${esc(it.category || "sem categoria")} · ${it.source}</div></div>
+      <span class="amount">${money(-it.amount)}</span></div>`).join("")
+    || `<p class="hint">${g.filter || g.group ? "Nada com esse filtro." : "Nada pago ainda neste mês. Marque um previsto como pago ou lance um gasto."}</p>`;
+}
+function paintGsChart() {
+  const s = state.gs.data, H = s.history;
+  const ch = chart("chart-gs");
+  if (!ch) return;
+  ch.setOption({
+    ...baseOption(), grid: { left: 8, right: 8, top: 36, bottom: 8, containLabel: true },
+    xAxis: { ...baseOption().xAxis, data: H.map((h) => mlabel(h.month)) },
+    series: [
+      { name: "Gasto", type: "bar", data: H.map((h) => h.spent), barMaxWidth: 22, itemStyle: { color: LIT(), borderRadius: [4, 4, 0, 0] } },
+      { name: "Previsto", type: "line", data: H.map((h) => h.planned), symbolSize: 6, color: css("--cm-income"), lineStyle: { type: "dashed", width: 2 } },
+    ],
+  }, true);
+  ch.off("click");
+  ch.on("click", (e) => { if (e.dataIndex != null) { state.gs.month = H[e.dataIndex].month; renderGastos(); } });
+  ch.resize();
+}
+$("#gs-prev").onclick = () => { state.gs.month = addMonths(state.gs.month, -1); state.gs.group = null; state.gs.allPending = false; renderGastos(); };
+$("#gs-next").onclick = () => { state.gs.month = addMonths(state.gs.month, 1); state.gs.group = null; state.gs.allPending = false; renderGastos(); };
+$("#gs-month").onclick = () => { state.gs.month = thisMonth(); renderGastos(); };
+$("#gs-add").onclick = () => openQuickAdd({ when: "ja" });
+$("#tab-gastos").addEventListener("click", async (e) => {
+  const pay = e.target.closest("[data-gs-pay]");
+  if (pay) {
+    const o = state.gsOcc[pay.dataset.gsPay];
+    await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, paid: true });
+    toast(`${o.name}: pago`, { label: "Desfazer", run: async () => {
+      await api("PUT", `/api/planned/${o.planned_id}/occurrence`, { month: o.original, paid: null });
+      renderGastos();
+    } });
+    return renderGastos();
+  }
+  if (e.target.closest("[data-gs-all]")) { state.gs.allPending = true; return renderGastos(); }
+  const occ = e.target.closest("[data-gs-occ]");
+  if (occ) return openOccSheet(state.gsOcc[occ.dataset.gsOcc]);
+  const item = e.target.closest("[data-gs-item]");
+  if (item) {
+    const [type, key] = [item.dataset.gsItem.slice(0, item.dataset.gsItem.indexOf(":")), item.dataset.gsItem.slice(item.dataset.gsItem.indexOf(":") + 1)];
+    const it = state.gs.data.items.find((x) => x.type === type && x.key === key);
+    return type === "previsto" ? openOccSheet(it.occurrence) : openTxSheet(it.tx);
+  }
+  const grp = e.target.closest("[data-gs-group]");
+  if (grp) { state.gs.group = state.gs.group === grp.dataset.gsGroup ? null : grp.dataset.gsGroup; return renderGastos(); }
+  if (e.target.closest("#gs-group-clear")) { state.gs.group = null; return renderGastos(); }
+  const f = e.target.closest("#gs-filter [data-f]");
+  if (f) { state.gs.filter = f.dataset.f; return paintGsList(); }
 });
 
 // ------------------------------------------------------------------ COCKPIT: ações com liga/desliga
@@ -2041,12 +2139,13 @@ $("#add-rule").onclick = () => {
 
 // ------------------------------------------------------------------ navegação, tema e início
 const RENDER = { inicio: renderInicio, lancamentos: renderLancamentos, importar: renderImportar, planejamento: renderPlanejamento, cockpit: renderCockpit,
+  gastos: renderGastos,
   dividas: renderDividas, ajustes: renderAjustes };
 
-const TITLES = { inicio: "Início", lancamentos: "Extrato", importar: "Importações", planejamento: "Planejamento", cockpit: "Cockpit", dividas: "Dívidas", ajustes: "Ajustes" };
+const TITLES = { inicio: "Início", lancamentos: "Extrato", importar: "Importações", planejamento: "Planejamento", cockpit: "Cockpit", gastos: "Gastos", dividas: "Dívidas", ajustes: "Ajustes" };
 const SUBTITLES = {
   inicio: "", lancamentos: "Busque e categorize gastos", importar: "Extratos e faturas em OFX",
-  planejamento: "Plano do mês e fluxo futuro", cockpit: "Cenários: ligue e desligue para comparar", dividas: "Cartões, empréstimos e acordos",
+  planejamento: "Plano do mês e fluxo futuro", cockpit: "Cenários: ligue e desligue para comparar", gastos: "O que já foi pago, contra o previsto", dividas: "Cartões, empréstimos e acordos",
   ajustes: "Pessoas, contas e preferências",
 };
 function screenHead(tab) {

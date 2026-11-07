@@ -221,6 +221,7 @@ class PlannedChange(Base):
     moved_to: Mapped[date | None] = mapped_column(Date, nullable=True)
     skipped: Mapped[bool] = mapped_column(Boolean, default=False)
     paid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # vazio = automático pelo extrato
+    paid_on: Mapped[date | None] = mapped_column(Date, nullable=True)  # dia em que foi marcado como pago (o gasto conta nesse mês)
 
     planned: Mapped[Planned] = relationship(back_populates="changes")
 

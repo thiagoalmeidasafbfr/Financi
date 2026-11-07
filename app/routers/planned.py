@@ -101,6 +101,7 @@ def change_occurrence(pid: int, data: schemas.OccurrenceChange, db: Session = De
                 ch.skipped = bool(data.skipped)
             if "paid" in sent:
                 ch.paid = data.paid
+                ch.paid_on = _today() if data.paid else None
         db.commit()
         return {"ok": True}
 
@@ -124,6 +125,7 @@ def change_occurrence(pid: int, data: schemas.OccurrenceChange, db: Session = De
         ch.skipped = bool(data.skipped)
     if "paid" in sent:
         ch.paid = data.paid
+        ch.paid_on = _today() if data.paid else None  # o gasto conta no mês em que foi pago
     db.commit()
     return {"ok": True}
 
